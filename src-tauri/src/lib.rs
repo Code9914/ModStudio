@@ -35,5 +35,5 @@ pub fn run() {
             commands::list_dependencies,
         ])
         .run(tauri::generate_context!())
-        .expect("erreur au lancement d'Atelier");
+        .expect("erreur au lancement de ModStudio");
 }

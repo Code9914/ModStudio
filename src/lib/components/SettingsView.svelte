@@ -48,9 +48,9 @@
 <div class="view">
   <div class="inner">
     {#if first}
-      <h1>Bienvenue dans Atelier</h1>
+      <h1>Bienvenue dans ModStudio</h1>
       <p class="intro">
-        Atelier parcourt les mods de mod.io depuis ton bureau. Pour commencer, il lui faut ta clé API mod.io :
+        ModStudio parcourt les mods de mod.io depuis ton bureau. Pour commencer, il lui faut ta clé API mod.io :
         elle est gratuite et donne un accès en lecture seule.
       </p>
     {:else}
@@ -128,7 +128,7 @@
     {/if}
 
     <p class="disclaimer muted">
-      Atelier est un client non officiel. Il n'est ni affilié à mod.io ni soutenu par mod.io. La clé API est
+      ModStudio est un client non officiel. Il n'est ni affilié à mod.io ni soutenu par mod.io. La clé API est
       enregistrée sur cet ordinateur uniquement.
     </p>
   </div>

@@ -39,7 +39,7 @@
 
 <div class="app">
   <nav class="rail" aria-label="Navigation principale">
-    <p class="wordmark">Atelier</p>
+    <p class="wordmark">ModStudio</p>
 
     <ul class="nav">
       <li>

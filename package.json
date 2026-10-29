@@ -1,6 +1,6 @@
 {
-  "name": "modio-client",
-  "version": "0.1.0",
+  "name": "modstudio",
+  "version": "0.1.1",
   "description": "",
   "type": "module",
   "scripts": {

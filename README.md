@@ -1,6 +1,6 @@
-# Atelier — client de bureau pour mod.io (v0.1)
+# ModStudio — client de bureau pour mod.io (v0.1)
 
-Atelier parcourt les mods de [mod.io](https://mod.io) depuis une appli de bureau
+ModStudio parcourt les mods de [mod.io](https://mod.io) depuis une appli de bureau
 (Windows et Linux), construite avec Tauri 2, Rust et Svelte 5.
 
 > Client **non officiel** : il n'est ni affilié à mod.io ni soutenu par mod.io.
@@ -76,7 +76,7 @@ affiche un avertissement. Clique sur « Informations complémentaires » puis
 1. Ouvre <https://mod.io/me/access> et connecte-toi.
 2. Dans la section API, crée une clé.
 3. Copie la clé **et** le chemin d'API affiché à côté
-   (de la forme `https://u-12345.modapi.io/v1`), puis colle-les dans Atelier.
+   (de la forme `https://u-12345.modapi.io/v1`), puis colle-les dans ModStudio.
 
 La clé est en lecture seule : elle permet de parcourir, pas de modifier ton compte.
 
@@ -115,8 +115,8 @@ clé API n'apparaît jamais dans un message d'erreur.
 - La clé API ne quitte l'appli que vers un domaine mod.io
   (`api.mod.io`, `*.modapi.io`, `*.test.mod.io`), toujours en HTTPS.
 - Elle est enregistrée dans `settings.json`, dans le dossier de configuration :
-  `%APPDATA%\fr.atelier.modclient\` sous Windows,
-  `~/.config/fr.atelier.modclient/` sous Linux (lisible par toi seul).
+  `%APPDATA%\fr.modstudio.app\` sous Windows,
+  `~/.config/fr.modstudio.app/` sous Linux (lisible par toi seul).
 - Les descriptions de mods (HTML écrit par leurs auteurs) passent par
   DOMPurify, et l'appli applique une politique CSP stricte. Les liens s'ouvrent
   dans ton navigateur, jamais dans l'appli.

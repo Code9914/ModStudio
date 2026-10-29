@@ -1,4 +1,4 @@
-# Compile Atelier sous Windows sur les machines de GitHub et publie les
+# Compile ModStudio sous Windows sur les machines de GitHub et publie les
 # installateurs (.exe et .msi) dans une release du dépôt.
 name: Build Windows
 
@@ -46,18 +46,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
-          releaseName: "Atelier v__VERSION__"
+          releaseName: "ModStudio v__VERSION__"
           releaseBody: |
-            Installateurs Windows d'Atelier.
-            - `Atelier_x.y.z_x64-setup.exe` : installateur classique (recommandé)
-            - `Atelier_x.y.z_x64_en-US.msi` : paquet MSI
+            Installateurs Windows de ModStudio.
+            - `ModStudio_x.y.z_x64-setup.exe` : installateur classique (recommandé)
+            - `ModStudio_x.y.z_x64_en-US.msi` : paquet MSI
           releaseDraft: false
           prerelease: true
 
       - name: Garder une copie des installateurs
         uses: actions/upload-artifact@v4
         with:
-          name: atelier-windows
+          name: modstudio-windows
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi

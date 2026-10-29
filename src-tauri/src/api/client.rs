@@ -28,7 +28,7 @@ pub struct ModioClient {
 impl ModioClient {
     pub fn new() -> Self {
         let http = Client::builder()
-            .user_agent(concat!("Atelier/", env!("CARGO_PKG_VERSION"), " (client mod.io non officiel)"))
+            .user_agent(concat!("ModStudio/", env!("CARGO_PKG_VERSION"), " (client mod.io non officiel)"))
             .timeout(Duration::from_secs(20))
             .connect_timeout(Duration::from_secs(10))
             .build()
