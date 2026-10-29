@@ -52,33 +52,129 @@ pub trait SecretStore: Send + Sync {
     fn clear(&self) -> Result<(), String>;
 }
 
-/// Trousseau du système.
-pub struct KeyringStore;
+/// Accès brut à des entrées nommées du trousseau (octets).
+pub trait RawBackend: Send + Sync {
+    fn get(&self, account: &str) -> Result<Option<Vec<u8>>, String>;
+    fn set(&self, account: &str, value: &[u8]) -> Result<(), String>;
+    fn delete(&self, account: &str) -> Result<(), String>;
+}
 
-impl KeyringStore {
-    fn entry() -> Result<keyring::Entry, String> {
-        keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT).map_err(|e| e.to_string())
+/// Trousseau du système.
+pub struct KeyringBackend;
+
+impl KeyringBackend {
+    fn entry(account: &str) -> Result<keyring::Entry, String> {
+        keyring::Entry::new(KEYRING_SERVICE, account).map_err(|e| e.to_string())
     }
 }
 
-impl SecretStore for KeyringStore {
-    fn load(&self) -> Result<Option<String>, String> {
-        match Self::entry()?.get_password() {
+impl RawBackend for KeyringBackend {
+    fn get(&self, account: &str) -> Result<Option<Vec<u8>>, String> {
+        match Self::entry(account)?.get_secret() {
             Ok(value) => Ok(Some(value)),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(e.to_string()),
         }
     }
 
-    fn save(&self, value: &str) -> Result<(), String> {
-        Self::entry()?.set_password(value).map_err(|e| e.to_string())
+    fn set(&self, account: &str, value: &[u8]) -> Result<(), String> {
+        // `set_secret` range les octets tels quels ; `set_password` les
+        // convertirait en UTF-16 sous Windows, ce qui double la taille.
+        Self::entry(account)?.set_secret(value).map_err(|e| e.to_string())
     }
 
-    fn clear(&self) -> Result<(), String> {
-        match Self::entry()?.delete_credential() {
+    fn delete(&self, account: &str) -> Result<(), String> {
+        match Self::entry(account)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(e.to_string()),
         }
+    }
+}
+
+/// Le Gestionnaire d'identification Windows limite chaque entrée à 2 560
+/// octets, or un jeton mod.io peut dépasser cette taille. Les valeurs longues
+/// sont donc découpées en morceaux, rangés dans des entrées séparées ;
+/// l'entrée principale indique alors le nombre de morceaux.
+pub struct ChunkedStore<B: RawBackend> {
+    backend: B,
+}
+
+const CHUNK_SIZE: usize = 2000;
+const MAX_CHUNKS: usize = 16;
+const CHUNK_HEADER: &str = "modstudio-chunks:";
+
+fn chunk_account(index: usize) -> String {
+    format!("{KEYRING_ACCOUNT}.part{}", index + 1)
+}
+
+impl<B: RawBackend> ChunkedStore<B> {
+    pub fn new(backend: B) -> Self {
+        Self { backend }
+    }
+
+    /// Nombre de morceaux annoncé par l'entrée principale, le cas échéant.
+    fn chunk_count(head: &[u8]) -> Option<usize> {
+        std::str::from_utf8(head)
+            .ok()?
+            .strip_prefix(CHUNK_HEADER)?
+            .parse::<usize>()
+            .ok()
+            .filter(|n| (1..=MAX_CHUNKS).contains(n))
+    }
+}
+
+impl<B: RawBackend> SecretStore for ChunkedStore<B> {
+    fn load(&self) -> Result<Option<String>, String> {
+        let Some(head) = self.backend.get(KEYRING_ACCOUNT)? else {
+            return Ok(None);
+        };
+        let bytes = match Self::chunk_count(&head) {
+            Some(n) => {
+                let mut out = Vec::new();
+                for i in 0..n {
+                    match self.backend.get(&chunk_account(i))? {
+                        Some(part) => out.extend(part),
+                        // Morceau manquant : la valeur est inutilisable.
+                        None => return Ok(None),
+                    }
+                }
+                out
+            }
+            None => head,
+        };
+        String::from_utf8(bytes)
+            .map(Some)
+            .map_err(|_| "contenu du trousseau illisible".to_string())
+    }
+
+    fn save(&self, value: &str) -> Result<(), String> {
+        self.clear()?;
+        let bytes = value.as_bytes();
+        if bytes.len() <= CHUNK_SIZE {
+            return self.backend.set(KEYRING_ACCOUNT, bytes);
+        }
+        let parts: Vec<&[u8]> = bytes.chunks(CHUNK_SIZE).collect();
+        if parts.len() > MAX_CHUNKS {
+            return Err("jeton trop long pour le trousseau".into());
+        }
+        for (i, part) in parts.iter().enumerate() {
+            self.backend.set(&chunk_account(i), part)?;
+        }
+        // L'entrée principale est écrite en dernier : tant qu'elle n'existe
+        // pas, aucune valeur à moitié rangée ne peut être relue.
+        self.backend
+            .set(KEYRING_ACCOUNT, format!("{CHUNK_HEADER}{}", parts.len()).as_bytes())
+    }
+
+    fn clear(&self) -> Result<(), String> {
+        if let Some(head) = self.backend.get(KEYRING_ACCOUNT)? {
+            if let Some(n) = Self::chunk_count(&head) {
+                for i in 0..n {
+                    self.backend.delete(&chunk_account(i))?;
+                }
+            }
+        }
+        self.backend.delete(KEYRING_ACCOUNT)
     }
 }
 
@@ -194,5 +290,86 @@ mod tests {
         let long = "x".repeat(40);
         assert_eq!(normalize_token(&format!("Bearer {long}\n")).as_deref(), Some(long.as_str()));
         assert!(normalize_token("trop court").is_none());
+    }
+
+    /// Faux trousseau qui applique la même limite que Windows (2 560 octets).
+    #[derive(Default)]
+    struct WindowsLike {
+        entries: Mutex<std::collections::BTreeMap<String, Vec<u8>>>,
+    }
+
+    impl RawBackend for WindowsLike {
+        fn get(&self, account: &str) -> Result<Option<Vec<u8>>, String> {
+            Ok(self.entries.lock().unwrap().get(account).cloned())
+        }
+        fn set(&self, account: &str, value: &[u8]) -> Result<(), String> {
+            if value.len() > 2560 {
+                return Err(format!("{} octets > 2560", value.len()));
+            }
+            self.entries.lock().unwrap().insert(account.to_string(), value.to_vec());
+            Ok(())
+        }
+        fn delete(&self, account: &str) -> Result<(), String> {
+            self.entries.lock().unwrap().remove(account);
+            Ok(())
+        }
+    }
+
+    impl WindowsLike {
+        fn names(&self) -> Vec<String> {
+            self.entries.lock().unwrap().keys().cloned().collect()
+        }
+    }
+
+    fn long_token() -> String {
+        // Un jeton mod.io réaliste : JWT de plusieurs milliers de caractères.
+        let jwt = format!("eyJ0eXAiOiJKV1Qi.{}.sig", "AbC9-_".repeat(700));
+        StoredToken {
+            access_token: jwt,
+            date_expires: Some(4_102_444_800),
+            source: TokenSource::Email,
+        }
+        .to_json()
+    }
+
+    #[test]
+    fn long_values_are_split_under_the_windows_limit() {
+        let store = ChunkedStore::new(WindowsLike::default());
+        let value = long_token();
+        assert!(value.len() > 2560 && value.len() < 2 * 2560);
+        store.save(&value).unwrap();
+        assert_eq!(store.backend.names(), vec!["mod.io", "mod.io.part1", "mod.io.part2", "mod.io.part3"]);
+        assert_eq!(store.load().unwrap().as_deref(), Some(value.as_str()));
+        assert!(StoredToken::from_json(&store.load().unwrap().unwrap()).is_some());
+    }
+
+    #[test]
+    fn short_values_use_one_entry_and_overwrites_clean_old_parts() {
+        let store = ChunkedStore::new(WindowsLike::default());
+        store.save(&long_token()).unwrap();
+        store.save(r#"{"access_token":"court","source":"manual"}"#).unwrap();
+        assert_eq!(store.backend.names(), vec!["mod.io"]);
+        assert!(store.load().unwrap().unwrap().contains("court"));
+        store.clear().unwrap();
+        assert!(store.backend.names().is_empty());
+        assert_eq!(store.load().unwrap(), None);
+    }
+
+    #[test]
+    fn missing_part_reads_as_absent() {
+        let store = ChunkedStore::new(WindowsLike::default());
+        store.save(&long_token()).unwrap();
+        store.backend.delete("mod.io.part2").unwrap();
+        assert_eq!(store.load().unwrap(), None);
+        // Le nettoyage supprime quand même tout ce qui reste.
+        store.clear().unwrap();
+        assert!(store.backend.names().is_empty());
+    }
+
+    #[test]
+    fn absurdly_long_values_are_refused() {
+        let store = ChunkedStore::new(WindowsLike::default());
+        assert!(store.save(&"x".repeat(CHUNK_SIZE * MAX_CHUNKS + 1)).is_err());
+        assert!(store.backend.names().is_empty());
     }
 }

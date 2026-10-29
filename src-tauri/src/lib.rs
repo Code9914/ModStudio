@@ -18,7 +18,7 @@ pub fn run() {
         .setup(|app| {
             let settings_path = app.path().app_config_dir()?.join("settings.json");
             let loaded = settings::load(&settings_path);
-            app.manage(AppState::new(loaded, settings_path, Box::new(auth::KeyringStore)));
+            app.manage(AppState::new(loaded, settings_path, Box::new(auth::ChunkedStore::new(auth::KeyringBackend))));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
