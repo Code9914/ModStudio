@@ -21,6 +21,7 @@ export interface AppError {
     | "email_login_unavailable"
     | "invalid_code"
     | "invalid_token"
+    | "game_closed"
     | "no_game_folder"
     | "install_in_progress"
     | "no_modfile"
@@ -87,6 +88,8 @@ export interface Game {
   summary: string | null;
   profile_url: string | null;
   instructions_url: string | null;
+  /** Bit 1 : ouvert aux applications tierces ; bit 2 : téléchargements directs. */
+  api_access_options: number | null;
   ugc_name: string | null;
   date_updated: number | null;
   icon: Icon | null;
@@ -176,6 +179,14 @@ export type ModSort =
   | "-date_live"
   | "-date_updated"
   | "name";
+
+/**
+ * L'éditeur a fermé l'accès aux applications tierces : seul le site mod.io
+ * (ou le jeu) peut lister et télécharger ses mods. Champ absent = inconnu.
+ */
+export function gameClosed(g: Game | null | undefined): boolean {
+  return g?.api_access_options != null && (g.api_access_options & 1) === 0;
+}
 
 /**
  * Fichier à installer sur PC. Pour les jeux qui publient un fichier par

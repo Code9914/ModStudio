@@ -186,6 +186,9 @@ fn map_status(
         // Avec un jeton, un 401 veut dire que la session n'est plus valable.
         StatusCode::UNAUTHORIZED if matches!(auth, Auth::Token(_)) => AppError::SessionExpired,
         StatusCode::UNAUTHORIZED => AppError::Unauthorized { message, error_ref },
+        // « Jeu introuvable » en 403 : le jeu existe mais refuse les applications
+        // tierces (option « accès API ouvert » désactivée par l'éditeur).
+        StatusCode::FORBIDDEN if error_ref == Some(14001) => AppError::GameClosed,
         StatusCode::FORBIDDEN => AppError::Forbidden { message, error_ref },
         StatusCode::NOT_FOUND => AppError::NotFound,
         StatusCode::TOO_MANY_REQUESTS => AppError::RateLimited(retry_after.unwrap_or(DEFAULT_RETRY_SECS)),
@@ -248,6 +251,18 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, AppError::Unauthorized { ref message, error_ref: Some(11002) } if message == "Invalid API key."));
         assert!(!err.to_string().contains("secretkey1234"));
+    }
+
+    /// Réponse réelle de mod.io pour Incredibox (accès tiers fermé par l'éditeur).
+    #[tokio::test]
+    async fn closed_games_get_a_clear_error() {
+        let body = r#"{"error":{"code":403,"error_ref":14001,"message":"The game ID you have included in your request could not be found."}}"#;
+        let server = fake_server(vec![json_response(403, body)]);
+        let err = ModioClient::new()
+            .get::<Page<Game>>(&ApiConfig::test(&server.base), "/games/10779/mods", &[])
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::GameClosed), "{err}");
     }
 
     #[tokio::test]

@@ -1,6 +1,6 @@
 <script lang="ts">
   // Image 16:9 chargée paresseusement, avec repli sur l'initiale si absente ou cassée.
-  export type Badge = { text: string; tone: "warn" | "ok" | "accent" };
+  export type Badge = { text: string; tone: "warn" | "ok" | "accent" | "neutral" };
 
   let { src, label, badges = [] }: { src: string | null | undefined; label: string; badges?: Badge[] } =
     $props();
@@ -50,7 +50,9 @@
     position: absolute;
     top: 0.5rem;
     left: 0.5rem;
+    right: 0.5rem;
     display: flex;
+    flex-wrap: wrap;
     gap: 0.3rem;
   }
 </style>

@@ -119,6 +119,10 @@ pub struct Game {
     /// Guide ou wiki de modding fourni par le jeu.
     #[serde(default, deserialize_with = "lenient")]
     pub instructions_url: Option<String>,
+    /// Options d'accès à l'API : bit 1 = ouvert aux applications tierces,
+    /// bit 2 = téléchargements directs autorisés.
+    #[serde(default, deserialize_with = "lenient")]
+    pub api_access_options: Option<i64>,
     #[serde(default, deserialize_with = "lenient")]
     pub ugc_name: Option<String>,
     #[serde(default, deserialize_with = "lenient")]
@@ -427,5 +431,9 @@ mod tests {
         assert_eq!(g.tag_options[0].kind.as_deref(), Some("checkboxes"));
         assert_eq!(g.tag_options[0].tags, vec!["Carte", "Arme"]);
         assert_eq!(g.stats.unwrap().mods_count_total, 120);
+        assert_eq!(g.api_access_options, None, "absent : inconnu, pas « fermé »");
+
+        let closed: Game = serde_json::from_str(r#"{"id":10779,"name":"Incredibox","api_access_options":2}"#).unwrap();
+        assert_eq!(closed.api_access_options, Some(2));
     }
 }

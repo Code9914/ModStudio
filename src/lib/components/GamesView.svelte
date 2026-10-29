@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { api, type Game, type GameSort } from "$lib/api";
+  import { api, gameClosed, type Game, type GameSort } from "$lib/api";
   import { count, exact } from "$lib/format";
   import { nav } from "$lib/nav.svelte";
   import { PagedList } from "$lib/paged.svelte";
@@ -75,7 +75,11 @@
       {#each list.items as game (game.id)}
         <li>
           <button class="card" onclick={() => nav.openGame(game)}>
-            <Thumb src={logo(game)} label={game.name ?? ""} />
+            <Thumb
+              src={logo(game)}
+              label={game.name ?? ""}
+              badges={gameClosed(game) ? [{ text: "Sur mod.io uniquement", tone: "neutral" }] : []}
+            />
             <span class="card-title">{game.name ?? "Sans nom"}</span>
             <span class="card-meta">
               <span>{exact(game.stats?.mods_count_total)} {game.ugc_name?.toLowerCase() || "mods"}</span>

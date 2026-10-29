@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { api, pcFileId, type Game, type Mod, type ModSort, type TagOption } from "$lib/api";
+  import { api, gameClosed, pcFileId, type Game, type Mod, type ModSort, type TagOption } from "$lib/api";
   import { count, exact } from "$lib/format";
   import { installs } from "$lib/installs.svelte";
   import { nav } from "$lib/nav.svelte";
@@ -33,11 +33,14 @@
     return () => clearTimeout(t);
   });
 
+  // Jeu fermé aux applications tierces : inutile de demander ses mods.
+  const closed = $derived(gameClosed(game));
+
   $effect(() => {
     search;
     sort;
     tags;
-    untrack(() => list.reload());
+    if (!closed) untrack(() => list.reload());
   });
 
   // Mods suivis dans ce jeu, pour le badge « Abonné ».
@@ -125,6 +128,20 @@
     </div>
   </section>
 
+  {#if closed}
+    <div class="closed">
+      <h2>Les mods de {game.name} ne sont visibles que sur mod.io</h2>
+      <p>
+        L'éditeur de {game.name} n'autorise pas les applications tierces comme ModStudio à accéder à ses mods. Tu peux
+        les parcourir, t'y abonner et les télécharger sur le site de mod.io, ou directement dans le jeu.
+      </p>
+      {#if game.profile_url}
+        <button class="btn btn-primary" onclick={() => openUrl(game.profile_url!)}>
+          Voir les mods sur mod.io <Icon name="external" size={14} />
+        </button>
+      {/if}
+    </div>
+  {:else}
   <div class="body">
     <aside class="filters" aria-label="Filtres">
       <label class="filter-block">
@@ -233,6 +250,7 @@
       <LoadMore {list} noun={unit} />
     </div>
   </div>
+  {/if}
 </div>
 
 <style>
@@ -304,6 +322,19 @@
 
   .banner-stats .btn-ghost {
     color: var(--accent);
+  }
+
+  .closed {
+    display: grid;
+    justify-items: start;
+    gap: 0.9rem;
+    max-width: 42rem;
+    padding: 2rem 2.5rem 3rem;
+  }
+
+  .closed h2 {
+    font-size: var(--t-xl);
+    font-weight: 700;
   }
 
   .managed {

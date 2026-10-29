@@ -92,6 +92,9 @@ pub enum AppError {
 
     #[error("Ce jeu demande d'être connecté à mod.io pour télécharger ses mods.")]
     LoginRequiredForDownload,
+
+    #[error("L'éditeur de ce jeu n'autorise pas les applications tierces comme ModStudio à accéder à ses mods. Tu peux les parcourir et t'y abonner sur mod.io.")]
+    GameClosed,
 }
 
 impl AppError {
@@ -124,6 +127,7 @@ impl AppError {
             AppError::BadArchive(_) => "bad_archive",
             AppError::DownloadRefused(_) => "download_refused",
             AppError::LoginRequiredForDownload => "login_required_for_download",
+            AppError::GameClosed => "game_closed",
         }
     }
 
