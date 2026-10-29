@@ -1,7 +1,18 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { api, gameClosed, pcFileId, type Game, type Mod, type ModSort, type TagOption } from "$lib/api";
+  import {
+    api,
+    asAppError,
+    gameClosed,
+    pcFileId,
+    type AppError,
+    type Game,
+    type Mod,
+    type ModSort,
+    type TagOption,
+  } from "$lib/api";
+  import ErrorNotice from "./ErrorNotice.svelte";
   import { count, exact } from "$lib/format";
   import { installs } from "$lib/installs.svelte";
   import { nav } from "$lib/nav.svelte";
@@ -35,6 +46,16 @@
 
   // Jeu fermé aux applications tierces : inutile de demander ses mods.
   const closed = $derived(gameClosed(game));
+  let siteError = $state<AppError | null>(null);
+
+  async function openSite() {
+    siteError = null;
+    try {
+      await api.openModioWindow(game.profile_url!, game.name);
+    } catch (e) {
+      siteError = asAppError(e);
+    }
+  }
 
   $effect(() => {
     search;
@@ -133,12 +154,17 @@
       <h2>Les mods de {game.name} ne sont visibles que sur mod.io</h2>
       <p>
         L'éditeur de {game.name} n'autorise pas les applications tierces comme ModStudio à accéder à ses mods. Tu peux
-        les parcourir, t'y abonner et les télécharger sur le site de mod.io, ou directement dans le jeu.
+        les parcourir et t'y abonner sur le site officiel de mod.io, qui s'ouvre dans une fenêtre de ModStudio (connecte-toi
+        une première fois à ton compte mod.io dedans). Tes abonnements arriveront dans le jeu comme d'habitude.
       </p>
       {#if game.profile_url}
-        <button class="btn btn-primary" onclick={() => openUrl(game.profile_url!)}>
-          Voir les mods sur mod.io <Icon name="external" size={14} />
-        </button>
+        <div class="closed-actions">
+          <button class="btn btn-primary" onclick={openSite}>Voir les mods sur mod.io</button>
+          <button class="btn btn-ghost" onclick={() => openUrl(game.profile_url!)}>
+            Ouvrir dans mon navigateur <Icon name="external" size={14} />
+          </button>
+        </div>
+        {#if siteError}<ErrorNotice error={siteError} />{/if}
       {/if}
     </div>
   {:else}
@@ -335,6 +361,12 @@
   .closed h2 {
     font-size: var(--t-xl);
     font-weight: 700;
+  }
+
+  .closed-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
   }
 
   .managed {

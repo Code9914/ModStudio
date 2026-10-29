@@ -251,6 +251,46 @@ pub async fn list_dependencies(
     Ok(page.data)
 }
 
+// ---------------------------------------------------------------- Fenêtre mod.io
+
+/// Étiquette de la fenêtre qui affiche le site officiel de mod.io. Elle n'a
+/// aucune capacité Tauri (aucun accès aux commandes de l'appli).
+const MODIO_WINDOW: &str = "modio";
+
+/// N'accepte que des pages du site officiel de mod.io, en HTTPS.
+fn modio_page(url: &str) -> Option<tauri::Url> {
+    let parsed = tauri::Url::parse(url.trim()).ok()?;
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    (parsed.scheme() == "https" && (host == "mod.io" || host == "www.mod.io")).then_some(parsed)
+}
+
+/// Ouvre (ou réutilise) une fenêtre de ModStudio sur une page de mod.io.
+/// Sert pour les jeux fermés aux applications tierces : c'est le site officiel
+/// qui fait tout, avec la connexion de l'utilisateur à mod.io.
+#[tauri::command]
+pub async fn open_modio_window(app: tauri::AppHandle, url: String, title: Option<String>) -> AppResult<()> {
+    use tauri::Manager;
+
+    let page = modio_page(&url)
+        .ok_or_else(|| AppError::InvalidArgument("seules les pages de mod.io peuvent s'ouvrir ici.".into()))?;
+    let title = format!("{} sur mod.io", title.unwrap_or_else(|| "Mods".into()));
+
+    if let Some(window) = app.get_webview_window(MODIO_WINDOW) {
+        window.navigate(page).map_err(|e| AppError::Io(e.to_string()))?;
+        let _ = window.set_title(&title);
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(&app, MODIO_WINDOW, tauri::WebviewUrl::External(page))
+        .title(title)
+        .inner_size(1200.0, 820.0)
+        .min_inner_size(800.0, 600.0)
+        .build()
+        .map_err(|e| AppError::Io(e.to_string()))?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------- Utilitaires
 
 fn clamp_limit(limit: u32) -> u32 {
@@ -296,5 +336,16 @@ mod tests {
         assert_eq!(clamp_limit(500), 100);
         assert!(check_id(0).is_err());
         assert!(check_id(42).is_ok());
+    }
+
+    #[test]
+    fn modio_window_only_opens_modio_pages() {
+        assert!(modio_page("https://mod.io/g/incredibox").is_some());
+        assert!(modio_page(" https://www.mod.io/g/incredibox/m/abc ").is_some());
+        assert!(modio_page("http://mod.io/g/incredibox").is_none());
+        assert!(modio_page("https://mod.io.evil.example/g/x").is_none());
+        assert!(modio_page("https://evil.example/?https://mod.io").is_none());
+        assert!(modio_page("file:///C:/Windows").is_none());
+        assert!(modio_page("pas une url").is_none());
     }
 }

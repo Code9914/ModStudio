@@ -36,6 +36,7 @@ pub fn run() {
             commands::get_mod,
             commands::list_mod_files,
             commands::list_dependencies,
+            commands::open_modio_window,
             account::auth_status,
             account::auth_request_code,
             account::auth_exchange_code,

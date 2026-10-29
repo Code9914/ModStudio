@@ -247,6 +247,9 @@ export const api = {
   listDependencies: (gameId: number, modId: number) =>
     call<Dependency[]>("list_dependencies", { gameId, modId }),
 
+  /** Ouvre une page du site officiel de mod.io dans une fenêtre de ModStudio. */
+  openModioWindow: (url: string, title: string | null = null) => call<null>("open_modio_window", { url, title }),
+
   // ---------------------------------------------------------------- Compte
 
   authStatus: () => call<AuthView>("auth_status"),
