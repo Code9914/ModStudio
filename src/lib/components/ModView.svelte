@@ -1,7 +1,7 @@
 <script lang="ts">
   import DOMPurify from "dompurify";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { api, asAppError, type AppError, type Dependency, type Game, type Mod, type Modfile } from "$lib/api";
+  import { api, asAppError, pcFileId, type AppError, type Dependency, type Game, type Mod, type Modfile } from "$lib/api";
   import { ago, bytes, count, date, exact, platformName } from "$lib/format";
   import { nav } from "$lib/nav.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
@@ -102,7 +102,14 @@
     return { label: ratingLabels[text] ?? text, percent: s.ratings_percentage_positive, total: s.ratings_total };
   });
 
-  const latest = $derived(mod?.modfile && mod.modfile.id ? mod.modfile : null);
+  // Fichier PC actuel : `modfile`, ou celui indiqué pour Windows quand le jeu
+  // publie un fichier par plateforme.
+  const latest = $derived.by(() => {
+    const id = pcFileId(mod);
+    if (!id) return null;
+    if (mod?.modfile?.id === id) return mod.modfile;
+    return files?.find((f) => f.id === id) ?? null;
+  });
 
   // ------------------------------------------------------------ Abonnement
 
@@ -348,7 +355,7 @@
 
       <aside class="side">
         {#key mod.id}
-          <InstallPanel {game} {mod} {deps} />
+          <InstallPanel {game} {mod} {deps} {files} />
         {/key}
         <dl class="stats">
           <div>

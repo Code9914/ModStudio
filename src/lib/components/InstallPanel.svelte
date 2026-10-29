@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, asAppError, type AppError, type Dependency, type Game, type Mod } from "$lib/api";
+  import { api, asAppError, pcFileId, type AppError, type Dependency, type Game, type Mod, type Modfile } from "$lib/api";
   import { bytes } from "$lib/format";
   import { installs } from "$lib/installs.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
@@ -7,11 +7,21 @@
   import Icon from "./Icon.svelte";
   import ProgressBar from "./ProgressBar.svelte";
 
-  let { game, mod, deps }: { game: Game; mod: Mod; deps: Dependency[] | null } = $props();
+  let {
+    game,
+    mod,
+    deps,
+    files = null,
+  }: { game: Game; mod: Mod; deps: Dependency[] | null; files?: Modfile[] | null } = $props();
 
   const record = $derived(installs.installed(game.id, mod.id));
   const config = $derived(installs.game(game.id));
-  const outdated = $derived(installs.outdated(game.id, mod.id, mod.modfile?.id));
+  /** Fichier PC actuel (vide pour un mod réservé au Quest, par exemple). */
+  const fileId = $derived(pcFileId(mod));
+  const fileVersion = $derived(
+    (mod.modfile?.id === fileId ? mod.modfile?.version : files?.find((f) => f.id === fileId)?.version) || null,
+  );
+  const outdated = $derived(installs.outdated(game.id, mod.id, fileId));
   const missingDeps = $derived((deps ?? []).filter((d) => !installs.installed(game.id, d.mod_id)));
 
   let withDeps = $state(true);
@@ -138,7 +148,7 @@
       </span>
     </p>
     {#if outdated}
-      <p class="small">Une nouvelle version est disponible{mod.modfile?.version ? ` (${mod.modfile.version})` : ""}.</p>
+      <p class="small">Une nouvelle version est disponible{fileVersion ? ` (${fileVersion})` : ""}.</p>
       <button class="btn btn-primary" onclick={start} disabled={busy}>
         <Icon name="download" size={15} />Mettre à jour
       </button>
@@ -153,10 +163,14 @@
       </button>
     </div>
   {:else}
-    <button class="btn btn-primary wide" onclick={start} disabled={busy || !mod.modfile?.id}>
-      <Icon name="download" size={15} />Installer{mod.modfile?.version ? ` la version ${mod.modfile.version}` : ""}
-    </button>
-    {#if missingDeps.length > 0}
+    {#if !fileId}
+      <p class="small muted">Ce mod n'a pas de fichier pour PC (Windows) : il est peut-être réservé à une autre plateforme.</p>
+    {:else}
+      <button class="btn btn-primary wide" onclick={start} disabled={busy}>
+        <Icon name="download" size={15} />Installer{fileVersion ? ` la version ${fileVersion}` : ""}
+      </button>
+    {/if}
+    {#if fileId && missingDeps.length > 0}
       <label class="check">
         <input type="checkbox" bind:checked={withDeps} />
         {missingDeps.length > 1

@@ -155,12 +155,12 @@ pub async fn install(
         .client
         .get(&cfg, &format!("/games/{game_id}/mods/{mod_id}"), &[])
         .await?;
-    let current = m.modfile.as_ref().filter(|f| f.id > 0).ok_or(AppError::NoModfile)?;
+    let file_id = m.pc_modfile_id().ok_or(AppError::NoModfile)?;
     let auth = token.as_deref().map(Auth::Token).unwrap_or(Auth::ApiKey);
     let file: Modfile = state.check_session(
         state
             .client
-            .get_as(&cfg, auth, &format!("/games/{game_id}/mods/{mod_id}/files/{}", current.id), &[])
+            .get_as(&cfg, auth, &format!("/games/{game_id}/mods/{mod_id}/files/{file_id}"), &[])
             .await,
     )?;
     if file.virus_positive == 1 {
@@ -319,11 +319,12 @@ pub async fn latest(state: &AppState, game_id: i64) -> AppResult<Vec<LatestFile>
             )
             .await?;
         out.extend(page.data.into_iter().filter_map(|m| {
-            let f = m.modfile.filter(|f| f.id > 0)?;
+            let modfile_id = m.pc_modfile_id()?;
+            let version = m.modfile.filter(|f| f.id == modfile_id).and_then(|f| f.version);
             Some(LatestFile {
                 mod_id: m.id,
-                modfile_id: f.id,
-                version: f.version,
+                modfile_id,
+                version,
             })
         }));
     }
@@ -431,8 +432,17 @@ mod tests {
     /// Installe le mod 5 du jeu 3 depuis un faux mod.io qui répond : fiche du
     /// mod, fichier (avec un lien vers lui-même), puis l'archive.
     async fn run_install(zip: Vec<u8>, virus: i64, layout: Layout) -> (AppResult<InstalledMod>, std::path::PathBuf, Vec<String>) {
-        let md5 = md5_hex(&zip);
         let mod_json = r#"{"id":5,"game_id":3,"name":"Clear Skies","name_id":"clear-skies","modfile":{"id":42,"version":"2.3"}}"#;
+        run_install_with(mod_json, zip, virus, layout).await
+    }
+
+    async fn run_install_with(
+        mod_json: &str,
+        zip: Vec<u8>,
+        virus: i64,
+        layout: Layout,
+    ) -> (AppResult<InstalledMod>, std::path::PathBuf, Vec<String>) {
+        let md5 = md5_hex(&zip);
         let responses = |base: &str| {
             let file_json = format!(
                 r#"{{"id":42,"mod_id":5,"filesize":{},"filename":"clear-skies.zip","version":"2.3","virus_positive":{virus},"filehash":{{"md5":"{md5}"}},"download":{{"binary_url":"{base}/dl","date_expires":9999999999}}}}"#,
@@ -477,6 +487,22 @@ mod tests {
         assert_eq!(fs::read(folder.join("clear-skies/sky.pak")).unwrap(), b"ciel");
         assert!(!folder.join(STAGING_DIR).exists(), "dossier de travail nettoyé");
         assert_eq!(phases, vec!["preparing", "downloading", "verifying", "extracting", "finishing"]);
+    }
+
+    /// Jeu à fichiers par plateforme (comme Bonelab) : `modfile` est vide, le
+    /// fichier PC est indiqué dans `platforms`.
+    #[tokio::test]
+    async fn per_platform_games_use_the_windows_file() {
+        let mod_json = r#"{"id":5,"game_id":3,"name":"Clear Skies","name_id":"clear-skies","modfile":null,
+            "platforms":[{"platform":"android","modfile_live":41},{"platform":"windows","modfile_live":42}]}"#;
+        let zip = make_zip(&[("sky.pak", b"pc")]);
+        let (result, folder, _) = run_install_with(mod_json, zip, 0, Layout::Flat).await;
+        assert_eq!(result.unwrap().modfile_id, 42);
+        assert_eq!(fs::read(folder.join("sky.pak")).unwrap(), b"pc");
+
+        let quest_only = r#"{"id":5,"game_id":3,"name":"Q","modfile":{},"platforms":[{"platform":"android","modfile_live":41}]}"#;
+        let (result, _, _) = run_install_with(quest_only, make_zip(&[("a", b"x")]), 0, Layout::Flat).await;
+        assert!(matches!(result, Err(AppError::NoModfile)));
     }
 
     #[tokio::test]

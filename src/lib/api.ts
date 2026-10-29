@@ -176,6 +176,18 @@ export type ModSort =
   | "-date_updated"
   | "name";
 
+/**
+ * Fichier à installer sur PC. Pour les jeux qui publient un fichier par
+ * plateforme (PC, Quest…), `modfile` peut être vide : on prend alors le
+ * fichier en ligne pour Windows (même règle que le backend).
+ */
+export function pcFileId(m: Mod | null | undefined): number | null {
+  if (!m) return null;
+  if (m.modfile?.id) return m.modfile.id;
+  const pc = m.platforms.find((p) => p.platform?.toLowerCase() === "windows");
+  return pc?.modfile_live || null;
+}
+
 // ------------------------------------------------------------------ Appels
 
 export function asAppError(e: unknown): AppError {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { api, type Game, type Mod, type ModSort, type TagOption } from "$lib/api";
+  import { api, pcFileId, type Game, type Mod, type ModSort, type TagOption } from "$lib/api";
   import { count, exact } from "$lib/format";
   import { installs } from "$lib/installs.svelte";
   import { nav } from "$lib/nav.svelte";
@@ -191,7 +191,7 @@
                   label={m.name ?? ""}
                   badges={[
                     ...(installs.installed(game.id, m.id)
-                      ? installs.outdated(game.id, m.id, m.modfile?.id)
+                      ? installs.outdated(game.id, m.id, pcFileId(m))
                         ? [{ text: "Mise à jour", tone: "accent" as const }]
                         : [{ text: "Installé", tone: "ok" as const }]
                       : []),

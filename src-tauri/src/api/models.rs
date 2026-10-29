@@ -207,6 +207,19 @@ pub struct Mod {
 }
 
 impl Mod {
+    /// Fichier à installer sur PC. Pour les jeux qui publient un fichier par
+    /// plateforme (PC, Quest…), `modfile` peut être vide : on se rabat alors
+    /// sur le fichier en ligne pour Windows.
+    pub fn pc_modfile_id(&self) -> Option<i64> {
+        self.modfile.as_ref().map(|f| f.id).filter(|id| *id > 0).or_else(|| {
+            self.platforms
+                .iter()
+                .find(|p| p.platform.as_deref().is_some_and(|n| n.eq_ignore_ascii_case(super::client::TARGET_PLATFORM)))
+                .and_then(|p| p.modfile_live)
+                .filter(|id| *id > 0)
+        })
+    }
+
     /// Retire les champs lourds inutiles dans une liste.
     pub fn into_summary(mut self) -> Self {
         self.description = None;

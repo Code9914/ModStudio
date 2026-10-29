@@ -12,6 +12,10 @@ use crate::error::{AppError, AppResult};
 /// Au-delà de ce délai, on ne patiente pas en silence : on laisse l'interface
 /// afficher un compte à rebours.
 const MAX_SILENT_RETRY_SECS: u64 = 5;
+
+/// Plateforme demandée à mod.io : les fichiers PC (y compris pour jouer via
+/// Proton sous Linux).
+pub const TARGET_PLATFORM: &str = "windows";
 const DEFAULT_RETRY_SECS: u64 = 60;
 
 /// Clé + chemin d'API utilisés pour une requête (copiés depuis les réglages).
@@ -119,6 +123,12 @@ impl ModioClient {
     ) -> AppResult<T> {
         let url = format!("{}{}", cfg.api_path, path);
         let mut request = self.http.request(method, &url).header(ACCEPT, "application/json");
+        // Les jeux qui publient un fichier par plateforme (PC, Quest…) ne
+        // renvoient le fichier actuel d'un mod que si on dit laquelle on veut.
+        // Pas sur /me ni /oauth : /me/subscribed exigerait alors un filtre de jeu.
+        if !path.starts_with("/me") && !path.starts_with("/oauth") {
+            request = request.header("X-Modio-Platform", TARGET_PLATFORM);
+        }
 
         request = match auth {
             Auth::ApiKey => {
@@ -225,6 +235,7 @@ mod tests {
         let req = server.request(0);
         assert!(req.line.starts_with("GET /v1/games?api_key=secretkey1234&_q="), "{}", req.line);
         assert!(req.header("authorization").is_none());
+        assert_eq!(req.header("x-modio-platform").as_deref(), Some("windows"));
     }
 
     #[tokio::test]
@@ -251,6 +262,8 @@ mod tests {
         let req = server.request(0);
         assert_eq!(req.header("authorization").as_deref(), Some("Bearer tok123"));
         assert!(!req.line.contains("api_key"), "{}", req.line);
+        // /me/subscribed refuserait une plateforme sans filtre de jeu.
+        assert!(req.header("x-modio-platform").is_none());
     }
 
     #[tokio::test]

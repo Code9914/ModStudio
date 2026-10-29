@@ -66,7 +66,7 @@ pub enum AppError {
     #[error("Ce mod est déjà en cours d'installation.")]
     InstallInProgress,
 
-    #[error("Ce mod n'a aucun fichier publié à installer.")]
+    #[error("Ce mod n'a aucun fichier publié pour PC (Windows).")]
     NoModfile,
 
     #[error("Installation bloquée : l'antivirus de mod.io a signalé ce fichier.")]
