@@ -1,11 +1,13 @@
 mod account;
 mod api;
+mod archive;
 mod auth;
 mod commands;
 mod error;
 mod install_commands;
 mod installer;
 mod modio_sdk;
+mod nexus;
 mod settings;
 #[cfg(test)]
 mod testutil;
@@ -23,7 +25,8 @@ pub fn run() {
             let settings_path = app.path().app_config_dir()?.join("settings.json");
             let loaded = settings::load(&settings_path);
             let secrets = Box::new(auth::ChunkedStore::new(auth::KeyringBackend));
-            app.manage(AppState::new(loaded, settings_path, secrets));
+            let nexus_secrets = Box::new(auth::ChunkedStore::for_account(auth::KeyringBackend, nexus::KEYRING_ACCOUNT));
+            app.manage(AppState::new(loaded, settings_path, secrets, nexus_secrets));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -56,6 +59,23 @@ pub fn run() {
             install_commands::uninstall_mod,
             install_commands::latest_installed_files,
             install_commands::reveal_install,
+            nexus::nexus_status,
+            nexus::nexus_set_key,
+            nexus::nexus_forget_key,
+            nexus::nexus_list_games,
+            nexus::nexus_get_game,
+            nexus::nexus_list_mods,
+            nexus::nexus_get_mod,
+            nexus::nexus_list_files,
+            nexus::nexus_open_download,
+            nexus::nexus_overview,
+            nexus::nexus_game_setup,
+            nexus::nexus_configure_game,
+            nexus::nexus_install,
+            nexus::nexus_cancel_install,
+            nexus::nexus_uninstall,
+            nexus::nexus_updates,
+            nexus::nexus_reveal,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de ModStudio");

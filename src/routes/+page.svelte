@@ -11,12 +11,22 @@
   import LibraryView from "$lib/components/LibraryView.svelte";
   import ModsView from "$lib/components/ModsView.svelte";
   import ModView from "$lib/components/ModView.svelte";
+  import NexusAccountView from "$lib/components/NexusAccountView.svelte";
+  import NexusGamesView from "$lib/components/NexusGamesView.svelte";
+  import NexusModsView from "$lib/components/NexusModsView.svelte";
+  import NexusModView from "$lib/components/NexusModView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
+  import { nexusGameImage } from "$lib/api";
+  import { nexusStore } from "$lib/nexus.svelte";
 
   let startError = $state<AppError | null>(null);
 
   async function start() {
     startError = null;
+    // Nexus Mods fonctionne même sans clé mod.io.
+    nexusStore.listenNxm();
+    nexusStore.refreshAuth();
+    checkNexus();
     try {
       nav.settings = await api.getSettings();
       if (!nav.settings.hasApiKey) nav.openSettings();
@@ -26,6 +36,15 @@
       }
     } catch (e) {
       startError = asAppError(e);
+    }
+  }
+
+  async function checkNexus() {
+    try {
+      await nexusStore.load();
+      await Promise.all(Object.keys(nexusStore.games).map((id) => nexusStore.checkUpdates(Number(id))));
+    } catch {
+      /* la page Installés affichera l'erreur */
     }
   }
 
@@ -43,7 +62,11 @@
     Object.values(installs.games).reduce(
       (n, g) => n + Object.values(g.mods).filter((m) => installs.outdated(g.gameId, m.modId)).length,
       0,
-    ),
+    ) +
+      Object.values(nexusStore.games).reduce(
+        (n, g) => n + Object.values(g.mods).filter((m) => nexusStore.outdated(g.gameId, m.modId)).length,
+        0,
+      ),
   );
 
   onMount(start);
@@ -52,8 +75,10 @@
     const typing = (event.target as HTMLElement)?.closest("input, textarea, select");
     if (typing) return;
     if ((event.key === "Escape" || (event.altKey && event.key === "ArrowLeft")) && nav.view.name !== "games") {
-      if (nav.view.name === "mod" || nav.view.name === "mods") nav.back();
-      else nav.openGames();
+      const v = nav.view.name;
+      if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods") nav.back();
+      else if (v === "nexusAccount") nav.openNexusGames();
+      else if (v !== "nexusGames") nav.openGames();
     }
   }
 
@@ -68,6 +93,7 @@
   <nav class="rail" aria-label="Navigation principale">
     <p class="wordmark">ModStudio</p>
 
+    <p class="section">mod.io</p>
     <ul class="nav">
       <li>
         <button
@@ -107,13 +133,51 @@
           <Icon name="library" size={18} />Mes mods
         </button>
       </li>
+    </ul>
+
+    <p class="section">Nexus Mods</p>
+    <ul class="nav">
       <li>
         <button
           class="nav-item"
-          aria-current={nav.view.name === "installed" || (nav.view.name === "mod" && nav.modOrigin === "installed")
+          aria-label="Jeux Nexus Mods"
+          aria-current={nav.view.name === "nexusGames" ? "page" : undefined}
+          onclick={() => nav.openNexusGames()}
+        >
+          <Icon name="grid" size={18} />Jeux
+        </button>
+      </li>
+      {#if nav.nexusGame}
+        <li>
+          <button
+            class="nav-item sub"
+            aria-current={nav.view.name === "nexusMods" || (nav.view.name === "nexusMod" && nav.nexusOrigin === "nexusMods")
+              ? "page"
+              : undefined}
+            onclick={() => nav.nexusGame && nav.openNexusGame(nav.nexusGame)}
+          >
+            <img
+              src={nexusGameImage(nav.nexusGame.id, "thumbnail")}
+              alt=""
+              width="18"
+              height="18"
+              onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = "hidden")}
+            />
+            <span class="ellipsis">{nav.nexusGame.name}</span>
+          </button>
+        </li>
+      {/if}
+    </ul>
+
+    <ul class="nav">
+      <li>
+        <button
+          class="nav-item"
+          aria-current={nav.view.name === "installed" ||
+          (nav.view.name === "mod" && nav.modOrigin === "installed") ||
+          (nav.view.name === "nexusMod" && nav.nexusOrigin === "installed")
             ? "page"
             : undefined}
-          disabled={!ready}
           onclick={() => nav.openInstalled()}
         >
           <Icon name="download" size={18} />Installés
@@ -158,7 +222,24 @@
           {/if}
         </button>
       {/if}
-      <p class="version muted">Version 0.3, client non officiel</p>
+      <button
+        class="account"
+        aria-current={nav.view.name === "nexusAccount" ? "page" : undefined}
+        aria-label={nexusStore.ready ? "Mon compte Nexus Mods" : "Ajouter ma clé Nexus Mods"}
+        onclick={() => nav.openNexusAccount()}
+      >
+        <span class="account-avatar placeholder nexus"><Icon name="user" size={16} /></span>
+        <span class="account-text">
+          {#if nexusStore.ready}
+            <span class="ellipsis account-name">{nexusStore.auth?.user?.name ?? "Clé enregistrée"}</span>
+            <span class="account-sub">Nexus Mods{nexusStore.premium ? ", Premium" : ""}</span>
+          {:else}
+            <span class="account-name">Nexus Mods</span>
+            <span class="account-sub">ajouter ma clé</span>
+          {/if}
+        </span>
+      </button>
+      <p class="version muted">Version 0.4, client non officiel</p>
     </div>
   </nav>
 
@@ -183,6 +264,23 @@
         {#if nav.view.name === "account"}
           <div class="pane"><AccountView /></div>
         {/if}
+      {/if}
+      {#key nav.session}
+        <div class="pane" hidden={nav.view.name !== "nexusGames"}><NexusGamesView /></div>
+        {#if nav.nexusGame}
+          {#key nav.nexusGame.id}
+            <div class="pane" hidden={nav.view.name !== "nexusMods"}><NexusModsView game={nav.nexusGame} /></div>
+          {/key}
+        {/if}
+        {#if !ready}
+          <div class="pane" hidden={nav.view.name !== "installed"}><InstalledView /></div>
+        {/if}
+      {/key}
+      {#if nav.view.name === "nexusMod" && nav.nexusGame}
+        <div class="pane"><NexusModView game={nav.nexusGame} modId={nav.view.modId} /></div>
+      {/if}
+      {#if nav.view.name === "nexusAccount"}
+        <div class="pane"><NexusAccountView /></div>
       {/if}
       {#if nav.view.name === "settings"}
         <div class="pane"><SettingsView /></div>
@@ -262,6 +360,20 @@
   .nav-item img {
     border-radius: 3px;
     flex: none;
+  }
+
+  .section {
+    margin: 0 0 -1rem;
+    padding: 0 0.6rem;
+    font-size: var(--t-xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .account-avatar.nexus {
+    color: var(--accent);
   }
 
   .ellipsis {

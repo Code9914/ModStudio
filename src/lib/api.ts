@@ -33,6 +33,16 @@ export interface AppError {
     | "bad_archive"
     | "download_refused"
     | "login_required_for_download"
+    | "unsupported_archive"
+    | "unknown_layout"
+    | "wrong_platform"
+    | "need_game_dir"
+    | "nexus_key_missing"
+    | "nexus_key_invalid"
+    | "nexus_premium_required"
+    | "nexus_link_expired"
+    | "nexus_not_found"
+    | "nexus_api"
     | "unknown";
   message: string;
   retryAfter: number | null;
@@ -328,6 +338,11 @@ export interface InstalledMod {
   /** Installé automatiquement comme mod nécessaire. */
   auto: boolean;
   requiredBy: number[];
+  /** Fichiers rangés dans un autre dossier (dossier du jeu pour un mod de code). */
+  parts?: { key: string; files: string[]; dirs: string[] }[];
+  /** Nom du fichier choisi (Nexus Mods). */
+  fileName?: string;
+  fileUid?: string;
 }
 
 export interface FolderSuggestion {
@@ -348,7 +363,189 @@ export interface GameInstall {
   folder: string;
   layout: Layout;
   mods: Record<string, InstalledMod>;
+  /** Règles d'installation propres au jeu (`bonelab`), à la place du rangement. */
+  rules?: string;
+  /** Dossiers supplémentaires (`game` : dossier d'installation du jeu). */
+  extraFolders?: Record<string, string>;
+  /** Identifiant texte du jeu sur Nexus Mods. */
+  domain?: string;
 }
+
+// ------------------------------------------------------------------ Nexus Mods
+
+export interface NexusGame {
+  id: number;
+  name: string;
+  domainName: string;
+  modCount: number;
+  downloadCount: number;
+  genre: string | null;
+}
+
+export interface NexusMod {
+  /** Copie de `modId`, pour les listes paginées. */
+  id: number;
+  modId: number;
+  uid: string | null;
+  name: string;
+  summary: string | null;
+  author: string | null;
+  adultContent: boolean;
+  endorsements: number;
+  downloads: number;
+  updatedAt: string | null;
+  createdAt: string | null;
+  version: string | null;
+  category: string | null;
+  thumbnailUrl: string | null;
+  pictureUrl: string | null;
+  status: string | null;
+  uploader: { name: string | null; avatar: string | null; memberId: number } | null;
+  game: { id: number; domainName: string; name: string | null } | null;
+}
+
+export interface NexusRequirement {
+  modId: number;
+  gameId: number;
+  modName: string;
+  url: string | null;
+  externalRequirement: boolean;
+  notes: string | null;
+}
+
+export interface NexusModDetail extends NexusMod {
+  description: string | null;
+  requirements: NexusRequirement[];
+}
+
+export type NexusFileCategory =
+  | "MAIN"
+  | "OPTIONAL"
+  | "UPDATE"
+  | "MISCELLANEOUS"
+  | "OLD_VERSION"
+  | "ARCHIVED"
+  | "REMOVED";
+
+export interface NexusFile {
+  fileId: number;
+  uid: string | null;
+  name: string;
+  version: string | null;
+  category: NexusFileCategory | string;
+  /** Secondes Unix. */
+  date: number;
+  sizeInBytes: number;
+  size: number;
+  description: string | null;
+  primary: boolean;
+  uri: string | null;
+}
+
+export interface NexusUser {
+  memberId: number;
+  name: string;
+  isPremium: boolean;
+  isSupporter: boolean;
+  profileUrl: string | null;
+}
+
+export interface NexusAuthView {
+  loggedIn: boolean;
+  user: NexusUser | null;
+  persisted: boolean;
+  storageWarning: string | null;
+  rejected: boolean;
+}
+
+export interface NexusGameSetup {
+  config: GameInstall | null;
+  rules: string | null;
+  suggestedFolder: string | null;
+  suggestedFolderExists: boolean;
+  gameDir: string | null;
+  gameDirDetected: boolean;
+  melonloader: boolean;
+}
+
+export interface NexusInstalled {
+  record: InstalledMod;
+  notice: string | null;
+}
+
+export interface NexusUpdate {
+  modId: number;
+  superseded: boolean;
+  category: string;
+}
+
+/** Lien `nxm://` capté dans la fenêtre de téléchargement. */
+export interface NxmLink {
+  domain: string;
+  modId: number;
+  fileId: number;
+  key: string;
+  expires: number;
+}
+
+export type NexusGameSort = "downloads" | "mods" | "name";
+export type NexusModSort = "endorsements" | "downloads" | "updated" | "created" | "name";
+
+/** Images d'un jeu sur Nexus : `tile` (portrait), `hero` (bannière), `thumbnail` (icône). */
+export function nexusGameImage(gameId: number, kind: "tile" | "hero" | "thumbnail"): string {
+  return `https://images.nexusmods.com/images/games/v2/${gameId}/${kind}.jpg`;
+}
+
+export function nexusModUrl(domain: string, modId: number): string {
+  return `https://www.nexusmods.com/${domain}/mods/${modId}`;
+}
+
+function withId<T extends { modId: number }>(m: T): T & { id: number } {
+  return { ...m, id: m.modId };
+}
+
+export const nexus = {
+  status: () => call<NexusAuthView>("nexus_status"),
+  setKey: (key: string) => call<NexusAuthView>("nexus_set_key", { key }),
+  forgetKey: () => call<NexusAuthView>("nexus_forget_key"),
+
+  listGames: (p: { query?: string; sort?: NexusGameSort; offset: number; limit: number }) =>
+    call<Page<NexusGame>>("nexus_list_games", p),
+  getGame: (domain: string) => call<NexusGame>("nexus_get_game", { domain }),
+  listMods: async (p: { gameDomain: string; query?: string; sort?: NexusModSort; offset: number; limit: number }) => {
+    const page = await call<Page<NexusMod>>("nexus_list_mods", p);
+    return { ...page, data: page.data.map(withId) };
+  },
+  getMod: async (gameId: number, modId: number) => withId(await call<NexusModDetail>("nexus_get_mod", { gameId, modId })),
+  listFiles: (gameId: number, modId: number) => call<NexusFile[]>("nexus_list_files", { gameId, modId }),
+  openDownload: (domain: string, modId: number, fileId: number) =>
+    call<null>("nexus_open_download", { domain, modId, fileId }),
+
+  overview: () => call<GameInstall[]>("nexus_overview"),
+  gameSetup: (gameId: number) => call<NexusGameSetup>("nexus_game_setup", { gameId }),
+  configureGame: (p: {
+    gameId: number;
+    domain: string;
+    gameName: string;
+    icon: string | null;
+    folder: string;
+    layout: Layout;
+    create?: boolean;
+    gameDir?: string | null;
+  }) => call<GameInstall>("nexus_configure_game", p),
+  install: (
+    p: { gameId: number; gameDomain: string; modId: number; fileId: number; nxmKey?: string; nxmExpires?: number },
+    onProgress: (e: InstallEvent) => void,
+  ) => {
+    const onEvent = new Channel<InstallEvent>();
+    onEvent.onmessage = onProgress;
+    return call<NexusInstalled>("nexus_install", { ...p, onEvent });
+  },
+  cancelInstall: (modId: number) => call<null>("nexus_cancel_install", { modId }),
+  uninstall: (gameId: number, modId: number) => call<string | null>("nexus_uninstall", { gameId, modId }),
+  updates: (gameId: number) => call<NexusUpdate[]>("nexus_updates", { gameId }),
+  reveal: (gameId: number, modId: number | null = null) => call<null>("nexus_reveal", { gameId, modId }),
+};
 
 export type InstallEvent =
   | { phase: "preparing" }

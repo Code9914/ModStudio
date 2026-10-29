@@ -1,6 +1,6 @@
 // Navigation de l'appli (pas de routeur : un seul écran avec des vues).
 import { SvelteSet } from "svelte/reactivity";
-import { api, type AuthView, type Game, type SettingsView } from "./api";
+import { api, type AuthView, type Game, type NexusGame, type SettingsView } from "./api";
 
 export type View =
   | { name: "games" }
@@ -9,9 +9,14 @@ export type View =
   | { name: "library" }
   | { name: "installed" }
   | { name: "account" }
-  | { name: "settings" };
+  | { name: "settings" }
+  | { name: "nexusGames" }
+  | { name: "nexusMods" }
+  | { name: "nexusMod"; modId: number }
+  | { name: "nexusAccount" };
 
 export type ModOrigin = "mods" | "library" | "installed";
+export type NexusOrigin = "nexusMods" | "installed";
 
 class Nav {
   view = $state<View>({ name: "games" });
@@ -27,6 +32,13 @@ class Nav {
   auth = $state<AuthView | null>(null);
   /** Change quand la clé ou les filtres changent : les listes se rechargent. */
   session = $state(0);
+
+  /** Jeu Nexus ouvert, et mods ouverts depuis sa liste puis via les mods nécessaires. */
+  nexusGame = $state<NexusGame | null>(null);
+  nexusModStack = $state<number[]>([]);
+  nexusOrigin = $state<NexusOrigin>("nexusMods");
+  /** Vue où revenir après avoir ajouté la clé Nexus. */
+  afterNexusKey = $state<View | null>(null);
 
   /** Mods suivis dans le jeu ouvert. */
   subs = new SvelteSet<number>();
@@ -65,7 +77,52 @@ class Nav {
     this.view = { name: "installed" };
   }
 
+  // ------------------------------------------------------------ Nexus Mods
+
+  openNexusGames() {
+    this.view = { name: "nexusGames" };
+  }
+
+  openNexusGame(game: NexusGame) {
+    if (this.nexusGame?.id !== game.id) this.nexusGame = game;
+    this.nexusModStack = [];
+    this.view = { name: "nexusMods" };
+  }
+
+  openNexusMod(modId: number) {
+    if (this.view.name !== "nexusMod") this.nexusOrigin = "nexusMods";
+    this.nexusModStack = [...this.nexusModStack, modId];
+    this.view = { name: "nexusMod", modId };
+  }
+
+  /** Fiche d'un mod Nexus ouverte depuis « Installés ». */
+  openNexusModFromInstalled(game: NexusGame, modId: number) {
+    if (this.nexusGame?.id !== game.id) this.nexusGame = game;
+    this.nexusOrigin = "installed";
+    this.nexusModStack = [modId];
+    this.view = { name: "nexusMod", modId };
+  }
+
+  openNexusAccount(returnTo: View | null = null) {
+    this.afterNexusKey = returnTo;
+    this.view = { name: "nexusAccount" };
+  }
+
   back() {
+    if (this.view.name === "nexusMod" && this.nexusModStack.length > 1) {
+      this.nexusModStack = this.nexusModStack.slice(0, -1);
+      this.view = { name: "nexusMod", modId: this.nexusModStack[this.nexusModStack.length - 1] };
+      return;
+    }
+    if (this.view.name === "nexusMod") {
+      this.nexusModStack = [];
+      this.view = { name: this.nexusOrigin };
+      return;
+    }
+    if (this.view.name === "nexusMods") {
+      this.view = { name: "nexusGames" };
+      return;
+    }
     if (this.view.name === "mod" && this.modStack.length > 1) {
       this.modStack = this.modStack.slice(0, -1);
       this.view = { name: "mod", modId: this.modStack[this.modStack.length - 1] };

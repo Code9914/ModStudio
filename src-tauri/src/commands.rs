@@ -14,6 +14,7 @@ use crate::api::models::{Dependency, Game, Mod, Modfile, Page};
 use crate::api::{ApiConfig, ModioClient};
 use crate::auth::SecretStore;
 use crate::error::{AppError, AppResult};
+use crate::nexus::NexusState;
 use crate::settings::{self, Settings, SettingsView};
 
 pub struct AppState {
@@ -28,12 +29,25 @@ pub struct AppState {
     pub library_path: PathBuf,
     /// Installations en cours : drapeau d'annulation par mod.
     pub jobs: Mutex<HashMap<i64, Arc<AtomicBool>>>,
+    /// Source Nexus Mods (compte, bibliothèque et installations à part).
+    pub nexus: NexusState,
 }
 
 impl AppState {
-    pub fn new(settings: Settings, settings_path: PathBuf, secrets: Box<dyn SecretStore>) -> Self {
+    pub fn new(
+        settings: Settings,
+        settings_path: PathBuf,
+        secrets: Box<dyn SecretStore>,
+        nexus_secrets: Box<dyn SecretStore>,
+    ) -> Self {
         let library_path = settings_path.with_file_name("installed.json");
+        let nexus = NexusState::new(
+            crate::nexus::client::API_BASE,
+            nexus_secrets,
+            settings_path.with_file_name("installed-nexus.json"),
+        );
         Self {
+            nexus,
             client: ModioClient::new(),
             settings: RwLock::new(settings),
             library: Mutex::new(Library::load(&library_path)),

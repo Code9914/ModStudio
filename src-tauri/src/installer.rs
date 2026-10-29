@@ -24,10 +24,11 @@ pub const STAGING_DIR: &str = ".modstudio-tmp";
 // ---------------------------------------------------------------- Manifeste
 
 /// Façon de ranger les fichiers d'un mod dans le dossier du jeu.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Layout {
     /// Chaque mod extrait dans son propre sous-dossier (par défaut).
+    #[default]
     Subfolder,
     /// Contenu de l'archive extrait directement dans le dossier.
     Flat,
@@ -35,7 +36,7 @@ pub enum Layout {
     Archive,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledMod {
     pub mod_id: i64,
@@ -64,9 +65,31 @@ pub struct InstalledMod {
     /// Mods installés qui ont entraîné l'installation de celui-ci.
     #[serde(default)]
     pub required_by: Vec<i64>,
+    /// Fichiers placés dans d'autres dossiers que celui des mods (par
+    /// exemple le dossier d'installation du jeu pour un mod de code).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<ModPart>,
+    /// Nom du fichier choisi (Nexus Mods publie plusieurs fichiers par mod).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
+    /// Identifiant unique du fichier sur Nexus Mods (suivi des mises à jour).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_uid: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Fichiers d'un mod rangés dans un dossier supplémentaire du jeu.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModPart {
+    /// Clé du dossier dans `GameInstall::extra_folders` (`game`…).
+    pub key: String,
+    #[serde(default)]
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub dirs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameInstall {
     pub game_id: i64,
@@ -77,6 +100,44 @@ pub struct GameInstall {
     pub layout: Layout,
     #[serde(default)]
     pub mods: BTreeMap<i64, InstalledMod>,
+    /// Règles d'installation propres au jeu (`bonelab`) : remplacent `layout`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules: Option<String>,
+    /// Dossiers supplémentaires (`game` : dossier d'installation du jeu).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub extra_folders: BTreeMap<String, PathBuf>,
+    /// Identifiant texte du jeu sur Nexus Mods (`bonelab`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+}
+
+impl GameInstall {
+    /// Dossier correspondant à une clé (`""` : dossier des mods).
+    pub fn folder_for(&self, key: &str) -> Option<&Path> {
+        if key.is_empty() {
+            Some(self.folder.as_path())
+        } else {
+            self.extra_folders.get(key).map(PathBuf::as_path)
+        }
+    }
+
+    /// Tous les fichiers installés par les autres mods, par dossier absolu.
+    pub fn owned_files(&self, except_mod: i64) -> Vec<(PathBuf, String, String)> {
+        let mut out = Vec::new();
+        for m in self.mods.values().filter(|m| m.mod_id != except_mod) {
+            for f in &m.files {
+                out.push((self.folder.clone(), f.clone(), m.name.clone()));
+            }
+            for part in &m.parts {
+                if let Some(dir) = self.extra_folders.get(&part.key) {
+                    for f in &part.files {
+                        out.push((dir.clone(), f.clone(), m.name.clone()));
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -358,7 +419,7 @@ pub fn extraction_limit(compressed: u64, announced_uncompressed: u64) -> u64 {
 }
 
 /// Fichiers (pas les dossiers) sous `root`, en chemins relatifs.
-fn walk_files(root: &Path) -> AppResult<Vec<PathBuf>> {
+pub(crate) fn walk_files(root: &Path) -> AppResult<Vec<PathBuf>> {
     let mut out = Vec::new();
     let mut stack = vec![PathBuf::new()];
     while let Some(rel) = stack.pop() {
@@ -406,12 +467,26 @@ pub struct Placed {
 /// Déplace les fichiers dans le dossier du jeu. Vérifie tous les conflits
 /// avant de toucher au moindre fichier.
 pub fn place(input: PlaceInput<'_>) -> AppResult<Placed> {
-    let old_files: BTreeSet<&str> = input
-        .old
-        .map(|o| o.files.iter().map(String::as_str).collect())
-        .unwrap_or_default();
+    let (root, moves) = layout_moves(&input)?;
+    let batch = Batch {
+        key: String::new(),
+        folder: input.folder.to_path_buf(),
+        moves,
+        old_files: input.old.map(|o| o.files.clone()).unwrap_or_default(),
+        old_dirs: input.old.map(|o| o.dirs.clone()).unwrap_or_default(),
+        others: input.others.clone(),
+    };
+    let placed = place_batches(vec![batch])?.pop().expect("un lot");
+    Ok(Placed {
+        root,
+        files: placed.files,
+        dirs: placed.dirs,
+    })
+}
 
-    // 1. Liste des déplacements (source absolue → destination relative).
+/// Déplacements prévus selon le rangement choisi (source absolue →
+/// destination relative), avec le sous-dossier du mod le cas échéant.
+pub fn layout_moves(input: &PlaceInput<'_>) -> AppResult<(Option<String>, Vec<(PathBuf, String)>)> {
     let mut moves: Vec<(PathBuf, String)> = Vec::new();
     let mut root: Option<String> = None;
     match input.layout {
@@ -453,18 +528,50 @@ pub fn place(input: PlaceInput<'_>) -> AppResult<Placed> {
             }
         }
     }
-    if moves.is_empty() {
+    Ok((root, moves))
+}
+
+/// Fichiers d'un mod à placer dans un même dossier de destination.
+pub struct Batch {
+    /// `""` : dossier des mods ; sinon clé d'un dossier supplémentaire.
+    pub key: String,
+    pub folder: PathBuf,
+    /// Source absolue → destination relative au dossier.
+    pub moves: Vec<(PathBuf, String)>,
+    /// Fichiers et dossiers de la version précédente, dans ce dossier.
+    pub old_files: Vec<String>,
+    pub old_dirs: Vec<String>,
+    /// Fichiers des autres mods dans ce dossier (relatif → nom du mod) : jamais écrasés.
+    pub others: BTreeMap<String, String>,
+}
+
+pub struct PlacedBatch {
+    pub key: String,
+    pub files: Vec<String>,
+    pub dirs: Vec<String>,
+}
+
+/// Déplace les fichiers de plusieurs lots. Tous les conflits sont vérifiés
+/// avant de toucher au moindre fichier.
+pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
+    if batches.iter().all(|b| b.moves.is_empty()) {
         return Err(AppError::BadArchive("l'archive est vide".into()));
     }
 
-    // 2. Conflits : rien n'est écrasé, sauf les fichiers de la version précédente.
+    // 1. Conflits : rien n'est écrasé, sauf les fichiers de la version précédente.
     let mut conflicts = Vec::new();
-    for (_, rel) in &moves {
-        let abs = resolve_rel(input.folder, rel).ok_or_else(|| AppError::BadArchive(format!("chemin invalide : {rel}")))?;
-        if let Some(owner) = input.others.get(rel) {
-            conflicts.push(format!("{rel} (déjà installé par « {owner} »)"));
-        } else if abs.exists() && !old_files.contains(rel.as_str()) {
-            conflicts.push(rel.clone());
+    for b in &batches {
+        let old: BTreeSet<&str> = b.old_files.iter().map(String::as_str).collect();
+        let mut seen = BTreeSet::new();
+        for (_, rel) in &b.moves {
+            let abs = resolve_rel(&b.folder, rel).ok_or_else(|| AppError::BadArchive(format!("chemin invalide : {rel}")))?;
+            if !seen.insert(rel.to_ascii_lowercase()) {
+                conflicts.push(format!("{rel} (présent deux fois dans l'archive)"));
+            } else if let Some(owner) = b.others.get(rel) {
+                conflicts.push(format!("{rel} (déjà installé par « {owner} »)"));
+            } else if abs.exists() && !old.contains(rel.as_str()) {
+                conflicts.push(rel.clone());
+            }
         }
     }
     if !conflicts.is_empty() {
@@ -476,10 +583,10 @@ pub fn place(input: PlaceInput<'_>) -> AppResult<Placed> {
         return Err(AppError::Conflict(text));
     }
 
-    // 3. Retire l'ancienne version.
-    if let Some(old) = input.old {
-        for rel in &old.files {
-            if let Some(abs) = resolve_rel(input.folder, rel) {
+    // 2. Retire l'ancienne version.
+    for b in &batches {
+        for rel in &b.old_files {
+            if let Some(abs) = resolve_rel(&b.folder, rel) {
                 match fs::remove_file(&abs) {
                     Ok(()) => {}
                     Err(e) if e.kind() == io::ErrorKind::NotFound => {}
@@ -489,42 +596,43 @@ pub fn place(input: PlaceInput<'_>) -> AppResult<Placed> {
         }
     }
 
-    // 4. Déplace les nouveaux fichiers, en notant les dossiers créés.
-    let mut created: BTreeSet<String> = BTreeSet::new();
-    let mut files = Vec::with_capacity(moves.len());
-    for (src, rel) in moves {
-        let abs = resolve_rel(input.folder, &rel).expect("vérifié plus haut");
-        let parts: Vec<&str> = rel.split('/').collect();
-        for depth in 1..parts.len() {
-            let dir_rel = parts[..depth].join("/");
-            let dir_abs = resolve_rel(input.folder, &dir_rel).expect("vérifié plus haut");
-            if !dir_abs.exists() {
-                fs::create_dir(&dir_abs).map_err(io_err)?;
-                created.insert(dir_rel);
+    // 3. Déplace les nouveaux fichiers, en notant les dossiers créés.
+    let mut out = Vec::with_capacity(batches.len());
+    for b in batches {
+        let mut created: BTreeSet<String> = BTreeSet::new();
+        let mut files = Vec::with_capacity(b.moves.len());
+        for (src, rel) in b.moves {
+            let abs = resolve_rel(&b.folder, &rel).expect("vérifié plus haut");
+            let parts: Vec<&str> = rel.split('/').collect();
+            for depth in 1..parts.len() {
+                let dir_rel = parts[..depth].join("/");
+                let dir_abs = resolve_rel(&b.folder, &dir_rel).expect("vérifié plus haut");
+                if !dir_abs.exists() {
+                    fs::create_dir(&dir_abs).map_err(io_err)?;
+                    created.insert(dir_rel);
+                }
             }
+            move_file(&src, &abs)?;
+            files.push(rel);
         }
-        move_file(&src, &abs)?;
-        files.push(rel);
-    }
 
-    // 5. Dossiers de l'ancienne version devenus vides.
-    let mut dirs: BTreeSet<String> = created;
-    if let Some(old) = input.old {
-        for d in deepest_first(&old.dirs) {
-            if let Some(abs) = resolve_rel(input.folder, &d) {
+        // 4. Dossiers de l'ancienne version devenus vides.
+        let mut dirs: BTreeSet<String> = created;
+        for d in deepest_first(&b.old_dirs) {
+            if let Some(abs) = resolve_rel(&b.folder, &d) {
                 let _ = fs::remove_dir(&abs); // seulement s'il est vide
                 if abs.exists() {
                     dirs.insert(d);
                 }
             }
         }
+        out.push(PlacedBatch {
+            key: b.key,
+            files,
+            dirs: dirs.into_iter().collect(),
+        });
     }
-
-    Ok(Placed {
-        root,
-        files,
-        dirs: dirs.into_iter().collect(),
-    })
+    Ok(out)
 }
 
 fn move_file(src: &Path, dest: &Path) -> AppResult<()> {
@@ -554,8 +662,13 @@ pub struct Removal {
 }
 
 pub fn uninstall(folder: &Path, record: &InstalledMod) -> Removal {
+    uninstall_files(folder, &record.files, &record.dirs)
+}
+
+/// Retire les fichiers puis les dossiers (s'ils sont vides) d'un mod.
+pub fn uninstall_files(folder: &Path, files: &[String], dirs: &[String]) -> Removal {
     let mut remaining = Vec::new();
-    for rel in &record.files {
+    for rel in files {
         let Some(abs) = resolve_rel(folder, rel) else { continue };
         match fs::remove_file(&abs) {
             Ok(()) => {}
@@ -564,7 +677,7 @@ pub fn uninstall(folder: &Path, record: &InstalledMod) -> Removal {
         }
     }
     let mut left_folder = None;
-    for d in deepest_first(&record.dirs) {
+    for d in deepest_first(dirs) {
         if let Some(abs) = resolve_rel(folder, &d) {
             let _ = fs::remove_dir(&abs);
             if abs.exists() && left_folder.is_none() && remaining.is_empty() {
@@ -573,6 +686,53 @@ pub fn uninstall(folder: &Path, record: &InstalledMod) -> Removal {
         }
     }
     Removal { remaining, left_folder }
+}
+
+/// Fichiers restants d'un mod après une désinstallation qui n'a pas pu tout retirer.
+pub struct FullRemoval {
+    pub remaining: Vec<String>,
+    pub remaining_parts: Vec<ModPart>,
+    pub left_folder: Option<String>,
+}
+
+impl FullRemoval {
+    pub fn complete(&self) -> bool {
+        self.remaining.is_empty() && self.remaining_parts.iter().all(|p| p.files.is_empty())
+    }
+
+    pub fn first_remaining(&self) -> Option<&String> {
+        self.remaining.first().or_else(|| self.remaining_parts.iter().find_map(|p| p.files.first()))
+    }
+
+    pub fn remaining_count(&self) -> usize {
+        self.remaining.len() + self.remaining_parts.iter().map(|p| p.files.len()).sum::<usize>()
+    }
+}
+
+/// Désinstalle un mod de tous les dossiers où il a placé des fichiers.
+pub fn uninstall_all(game: &GameInstall, record: &InstalledMod) -> FullRemoval {
+    let main = uninstall(&game.folder, record);
+    let mut left_folder = main.left_folder;
+    let mut remaining_parts = Vec::new();
+    for part in &record.parts {
+        let Some(folder) = game.extra_folders.get(&part.key) else { continue };
+        let r = uninstall_files(folder, &part.files, &part.dirs);
+        if left_folder.is_none() {
+            left_folder = r.left_folder;
+        }
+        if !r.remaining.is_empty() {
+            remaining_parts.push(ModPart {
+                key: part.key.clone(),
+                files: r.remaining,
+                dirs: part.dirs.clone(),
+            });
+        }
+    }
+    FullRemoval {
+        remaining: main.remaining,
+        remaining_parts,
+        left_folder,
+    }
 }
 
 /// Vérifie qu'un dossier choisi par l'utilisateur peut recevoir des mods.
@@ -707,6 +867,7 @@ pub mod tests {
             dirs: placed.dirs.clone(),
             auto: false,
             required_by: Vec::new(),
+            ..Default::default()
         }
     }
 
@@ -881,6 +1042,7 @@ pub mod tests {
                 folder: dir.clone(),
                 layout: Layout::Flat,
                 mods: BTreeMap::new(),
+                ..Default::default()
             },
         );
         lib.save(&path).unwrap();

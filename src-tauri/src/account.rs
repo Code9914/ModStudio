@@ -474,7 +474,7 @@ mod tests {
             api_path: base.to_string(),
             hide_mature: false,
         };
-        AppState::new(settings, std::env::temp_dir().join("modstudio-test.json"), Box::new(Shared(store)))
+        AppState::new(settings, std::env::temp_dir().join("modstudio-test.json"), Box::new(Shared(store)), Box::new(crate::auth::MemoryStore::default()))
     }
 
     const ME: &str = r#"{"id":7,"username":"Code9914","avatar":{"thumb_50x50":"https://img/a.png"}}"#;

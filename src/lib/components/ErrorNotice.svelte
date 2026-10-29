@@ -2,6 +2,7 @@
   import { onDestroy } from "svelte";
   import type { AppError } from "$lib/api";
   import { nav } from "$lib/nav.svelte";
+  import { nexusStore } from "$lib/nexus.svelte";
   import Icon from "./Icon.svelte";
 
   let { error, onretry }: { error: AppError; onretry?: () => void } = $props();
@@ -28,10 +29,12 @@
     error.kind === "missing_api_key" || error.kind === "unauthorized" || error.kind === "invalid_api_path",
   );
   const needsLogin = $derived(error.kind === "not_logged_in" || error.kind === "session_expired");
+  const needsNexusKey = $derived(error.kind === "nexus_key_missing" || error.kind === "nexus_key_invalid");
 
   // Une session expirée change l'état de connexion affiché partout.
   $effect(() => {
     if (error.kind === "session_expired") nav.refreshAuth();
+    if (error.kind === "nexus_key_invalid") nexusStore.refreshAuth();
   });
 </script>
 
@@ -49,6 +52,9 @@
     {/if}
     {#if needsLogin}
       <button class="btn btn-primary" onclick={() => nav.openAccount(nav.view)}>Se connecter</button>
+    {/if}
+    {#if needsNexusKey && nav.view.name !== "nexusAccount"}
+      <button class="btn btn-primary" onclick={() => nav.openNexusAccount(nav.view)}>Ma clé Nexus</button>
     {/if}
     {#if onretry}
       <button class="btn" onclick={onretry} disabled={remaining > 0}>Réessayer</button>

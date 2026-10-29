@@ -1,9 +1,11 @@
-# ModStudio — client de bureau pour mod.io (v0.3)
+# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.4)
 
-ModStudio parcourt les mods de [mod.io](https://mod.io) depuis une appli de bureau
+ModStudio parcourt et installe les mods de [mod.io](https://mod.io) et de
+[Nexus Mods](https://www.nexusmods.com) depuis une appli de bureau
 (Windows et Linux), construite avec Tauri 2, Rust et Svelte 5.
 
-> Client **non officiel** : il n'est ni affilié à mod.io ni soutenu par mod.io.
+> Client **non officiel** : il n'est ni affilié à mod.io ou à Nexus Mods, ni
+> soutenu par eux.
 
 ## Parcourir (v0.1)
 
@@ -141,6 +143,37 @@ Sécurité de l'installation :
   retire exactement ces fichiers, et laisse en place un dossier où tu as ajouté
   tes propres fichiers.
 
+## Nexus Mods (v0.4)
+
+Deuxième source de mods, dans la section « Nexus Mods » du menu :
+
+- Parcourir les jeux (plus de 5 600), chercher et trier les mods d'un jeu,
+  fiche complète (description BBCode, fichiers par catégorie, mods nécessaires).
+  Aucun compte n'est nécessaire pour parcourir.
+- **Clé API personnelle** (page « Compte Nexus ») pour installer : elle se crée
+  sur <https://www.nexusmods.com/settings/api-keys>. Elle est vérifiée puis
+  rangée dans le trousseau du système, et n'est envoyée qu'à `api.nexusmods.com`.
+- **Compte Premium** : téléchargement direct depuis ModStudio.
+- **Compte gratuit** : Nexus Mods impose de passer par son site. ModStudio ouvre
+  la page du fichier dans une fenêtre (sans aucun accès aux commandes de
+  l'appli) ; quand tu cliques sur « Slow download », le lien `nxm://` produit
+  par la page est capté par ModStudio, qui installe le fichier. Aucun autre
+  gestionnaire de mods n'est lancé et le protocole `nxm://` n'est pas
+  réquisitionné sur le système.
+- Archives **zip** et **7z** (RAR : pas encore).
+- **Bonelab** : rangement automatique. Le contenu (« pallets » : avatars,
+  cartes, armes) va dans `AppData\LocalLow\Stress Level Zero\BONELAB\Mods`,
+  les mods de code MelonLoader (`.dll`) dans le dossier du jeu (`Mods`,
+  `Plugins`, `UserLibs`…), retrouvé dans les bibliothèques Steam. Les versions
+  Quest présentes dans les archives sont ignorées ; les sauvegardes et
+  MelonLoader lui-même sont refusés avec une explication.
+- Autres jeux : dossier et rangement au choix, comme pour mod.io.
+- Les mods installés sont suivis dans `installed-nexus.json` et apparaissent
+  dans « Installés ». Un fichier remplacé sur Nexus (passé en « ancienne
+  version ») est signalé comme mise à jour.
+- Les fichiers des mods installés depuis mod.io ne sont jamais écrasés, et
+  inversement.
+
 ## Obtenir ta clé API
 
 1. Ouvre <https://mod.io/me/access> et connecte-toi.
@@ -160,6 +193,14 @@ src-tauri/src/
   installer.rs    téléchargement, MD5, extraction, placement, désinstallation
   install_commands.rs  commandes d'installation (dossiers, progression…)
   modio_sdk.rs    détection des jeux qui gèrent leurs mods via mod.io
+  archive.rs      extraction zip / 7z protégée
+  nexus/          source Nexus Mods :
+    client.rs     requêtes GraphQL v2 et REST v1, en-têtes Application-Name
+    browse.rs     jeux, mods, fiches, fichiers
+    account.rs    clé API (vérification, trousseau)
+    window.rs     fenêtre de téléchargement et capture des liens nxm://
+    install.rs    installation, désinstallation, mises à jour
+    rules.rs      règles de Bonelab (pallets, MelonLoader, versions Quest)
   auth.rs         jeton de connexion et trousseau du système
   settings.rs     réglages (clé, chemin d'API), vérification des domaines
   error.rs        erreurs envoyées à l'interface ({ kind, message, retryAfter })
@@ -199,6 +240,13 @@ téléchargement annulé, fichier signalé par l'antivirus, « zip slip »,
 fichiers, désinstallation qui garde les fichiers ajoutés par l'utilisateur, et
 découpage du jeton pour la limite du Gestionnaire d'identification Windows.
 
+Pour Nexus Mods : lecture des réponses GraphQL et REST, clé vérifiée et rangée
+(ou refusée), liens `nxm://` (et refus des liens malformés), installation
+Premium et via le site contre un faux Nexus, lien expiré, archives 7z (taille
+démesurée, annulation), règles de Bonelab (pallets, versions Quest, mods de
+code, dossiers d'emballage, sauvegardes, MelonLoader), et refus d'écraser les
+fichiers d'un mod mod.io.
+
 ## Sécurité
 
 - La clé API ne quitte l'appli que vers un domaine mod.io
@@ -220,6 +268,8 @@ découpage du jeton pour la limite du Gestionnaire d'identification Windows.
 
 ## Idées pour la suite
 
+- Archives RAR pour Nexus Mods.
+- Suivre ses mods Nexus (« Track ») et les recommander depuis l'appli.
 - Noter les mods (pouce haut / bas).
 - Profils de mods (activer ou désactiver un ensemble de mods d'un coup).
 - Build Linux (.AppImage, .deb) dans GitHub Actions.

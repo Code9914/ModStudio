@@ -8,7 +8,7 @@ use serde::de::{DeserializeOwned, Deserializer};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+pub(crate) fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
     T: DeserializeOwned + Default,
@@ -35,7 +35,7 @@ pub struct Page<T> {
 
 /// Variante de `lenient` pour les listes : les éléments illisibles sont
 /// ignorés un par un plutôt que de vider toute la liste.
-fn lenient_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+pub(crate) fn lenient_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
 where
     D: Deserializer<'de>,
     T: DeserializeOwned,

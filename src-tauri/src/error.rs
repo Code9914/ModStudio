@@ -87,7 +87,7 @@ pub enum AppError {
     #[error("Archive illisible : {0}")]
     BadArchive(String),
 
-    #[error("mod.io refuse le téléchargement de ce fichier : {0}")]
+    #[error("Le téléchargement de ce fichier a été refusé : {0}")]
     DownloadRefused(String),
 
     #[error("Ce jeu demande d'être connecté à mod.io pour télécharger ses mods.")]
@@ -95,6 +95,47 @@ pub enum AppError {
 
     #[error("L'éditeur de ce jeu n'autorise pas les applications tierces comme ModStudio à accéder à ses mods. Tu peux les parcourir et t'y abonner sur mod.io.")]
     GameClosed,
+
+    #[error("Format d'archive pas encore pris en charge ({0}). Installe ce fichier à la main en suivant la page du mod.")]
+    UnsupportedArchive(String),
+
+    #[error("{0}")]
+    UnknownLayout(String),
+
+    #[error("{0}")]
+    WrongPlatform(String),
+
+    #[error("Ce mod s'installe dans le dossier du jeu. Indique où {0} est installé.")]
+    NeedGameDir(String),
+
+    // ------------------------------------------------------------ Nexus Mods
+
+    #[error("Ajoute ta clé API Nexus Mods (dans « Compte Nexus ») pour télécharger des mods.")]
+    NexusKeyMissing,
+
+    #[error("Nexus Mods a refusé ta clé API. Vérifie que tu l'as copiée en entier, ou crée-en une nouvelle.")]
+    NexusKeyInvalid,
+
+    #[error("Sans compte Premium, Nexus Mods demande de passer par son site pour chaque téléchargement.")]
+    NexusPremiumRequired,
+
+    #[error("Le lien de téléchargement de Nexus Mods a expiré ou ne correspond pas à ton compte. Recommence depuis la page du fichier.")]
+    NexusLinkExpired,
+
+    #[error("Élément introuvable sur Nexus Mods.")]
+    NexusNotFound,
+
+    #[error("Trop de requêtes envoyées à Nexus Mods. Nouvel essai possible dans {0} s.")]
+    NexusRateLimited(u64),
+
+    #[error("Nexus Mods a renvoyé une erreur {status} : {message}")]
+    NexusApi { status: u16, message: String },
+
+    #[error("Impossible de joindre Nexus Mods. Vérifie ta connexion internet. ({0})")]
+    NexusNetwork(String),
+
+    #[error("Réponse inattendue de Nexus Mods : {0}")]
+    NexusDecode(String),
 }
 
 impl AppError {
@@ -128,6 +169,19 @@ impl AppError {
             AppError::DownloadRefused(_) => "download_refused",
             AppError::LoginRequiredForDownload => "login_required_for_download",
             AppError::GameClosed => "game_closed",
+            AppError::UnsupportedArchive(_) => "unsupported_archive",
+            AppError::UnknownLayout(_) => "unknown_layout",
+            AppError::WrongPlatform(_) => "wrong_platform",
+            AppError::NeedGameDir(_) => "need_game_dir",
+            AppError::NexusKeyMissing => "nexus_key_missing",
+            AppError::NexusKeyInvalid => "nexus_key_invalid",
+            AppError::NexusPremiumRequired => "nexus_premium_required",
+            AppError::NexusLinkExpired => "nexus_link_expired",
+            AppError::NexusNotFound => "nexus_not_found",
+            AppError::NexusRateLimited(_) => "rate_limited",
+            AppError::NexusApi { .. } => "nexus_api",
+            AppError::NexusNetwork(_) => "network",
+            AppError::NexusDecode(_) => "decode",
         }
     }
 
@@ -147,7 +201,9 @@ impl AppError {
             AppError::Forbidden { .. } => Some(403),
             AppError::NotFound => Some(404),
             AppError::RateLimited(_) => Some(429),
-            AppError::Api { status, .. } => Some(*status),
+            AppError::Api { status, .. } | AppError::NexusApi { status, .. } => Some(*status),
+            AppError::NexusNotFound => Some(404),
+            AppError::NexusRateLimited(_) => Some(429),
             _ => None,
         }
     }
@@ -159,7 +215,7 @@ impl Serialize for AppError {
         s.serialize_field("kind", self.kind())?;
         s.serialize_field("message", &self.to_string())?;
         let retry_after = match self {
-            AppError::RateLimited(secs) => Some(*secs),
+            AppError::RateLimited(secs) | AppError::NexusRateLimited(secs) => Some(*secs),
             _ => None,
         };
         s.serialize_field("retryAfter", &retry_after)?;

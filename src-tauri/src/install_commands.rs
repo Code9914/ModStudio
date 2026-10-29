@@ -118,6 +118,7 @@ pub fn set_folder(
         folder: folder.clone(),
         layout,
         mods: BTreeMap::new(),
+        ..Default::default()
     });
     if entry.folder != folder && !entry.mods.is_empty() {
         let n = entry.mods.len();
@@ -305,6 +306,7 @@ pub async fn install(
         dirs: placed.dirs,
         auto,
         required_by,
+        ..Default::default()
     };
     let mut lib = state.library.lock().expect("library");
     if let Some(game) = lib.games.get_mut(&game_id) {
@@ -511,7 +513,7 @@ mod tests {
             api_path: base.to_string(),
             hide_mature: false,
         };
-        AppState::new(settings, config_dir.join("settings.json"), Box::new(MemoryStore::default()))
+        AppState::new(settings, config_dir.join("settings.json"), Box::new(MemoryStore::default()), Box::new(MemoryStore::default()))
     }
 
     fn zip_response(body: &[u8]) -> String {
@@ -635,6 +637,7 @@ mod tests {
                 dirs: vec!["m".into()],
                 auto: false,
                 required_by: Vec::new(),
+                ..Default::default()
             },
         );
         let r = remove(&s, 3, 5).unwrap();
@@ -669,6 +672,7 @@ mod tests {
             dirs: Vec::new(),
             auto,
             required_by,
+            ..Default::default()
         }
     }
 

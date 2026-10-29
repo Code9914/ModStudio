@@ -97,19 +97,30 @@ impl RawBackend for KeyringBackend {
 /// l'entrée principale indique alors le nombre de morceaux.
 pub struct ChunkedStore<B: RawBackend> {
     backend: B,
+    /// Nom de l'entrée principale (`mod.io`, `nexusmods`…).
+    account: String,
 }
 
 const CHUNK_SIZE: usize = 2000;
 const MAX_CHUNKS: usize = 16;
 const CHUNK_HEADER: &str = "modstudio-chunks:";
 
-fn chunk_account(index: usize) -> String {
-    format!("{KEYRING_ACCOUNT}.part{}", index + 1)
-}
-
 impl<B: RawBackend> ChunkedStore<B> {
+    /// Jeton de connexion mod.io.
     pub fn new(backend: B) -> Self {
-        Self { backend }
+        Self::for_account(backend, KEYRING_ACCOUNT)
+    }
+
+    /// Autre secret, rangé sous son propre nom d'entrée.
+    pub fn for_account(backend: B, account: &str) -> Self {
+        Self {
+            backend,
+            account: account.to_string(),
+        }
+    }
+
+    fn chunk_account(&self, index: usize) -> String {
+        format!("{}.part{}", self.account, index + 1)
     }
 
     /// Nombre de morceaux annoncé par l'entrée principale, le cas échéant.
@@ -125,14 +136,14 @@ impl<B: RawBackend> ChunkedStore<B> {
 
 impl<B: RawBackend> SecretStore for ChunkedStore<B> {
     fn load(&self) -> Result<Option<String>, String> {
-        let Some(head) = self.backend.get(KEYRING_ACCOUNT)? else {
+        let Some(head) = self.backend.get(&self.account)? else {
             return Ok(None);
         };
         let bytes = match Self::chunk_count(&head) {
             Some(n) => {
                 let mut out = Vec::new();
                 for i in 0..n {
-                    match self.backend.get(&chunk_account(i))? {
+                    match self.backend.get(&self.chunk_account(i))? {
                         Some(part) => out.extend(part),
                         // Morceau manquant : la valeur est inutilisable.
                         None => return Ok(None),
@@ -151,30 +162,30 @@ impl<B: RawBackend> SecretStore for ChunkedStore<B> {
         self.clear()?;
         let bytes = value.as_bytes();
         if bytes.len() <= CHUNK_SIZE {
-            return self.backend.set(KEYRING_ACCOUNT, bytes);
+            return self.backend.set(&self.account, bytes);
         }
         let parts: Vec<&[u8]> = bytes.chunks(CHUNK_SIZE).collect();
         if parts.len() > MAX_CHUNKS {
             return Err("jeton trop long pour le trousseau".into());
         }
         for (i, part) in parts.iter().enumerate() {
-            self.backend.set(&chunk_account(i), part)?;
+            self.backend.set(&self.chunk_account(i), part)?;
         }
         // L'entrée principale est écrite en dernier : tant qu'elle n'existe
         // pas, aucune valeur à moitié rangée ne peut être relue.
         self.backend
-            .set(KEYRING_ACCOUNT, format!("{CHUNK_HEADER}{}", parts.len()).as_bytes())
+            .set(&self.account, format!("{CHUNK_HEADER}{}", parts.len()).as_bytes())
     }
 
     fn clear(&self) -> Result<(), String> {
-        if let Some(head) = self.backend.get(KEYRING_ACCOUNT)? {
+        if let Some(head) = self.backend.get(&self.account)? {
             if let Some(n) = Self::chunk_count(&head) {
                 for i in 0..n {
-                    self.backend.delete(&chunk_account(i))?;
+                    self.backend.delete(&self.chunk_account(i))?;
                 }
             }
         }
-        self.backend.delete(KEYRING_ACCOUNT)
+        self.backend.delete(&self.account)
     }
 }
 

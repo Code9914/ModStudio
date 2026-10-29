@@ -18,7 +18,7 @@ export interface Progress {
   ratio: number | null;
 }
 
-function describe(e: InstallEvent): Progress {
+export function describe(e: InstallEvent): Progress {
   switch (e.phase) {
     case "preparing":
       return { label: "Préparation…", ratio: null };

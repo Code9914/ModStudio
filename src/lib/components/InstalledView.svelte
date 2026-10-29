@@ -1,7 +1,9 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
-  import { api, asAppError, type AppError, type GameInstall, type InstalledMod } from "$lib/api";
+  import { api, asAppError, nexus, type AppError, type GameInstall, type InstalledMod } from "$lib/api";
+  import { nexusStore } from "$lib/nexus.svelte";
+  import NexusFolderSetup from "./NexusFolderSetup.svelte";
   import { ago, bytes, exact } from "$lib/format";
   import { installs, layoutLabels } from "$lib/installs.svelte";
   import { nav } from "$lib/nav.svelte";
@@ -24,8 +26,11 @@
   async function refresh() {
     error = null;
     try {
-      await installs.load();
-      await Promise.all(Object.keys(installs.games).map((id) => installs.checkUpdates(Number(id))));
+      await Promise.all([installs.load(), nexusStore.load()]);
+      await Promise.all([
+        ...Object.keys(installs.games).map((id) => installs.checkUpdates(Number(id))),
+        ...Object.keys(nexusStore.games).map((id) => nexusStore.checkUpdates(Number(id))),
+      ]);
     } catch (e) {
       error = asAppError(e);
     }
@@ -51,8 +56,15 @@
     return Object.values(g.mods).filter((m) => installs.outdated(g.gameId, m.modId));
   }
 
-  const total = $derived(games.reduce((n, g) => n + Object.keys(g.mods).length, 0));
-  const withMods = $derived(games.filter((g) => Object.keys(g.mods).length > 0).length);
+  const nexusGames = $derived(
+    Object.values(nexusStore.games).sort((a, b) => a.gameName.localeCompare(b.gameName, "fr")),
+  );
+
+  const total = $derived(
+    [...games, ...nexusGames].reduce((n, g) => n + Object.keys(g.mods).length, 0),
+  );
+  const withMods = $derived([...games, ...nexusGames].filter((g) => Object.keys(g.mods).length > 0).length);
+  const loaded = $derived(installs.loaded && nexusStore.loaded);
 
   async function update(g: GameInstall, m: InstalledMod) {
     rowErrors.delete(m.modId);
@@ -132,13 +144,62 @@
   function reveal(gameId: number, modId: number | null) {
     api.revealInstall(gameId, modId).catch((e) => (error = asAppError(e)));
   }
+
+  // ------------------------------------------------------------ Nexus Mods
+
+  /** Les identifiants Nexus sont propres à chaque jeu : clés `jeu:mod`. */
+  const nxKey = (g: GameInstall, m: InstalledMod) => nexusStore.key(g.gameId, m.modId);
+  let nexusEditing = $state<number | null>(null);
+  const nxErrors = new SvelteMap<string, string>();
+  const nxConfirming = new SvelteSet<string>();
+  const nxRemoving = new SvelteSet<string>();
+  const nxNotes = new SvelteMap<number, string>();
+
+  function nexusGameOf(g: GameInstall) {
+    return { id: g.gameId, name: g.gameName, domainName: g.domain ?? "", modCount: 0, downloadCount: 0, genre: null };
+  }
+
+  function nexusOpen(g: GameInstall, m: InstalledMod) {
+    if (!g.domain) return;
+    nav.openNexusModFromInstalled(nexusGameOf(g), m.modId);
+  }
+
+  async function nexusUninstall(g: GameInstall, m: InstalledMod) {
+    const k = nxKey(g, m);
+    if (!nxConfirming.has(k)) {
+      nxConfirming.add(k);
+      setTimeout(() => nxConfirming.delete(k), 4000);
+      return;
+    }
+    nxConfirming.delete(k);
+    nxRemoving.add(k);
+    nxErrors.delete(k);
+    try {
+      const left = await nexusStore.uninstall(g.gameId, m.modId);
+      if (left) {
+        nxNotes.set(g.gameId, `« ${m.name} » désinstallé. Son dossier contient des fichiers ajoutés depuis, il a été laissé en place.`);
+      }
+    } catch (e) {
+      nxErrors.set(k, asAppError(e).message);
+    } finally {
+      nxRemoving.delete(k);
+    }
+  }
+
+  function nexusReveal(gameId: number, modId: number | null) {
+    nexus.reveal(gameId, modId).catch((e) => (error = asAppError(e)));
+  }
+
+  function nexusMods(g: GameInstall): InstalledMod[] {
+    return mods(g);
+  }
 </script>
 
 <div class="view">
   <header class="head">
     <div>
       <h1>Installés</h1>
-      {#if installs.loaded}
+      {#if loaded}
         <p class="muted">
           {exact(total)}
           {total > 1 ? "mods installés" : "mod installé"}
@@ -160,13 +221,18 @@
 
   {#if error}
     <ErrorNotice {error} onretry={refresh} />
-  {:else if installs.loaded && total === 0 && games.length === 0}
+  {:else if loaded && total === 0 && games.length === 0 && nexusGames.length === 0}
     <div class="empty">
       <p>
         Aucun mod installé avec ModStudio pour l'instant. Ouvre la fiche d'un mod et clique sur « Installer » : tu
         choisiras alors le dossier des mods du jeu.
       </p>
-      <button class="btn btn-primary" onclick={() => nav.openGames()}>Parcourir les jeux</button>
+      <div class="empty-actions">
+        {#if nav.settings?.hasApiKey}
+          <button class="btn btn-primary" onclick={() => nav.openGames()}>Parcourir mod.io</button>
+        {/if}
+        <button class="btn" onclick={() => nav.openNexusGames()}>Parcourir Nexus Mods</button>
+      </div>
     </div>
   {/if}
 
@@ -177,6 +243,7 @@
       <div class="group-head">
         {#if g.icon}<img class="game-icon" src={g.icon} alt="" width="28" height="28" />{/if}
         <h2>{g.gameName}</h2>
+        <span class="chip">mod.io</span>
         <span class="muted count">{Object.keys(g.mods).length}</span>
         <div class="group-actions">
           {#if outdated.length > 0}
@@ -277,6 +344,92 @@
                   disabled={removing.has(m.modId)}
                 >
                   {removing.has(m.modId) ? "…" : confirming.has(m.modId) ? "Confirmer" : "Désinstaller"}
+                </button>
+              {/if}
+            </div>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/each}
+
+  {#each nexusGames as g (g.gameId)}
+    {@const list = nexusMods(g)}
+    <section class="group">
+      <div class="group-head">
+        {#if g.icon}<img class="game-icon" src={g.icon} alt="" width="28" height="28" />{/if}
+        <h2>{g.gameName}</h2>
+        <span class="chip">Nexus Mods</span>
+        <span class="muted count">{Object.keys(g.mods).length}</span>
+        <div class="group-actions">
+          <button class="btn btn-ghost" onclick={() => nexusReveal(g.gameId, null)}>Ouvrir le dossier</button>
+          <button class="btn btn-ghost" onclick={() => (nexusEditing = nexusEditing === g.gameId ? null : g.gameId)}>
+            Réglages du jeu
+          </button>
+        </div>
+      </div>
+      <p class="folder muted">
+        {g.folder}, {g.rules === "bonelab" ? "rangement automatique Bonelab" : layoutLabels[g.layout].title.toLowerCase()}
+        {#if g.extraFolders?.game}<br />Mods de code : {g.extraFolders.game}{/if}
+      </p>
+
+      {#if nexusEditing === g.gameId && g.domain}
+        <div class="editor">
+          <NexusFolderSetup
+            gameId={g.gameId}
+            domain={g.domain}
+            gameName={g.gameName}
+            onsaved={() => (nexusEditing = null)}
+            oncancel={() => (nexusEditing = null)}
+          />
+        </div>
+      {/if}
+
+      {#if nxNotes.get(g.gameId)}<p class="note">{nxNotes.get(g.gameId)}</p>{/if}
+
+      {#if Object.keys(g.mods).length === 0}
+        <p class="muted small">Aucun mod installé pour ce jeu.</p>
+      {:else if list.length === 0}
+        <p class="muted small">Aucun mod installé ne correspond à « {query.trim()} ».</p>
+      {/if}
+
+      <ul class="rows">
+        {#each list as m (m.modId)}
+          {@const k = nxKey(g, m)}
+          {@const progress = nexusStore.progress[k]}
+          {@const isOutdated = nexusStore.outdated(g.gameId, m.modId)}
+          <li class="row">
+            <button class="row-main" onclick={() => nexusOpen(g, m)}>
+              <span class="row-thumb"><Thumb src={m.logo} label={m.name} /></span>
+              <span class="row-text">
+                <span class="row-name">{m.name}</span>
+                <span class="row-meta">
+                  {#if m.fileName}<span>{m.fileName}</span>{/if}
+                  <span>{m.version ? `version ${m.version}` : "version sans numéro"}</span>
+                  <span>{bytes(m.size)}</span>
+                  <span>installé {ago(m.installedAt)}</span>
+                  {#if m.parts?.length}<span>mod de code</span>{/if}
+                </span>
+                {#if nxErrors.get(k)}<span class="row-error">{nxErrors.get(k)}</span>{/if}
+              </span>
+            </button>
+            <div class="row-action">
+              {#if progress}
+                <div class="row-progress"><ProgressBar {progress} oncancel={() => nexusStore.cancel(m.modId)} /></div>
+              {:else}
+                {#if isOutdated}
+                  <span class="chip chip-accent">Nouvelle version</span>
+                  <button class="btn btn-primary" onclick={() => nexusOpen(g, m)}>Choisir</button>
+                {/if}
+                <button class="btn btn-ghost" onclick={() => nexusReveal(g.gameId, m.modId)}>Ouvrir</button>
+                <button
+                  class="btn"
+                  class:btn-ghost={!nxConfirming.has(k)}
+                  class:danger={nxConfirming.has(k)}
+                  onclick={() => nexusUninstall(g, m)}
+                  disabled={nxRemoving.has(k)}
+                >
+                  {nxRemoving.has(k) ? "…" : nxConfirming.has(k) ? "Confirmer" : "Désinstaller"}
                 </button>
               {/if}
             </div>
@@ -512,5 +665,11 @@
     gap: 1rem;
     padding: 1rem 0;
     max-width: 40rem;
+  }
+
+  .empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 </style>
