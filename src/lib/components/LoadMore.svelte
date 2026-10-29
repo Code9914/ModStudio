@@ -1,0 +1,22 @@
+<script lang="ts" generics="T extends { id: number }">
+  import { inview, type PagedList } from "$lib/paged.svelte";
+  import { exact } from "$lib/format";
+  import ErrorNotice from "./ErrorNotice.svelte";
+
+  let { list, noun }: { list: PagedList<T>; noun: string } = $props();
+</script>
+
+{#if list.error}
+  <div class="load-more">
+    <ErrorNotice error={list.error} onretry={() => list.retry()} />
+  </div>
+{:else if list.loaded && list.items.length > 0}
+  <div class="load-more" use:inview={() => list.more()}>
+    <p class="muted">{exact(list.items.length)} {noun} affichés sur {exact(list.total)}</p>
+    {#if list.hasMore}
+      <button class="btn" onclick={() => list.more()} disabled={list.loading}>
+        {list.loading ? "Chargement…" : "Afficher plus"}
+      </button>
+    {/if}
+  </div>
+{/if}

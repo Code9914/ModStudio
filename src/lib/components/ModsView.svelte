@@ -1,0 +1,421 @@
+<script lang="ts">
+  import { untrack } from "svelte";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { api, type Game, type Mod, type ModSort, type TagOption } from "$lib/api";
+  import { count, exact } from "$lib/format";
+  import { nav } from "$lib/nav.svelte";
+  import { PagedList } from "$lib/paged.svelte";
+  import Icon from "./Icon.svelte";
+  import LoadMore from "./LoadMore.svelte";
+  import Thumb from "./Thumb.svelte";
+
+  let { game }: { game: Game } = $props();
+
+  let query = $state("");
+  let search = $state("");
+  let sort = $state<ModSort>("-downloads_today");
+  /** Tags choisis, par groupe. */
+  let picked = $state<Record<string, string[]>>({});
+  /** Groupes de tags dépliés en entier. */
+  let expanded = $state<Record<string, boolean>>({});
+
+  const tags = $derived(Object.values(picked).flat());
+
+  const list = new PagedList<Mod>(
+    (offset, limit) => api.listMods({ gameId: game.id, query: search, tags, sort, offset, limit }),
+    30,
+  );
+
+  $effect(() => {
+    const q = query.trim();
+    const t = setTimeout(() => (search = q), 350);
+    return () => clearTimeout(t);
+  });
+
+  $effect(() => {
+    search;
+    sort;
+    tags;
+    untrack(() => list.reload());
+  });
+
+  const sorts: { value: ModSort; label: string }[] = [
+    { value: "-downloads_today", label: "Tendances du jour" },
+    { value: "-downloads_total", label: "Plus téléchargés" },
+    { value: "-subscribers_total", label: "Plus d'abonnés" },
+    { value: "-ratings_weighted_aggregate", label: "Mieux notés" },
+    { value: "-date_live", label: "Nouveautés" },
+    { value: "-date_updated", label: "Récemment mis à jour" },
+    { value: "name", label: "Nom (A à Z)" },
+  ];
+
+  const groups = $derived(game.tag_options.filter((o) => !o.hidden && o.tags.length > 0 && o.name));
+  const banner = $derived(game.header?.original ?? game.logo?.thumb_1280x720 ?? game.logo?.original ?? null);
+  const unit = $derived(game.ugc_name?.toLowerCase() || "mods");
+
+  const COLLAPSED = 10;
+
+  function groupName(o: TagOption) {
+    return o.name_localized || o.name || "";
+  }
+
+  function toggle(o: TagOption, tag: string) {
+    const key = o.name ?? "";
+    const current = picked[key] ?? [];
+    const single = o.type === "dropdown";
+    const next = current.includes(tag) ? current.filter((t) => t !== tag) : single ? [tag] : [...current, tag];
+    picked = { ...picked, [key]: next };
+  }
+
+  function clearTags() {
+    picked = {};
+  }
+
+  function rating(m: Mod) {
+    const s = m.stats;
+    return s && s.ratings_total > 0 ? `${s.ratings_percentage_positive} %` : null;
+  }
+
+  function author(m: Mod) {
+    return m.submitted_by?.username ?? m.submitted_by?.display_name_portal ?? null;
+  }
+</script>
+
+<div class="view">
+  <section class="banner" class:plain={!banner}>
+    {#if banner}
+      <img class="banner-img" src={banner} alt="" />
+    {/if}
+    <div class="banner-text">
+      <button class="btn btn-ghost crumb" onclick={() => nav.openGames()}>
+        <Icon name="back" />Tous les jeux
+      </button>
+      <h1>{game.name}</h1>
+      <div class="banner-stats">
+        <span><strong>{exact(game.stats?.mods_count_total)}</strong> {unit}</span>
+        <span><strong>{count(game.stats?.mods_downloads_total)}</strong> téléchargements</span>
+        <span><strong>{count(game.stats?.mods_subscribers_total)}</strong> abonnements</span>
+        {#if game.profile_url}
+          <button class="btn btn-ghost" onclick={() => openUrl(game.profile_url!)}>
+            Page du jeu sur mod.io <Icon name="external" size={14} />
+          </button>
+        {/if}
+      </div>
+    </div>
+  </section>
+
+  <div class="body">
+    <aside class="filters" aria-label="Filtres">
+      <label class="filter-block">
+        <span class="filter-title">Trier par</span>
+        <select class="field" bind:value={sort}>
+          {#each sorts as s (s.value)}
+            <option value={s.value}>{s.label}</option>
+          {/each}
+        </select>
+      </label>
+
+      {#each groups as o (o.name)}
+        {@const all = o.tags}
+        {@const shown = expanded[o.name ?? ""] ? all : all.slice(0, COLLAPSED)}
+        <fieldset class="filter-block">
+          <legend class="filter-title">{groupName(o)}</legend>
+          <div class="chips">
+            {#each shown as tag (tag)}
+              <button
+                class="chip"
+                aria-pressed={(picked[o.name ?? ""] ?? []).includes(tag)}
+                onclick={() => toggle(o, tag)}>{tag}</button
+              >
+            {/each}
+          </div>
+          {#if all.length > COLLAPSED}
+            <button
+              class="btn btn-ghost more"
+              onclick={() => (expanded = { ...expanded, [o.name ?? ""]: !expanded[o.name ?? ""] })}
+            >
+              {expanded[o.name ?? ""] ? "Réduire" : `Afficher les ${all.length} tags`}
+            </button>
+          {/if}
+        </fieldset>
+      {/each}
+
+      {#if tags.length > 0}
+        <div class="filter-block">
+          {#if tags.length > 1}<p class="muted hint">Seuls les {unit} qui ont tous les tags choisis s'affichent.</p>{/if}
+          <button class="btn" onclick={clearTags}>{tags.length > 1 ? `Retirer les ${tags.length} tags` : "Retirer le tag"}</button>
+        </div>
+      {/if}
+    </aside>
+
+    <div class="results">
+      <div class="toolbar">
+        <label class="search">
+          <span class="visually-hidden">Rechercher dans les {unit} de {game.name}</span>
+          <Icon name="search" />
+          <input class="field" type="search" placeholder="Rechercher dans les {unit}" bind:value={query} />
+        </label>
+        {#if list.loaded}
+          <p class="muted">{exact(list.total)} résultats</p>
+        {/if}
+      </div>
+
+      {#if !list.loaded && !list.error}
+        <ul class="card-grid" aria-busy="true" aria-label="Chargement des {unit}">
+          {#each Array(9) as _, i (i)}
+            <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
+          {/each}
+        </ul>
+      {:else if list.loaded && list.items.length === 0}
+        <div class="empty">
+          <p>Aucun {unit.replace(/s$/, "")} ne correspond à ces critères.</p>
+          <div class="empty-actions">
+            {#if search}<button class="btn" onclick={() => (query = "")}>Effacer la recherche</button>{/if}
+            {#if tags.length}<button class="btn" onclick={clearTags}>{tags.length > 1 ? "Retirer les tags" : "Retirer le tag"}</button>{/if}
+          </div>
+        </div>
+      {:else}
+        <ul class="card-grid">
+          {#each list.items as m (m.id)}
+            <li>
+              <button class="card" onclick={() => nav.openMod(m.id)}>
+                <Thumb
+                  src={m.logo?.thumb_640x360 ?? m.logo?.thumb_320x180 ?? m.logo?.original}
+                  label={m.name ?? ""}
+                  badge={m.maturity_option > 0 ? "Adulte" : undefined}
+                />
+                <span class="card-title">{m.name ?? "Sans nom"}</span>
+                <span class="card-meta">
+                  {#if author(m)}<span class="author">par {author(m)}</span>{/if}
+                </span>
+                <span class="card-meta">
+                  <span title="Téléchargements"><Icon name="download" size={14} />{count(m.stats?.downloads_total)}</span>
+                  <span title="Abonnés"><Icon name="users" size={14} />{count(m.stats?.subscribers_total)}</span>
+                  {#if rating(m)}
+                    <span title="Avis positifs"><Icon name="thumb" size={14} />{rating(m)}</span>
+                  {/if}
+                </span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      <LoadMore {list} noun={unit} />
+    </div>
+  </div>
+</div>
+
+<style>
+  .view {
+    height: 100%;
+    overflow-y: auto;
+  }
+
+  /* La bannière du jeu : le seul moment spectaculaire de l'appli. */
+  .banner {
+    position: relative;
+    min-height: 15rem;
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+    background: var(--panel);
+  }
+
+  .banner-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .banner:not(.plain)::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, var(--ink) 4%, transparent 75%),
+      linear-gradient(to right, var(--scrim) 0%, transparent 65%);
+  }
+
+  .banner-text {
+    position: relative;
+    z-index: 1;
+    padding: 1.25rem 2.5rem 1.75rem;
+    display: grid;
+    justify-items: start;
+    gap: 0.6rem;
+    max-width: 60rem;
+  }
+
+  .crumb {
+    margin-left: -0.5rem;
+    color: var(--text);
+  }
+
+  h1 {
+    font-size: clamp(var(--t-3xl), 5vw, 3.75rem);
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+
+  .banner-stats {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 1.5rem;
+    font-size: var(--t-md);
+  }
+
+  .banner-stats strong {
+    font-family: var(--font-display);
+    font-size: var(--t-lg);
+  }
+
+  .banner-stats .btn-ghost {
+    color: var(--accent);
+  }
+
+  .body {
+    display: grid;
+    grid-template-columns: 15rem 1fr;
+    gap: 2.5rem;
+    padding: 1.5rem 2.5rem 3rem;
+  }
+
+  .filters {
+    display: grid;
+    align-content: start;
+    gap: 1.6rem;
+    position: sticky;
+    top: 1.5rem;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+    padding-right: 0.25rem;
+  }
+
+  .filter-block {
+    display: grid;
+    gap: 0.55rem;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+
+  .filter-title {
+    font-family: var(--font-display);
+    font-weight: 650;
+    font-size: var(--t-md);
+    padding: 0;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .more {
+    justify-self: start;
+    font-size: var(--t-xs);
+    padding-inline: 0;
+  }
+
+  .hint {
+    font-size: var(--t-sm);
+  }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+  }
+
+  .search {
+    position: relative;
+    display: block;
+    flex: 1;
+    max-width: 34rem;
+    color: var(--muted);
+  }
+
+  .search :global(svg) {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    translate: 0 -50%;
+    pointer-events: none;
+  }
+
+  .search .field {
+    padding-left: 2.2rem;
+  }
+
+  .results :global(.card-grid) {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+
+  .author {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    display: block;
+  }
+
+  .skeleton .thumb {
+    aspect-ratio: 16 / 9;
+    border-radius: var(--r-md);
+    background: var(--raise);
+  }
+
+  .skeleton .line {
+    height: 1rem;
+    width: 60%;
+    margin-top: 0.7rem;
+    border-radius: var(--r-sm);
+    background: var(--raise);
+  }
+
+  .empty {
+    display: grid;
+    justify-items: start;
+    gap: 1rem;
+    padding: 2rem 0;
+  }
+
+  .empty-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  @media (max-width: 1150px) {
+    .body {
+      grid-template-columns: 12rem minmax(0, 1fr);
+      gap: 1.75rem;
+      padding-inline: 1.75rem;
+    }
+
+    .banner-text {
+      padding-inline: 1.75rem;
+    }
+
+    .results :global(.card-grid) {
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    }
+  }
+
+  @media (max-width: 760px) {
+    .body {
+      grid-template-columns: 1fr;
+    }
+
+    .filters {
+      position: static;
+      max-height: none;
+    }
+  }
+</style>

@@ -1,0 +1,64 @@
+# Compile Atelier sous Windows sur les machines de GitHub et publie les
+# installateurs (.exe et .msi) dans une release du dépôt.
+name: Build Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier l'interface
+        run: npm run check
+
+      - name: Tests Rust
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Compiler et publier les installateurs
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "Atelier v__VERSION__"
+          releaseBody: |
+            Installateurs Windows d'Atelier.
+            - `Atelier_x.y.z_x64-setup.exe` : installateur classique (recommandé)
+            - `Atelier_x.y.z_x64_en-US.msi` : paquet MSI
+          releaseDraft: false
+          prerelease: true
+
+      - name: Garder une copie des installateurs
+        uses: actions/upload-artifact@v4
+        with:
+          name: atelier-windows
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
