@@ -2261,7 +2261,7 @@ dependencies = [
 
 [[package]]
 name = "modstudio"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "keyring",
  "md-5",

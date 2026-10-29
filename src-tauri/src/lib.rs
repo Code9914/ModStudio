@@ -5,6 +5,7 @@ mod commands;
 mod error;
 mod install_commands;
 mod installer;
+mod modio_sdk;
 mod settings;
 #[cfg(test)]
 mod testutil;
@@ -48,6 +49,7 @@ pub fn run() {
             install_commands::set_game_folder,
             install_commands::folder_suggestion,
             install_commands::inspect_folder,
+            modio_sdk::detect_modio_install,
             install_commands::install_mod,
             install_commands::cancel_install,
             install_commands::uninstall_mod,

@@ -8,6 +8,7 @@ import {
   type InstalledMod,
   type LatestFile,
   type Layout,
+  type ManagedByGame,
 } from "./api";
 import { bytes } from "./format";
 
@@ -43,6 +44,19 @@ class Installs {
   /** Dernière version publiée des mods installés, par identifiant de mod. */
   latest = $state<Record<number, LatestFile>>({});
   loaded = $state(false);
+  /** Jeux qui installent leurs mods eux-mêmes via mod.io (null : non). */
+  managed = $state<Record<number, ManagedByGame | null>>({});
+
+  /** Détecte (une fois par jeu) si le jeu gère ses mods via mod.io sur ce PC. */
+  async detectManaged(gameId: number): Promise<ManagedByGame | null> {
+    if (gameId in this.managed) return this.managed[gameId];
+    try {
+      this.managed[gameId] = await api.detectModioInstall(gameId);
+    } catch {
+      this.managed[gameId] = null;
+    }
+    return this.managed[gameId];
+  }
 
   async load() {
     const list = await api.installOverview();

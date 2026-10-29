@@ -115,6 +115,10 @@ Pour les jeux qui chargent leurs mods depuis un dossier, sans passer par mod.io 
 - Option pour installer aussi les mods nécessaires (dépendances). Ils sont
   notés comme tels : quand tu désinstalles le mod qui en avait besoin,
   ModStudio propose de les retirer aussi s'ils ne servent plus à rien.
+- Jeux qui installent leurs mods eux-mêmes grâce au kit de mod.io : ModStudio
+  les repère (dossier `C:\Users\Public\mod.io\<id du jeu>`, ou celui réglé dans
+  `%LOCALAPPDATA%\mod.io\globalsettings.json`) et conseille de s'abonner
+  plutôt que d'installer à la main.
 - Aide au choix du dossier : dossier habituel proposé pour les jeux connus
   (Bonelab pour l'instant, créé s'il n'existe pas encore), alerte si le dossier
   choisi ressemble au dossier d'installation du jeu, conseils pour trouver le
@@ -155,6 +159,7 @@ src-tauri/src/
   account.rs      connexion, déconnexion, abonnements
   installer.rs    téléchargement, MD5, extraction, placement, désinstallation
   install_commands.rs  commandes d'installation (dossiers, progression…)
+  modio_sdk.rs    détection des jeux qui gèrent leurs mods via mod.io
   auth.rs         jeton de connexion et trousseau du système
   settings.rs     réglages (clé, chemin d'API), vérification des domaines
   error.rs        erreurs envoyées à l'interface ({ kind, message, retryAfter })

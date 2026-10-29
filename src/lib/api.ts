@@ -287,7 +287,15 @@ export const api = {
   latestInstalledFiles: (gameId: number) => call<LatestFile[]>("latest_installed_files", { gameId }),
 
   revealInstall: (gameId: number, modId: number | null = null) => call<null>("reveal_install", { gameId, modId }),
+
+  /** Le jeu installe-t-il ses mods lui-même via mod.io sur ce PC ? */
+  detectModioInstall: (gameId: number) => call<ManagedByGame | null>("detect_modio_install", { gameId }),
 };
+
+export interface ManagedByGame {
+  folder: string;
+  mods: number;
+}
 
 export type Layout = "subfolder" | "flat" | "archive";
 

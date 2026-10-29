@@ -2,6 +2,7 @@
   import { api, asAppError, pcFileId, type AppError, type Dependency, type Game, type Mod, type Modfile } from "$lib/api";
   import { bytes } from "$lib/format";
   import { installs } from "$lib/installs.svelte";
+  import { nav } from "$lib/nav.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import FolderSetup from "./FolderSetup.svelte";
   import Icon from "./Icon.svelte";
@@ -23,6 +24,33 @@
   );
   const outdated = $derived(installs.outdated(game.id, mod.id, fileId));
   const missingDeps = $derived((deps ?? []).filter((d) => !installs.installed(game.id, d.mod_id)));
+
+  // Jeu qui installe ses mods lui-même via mod.io : l'abonnement suffit.
+  $effect(() => {
+    installs.detectManaged(game.id);
+  });
+  const managed = $derived(installs.managed[game.id] ?? null);
+  const subscribed = $derived(nav.subs.has(mod.id));
+  let subBusy = $state(false);
+  let showManual = $state(false);
+
+  async function subscribe() {
+    if (!nav.loggedIn) {
+      nav.openAccount(nav.view);
+      return;
+    }
+    subBusy = true;
+    error = null;
+    try {
+      await api.subscribe(game.id, mod.id);
+      nav.subs.add(mod.id);
+      note = `Abonné. ${game.name ?? "Le jeu"} le téléchargera à son prochain lancement.`;
+    } catch (e) {
+      error = asAppError(e);
+    } finally {
+      subBusy = false;
+    }
+  }
 
   let withDeps = $state(true);
   let setupOpen = $state(false);
@@ -192,6 +220,29 @@
         {removing ? "Désinstallation…" : confirming ? "Confirmer" : "Désinstaller"}
       </button>
     </div>
+  {:else if managed && !showManual}
+    <div class="managed">
+      <p class="small">
+        <span class="strong">{game.name} installe ses mods lui-même grâce à mod.io.</span>
+        Abonne-toi : le jeu téléchargera ce mod à son prochain lancement.
+      </p>
+      <p class="small muted folder" title={managed.folder}>
+        Dossier du jeu : {managed.folder}{managed.mods > 0
+          ? `, ${managed.mods} ${managed.mods > 1 ? "mods déjà téléchargés" : "mod déjà téléchargé"}`
+          : ""}
+      </p>
+      {#if subscribed}
+        <span class="chip chip-ok">Abonné</span>
+      {:else}
+        <button class="btn btn-primary wide" onclick={subscribe} disabled={subBusy}>
+          {#if !nav.loggedIn}Se connecter pour s'abonner{:else if subBusy}Abonnement…{:else}<Icon
+              name="plus"
+              size={15}
+            />S'abonner{/if}
+        </button>
+      {/if}
+    </div>
+    <button class="link small manual" onclick={() => (showManual = true)}>Installer quand même à la main</button>
   {:else}
     {#if !fileId}
       <p class="small muted">Ce mod n'a pas de fichier pour PC (Windows) : il est peut-être réservé à une autre plateforme.</p>
@@ -320,5 +371,26 @@
     padding: 0.8rem 0.9rem;
     border-radius: var(--r-md);
     background: var(--raise);
+  }
+
+  .managed {
+    display: grid;
+    gap: 0.6rem;
+    justify-items: start;
+  }
+
+  .managed .wide {
+    justify-self: stretch;
+  }
+
+  .strong {
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .manual {
+    justify-self: start;
+    margin-left: 0;
+    font-size: var(--t-sm);
   }
 </style>

@@ -46,6 +46,13 @@
     untrack(() => nav.loadSubs(id));
   });
 
+  // Le jeu installe-t-il ses mods lui-même via mod.io sur ce PC ?
+  $effect(() => {
+    const id = game.id;
+    untrack(() => installs.detectManaged(id));
+  });
+  const managed = $derived(installs.managed[game.id] ?? null);
+
   const sorts: { value: ModSort; label: string }[] = [
     { value: "-downloads_today", label: "Tendances du jour" },
     { value: "-downloads_total", label: "Plus téléchargés" },
@@ -108,6 +115,13 @@
           </button>
         {/if}
       </div>
+      {#if managed}
+        <p class="managed">
+          <Icon name="check" size={16} />
+          Ce jeu installe ses mods lui-même grâce à mod.io : abonne-toi à ceux qui t'intéressent, il les téléchargera à son
+          prochain lancement.
+        </p>
+      {/if}
     </div>
   </section>
 
@@ -290,6 +304,24 @@
 
   .banner-stats .btn-ghost {
     color: var(--accent);
+  }
+
+  .managed {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    max-width: 44rem;
+    padding: 0.55rem 0.8rem;
+    border-radius: var(--r-md);
+    background: var(--ok-bg);
+    color: var(--ok);
+    font-size: var(--t-sm);
+    font-weight: 500;
+  }
+
+  .managed :global(svg) {
+    flex: none;
+    margin-top: 0.15rem;
   }
 
   .body {
