@@ -55,8 +55,15 @@ pub fn json_response(status: u16, body: &str) -> String {
 }
 
 pub fn fake_server(responses: Vec<String>) -> FakeServer {
+    fake_server_with(|_| responses)
+}
+
+/// Comme `fake_server`, mais les réponses peuvent contenir l'adresse du
+/// serveur lui-même (liens de téléchargement).
+pub fn fake_server_with(build: impl FnOnce(&str) -> Vec<String>) -> FakeServer {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
+    let responses = build(&format!("http://{addr}/v1"));
     let seen = Arc::new(Mutex::new(Vec::new()));
     let seen_thread = seen.clone();
     std::thread::spawn(move || {
@@ -88,7 +95,8 @@ pub fn fake_server(responses: Vec<String>) -> FakeServer {
                 headers,
                 body: String::from_utf8_lossy(&body).into_owned(),
             });
-            stream.write_all(response.as_bytes()).unwrap();
+            let bytes: Vec<u8> = response.chars().map(|c| if (c as u32) < 256 { c as u8 } else { b'?' }).collect();
+            stream.write_all(&bytes).unwrap();
         }
     });
     FakeServer {

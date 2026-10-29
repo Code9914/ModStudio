@@ -1,7 +1,11 @@
 //! Commandes appelées par l'interface (`invoke("…")`).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::RwLock;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, RwLock};
+
+use crate::installer::Library;
 
 use tauri::State;
 
@@ -19,16 +23,25 @@ pub struct AppState {
     /// Où le jeton de connexion est conservé (trousseau du système).
     pub secrets: Box<dyn SecretStore>,
     pub auth: RwLock<AuthState>,
+    /// Mods installés à la main, par jeu (`installed.json`).
+    pub library: Mutex<Library>,
+    pub library_path: PathBuf,
+    /// Installations en cours : drapeau d'annulation par mod.
+    pub jobs: Mutex<HashMap<i64, Arc<AtomicBool>>>,
 }
 
 impl AppState {
     pub fn new(settings: Settings, settings_path: PathBuf, secrets: Box<dyn SecretStore>) -> Self {
+        let library_path = settings_path.with_file_name("installed.json");
         Self {
             client: ModioClient::new(),
             settings: RwLock::new(settings),
+            library: Mutex::new(Library::load(&library_path)),
+            library_path,
             settings_path,
             secrets,
             auth: RwLock::new(AuthState::default()),
+            jobs: Mutex::new(HashMap::new()),
         }
     }
 

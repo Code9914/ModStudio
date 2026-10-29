@@ -7,8 +7,11 @@ export type View =
   | { name: "mods" }
   | { name: "mod"; modId: number }
   | { name: "library" }
+  | { name: "installed" }
   | { name: "account" }
   | { name: "settings" };
+
+export type ModOrigin = "mods" | "library" | "installed";
 
 class Nav {
   view = $state<View>({ name: "games" });
@@ -17,7 +20,7 @@ class Nav {
   /** Mods ouverts depuis la liste, puis via les dépendances. */
   modStack = $state<number[]>([]);
   /** Vue où revenir en quittant la fiche d'un mod. */
-  modOrigin = $state<"mods" | "library">("mods");
+  modOrigin = $state<ModOrigin>("mods");
   /** Vue où revenir après la connexion. */
   afterLogin = $state<View | null>(null);
   settings = $state<SettingsView | null>(null);
@@ -50,12 +53,16 @@ class Nav {
     this.view = { name: "mod", modId };
   }
 
-  /** Ouvre la fiche d'un mod depuis « Mes mods ». */
-  openModFromLibrary(game: Game, modId: number) {
+  /** Ouvre la fiche d'un mod depuis « Mes mods » ou « Installés ». */
+  openModFromLibrary(game: Game, modId: number, origin: ModOrigin = "library") {
     if (this.game?.id !== game.id) this.game = game;
-    this.modOrigin = "library";
+    this.modOrigin = origin;
     this.modStack = [modId];
     this.view = { name: "mod", modId };
+  }
+
+  openInstalled() {
+    this.view = { name: "installed" };
   }
 
   back() {

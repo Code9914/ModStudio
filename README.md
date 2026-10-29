@@ -1,4 +1,4 @@
-# ModStudio — client de bureau pour mod.io (v0.2)
+# ModStudio — client de bureau pour mod.io (v0.3)
 
 ModStudio parcourt les mods de [mod.io](https://mod.io) depuis une appli de bureau
 (Windows et Linux), construite avec Tauri 2, Rust et Svelte 5.
@@ -85,6 +85,35 @@ affiche un avertissement. Clique sur « Informations complémentaires » puis
   désabonnement (annulable tant que la page est ouverte).
 - Les jeux qui gèrent mod.io téléchargent tes abonnements à leur prochain lancement.
 
+## Installation manuelle (v0.3)
+
+Pour les jeux qui chargent leurs mods depuis un dossier, sans passer par mod.io :
+
+- Panneau « Sur ce PC » sur la fiche d'un mod : bouton « Installer », barre de
+  progression, annulation, puis « Mettre à jour », « Ouvrir le dossier » et
+  « Désinstaller ».
+- Au premier mod d'un jeu, tu choisis son dossier de mods et le rangement :
+  un sous-dossier par mod (par défaut), extraction directe dans le dossier, ou
+  archive gardée telle quelle.
+- Option pour installer aussi les mods nécessaires (dépendances).
+- Page « Installés » : mods installés par jeu, versions, mises à jour
+  disponibles (badge dans le menu), « Tout mettre à jour », désinstallation.
+- Badges « Installé » et « Mise à jour » dans les listes de mods.
+
+Sécurité de l'installation :
+
+- Lien de téléchargement redemandé à mod.io juste avant chaque téléchargement,
+  et accepté seulement s'il vient d'un domaine mod.io.
+- Somme de contrôle MD5 vérifiée ; un fichier signalé par l'antivirus de
+  mod.io n'est jamais téléchargé.
+- Extraction protégée contre les chemins qui sortent du dossier (« zip slip »)
+  et contre les archives démesurées (« zip bombs »).
+- Aucun fichier existant n'est écrasé : si un fichier du mod existe déjà (à toi
+  ou à un autre mod), l'installation s'arrête avant de toucher quoi que ce soit.
+- Chaque fichier installé est noté dans `installed.json` : la désinstallation
+  retire exactement ces fichiers, et laisse en place un dossier où tu as ajouté
+  tes propres fichiers.
+
 ## Obtenir ta clé API
 
 1. Ouvre <https://mod.io/me/access> et connecte-toi.
@@ -101,6 +130,8 @@ src-tauri/src/
   lib.rs          démarrage de l'appli, enregistrement des commandes
   commands.rs     commandes de navigation (jeux, mods, fichiers…)
   account.rs      connexion, déconnexion, abonnements
+  installer.rs    téléchargement, MD5, extraction, placement, désinstallation
+  install_commands.rs  commandes d'installation (dossiers, progression…)
   auth.rs         jeton de connexion et trousseau du système
   settings.rs     réglages (clé, chemin d'API), vérification des domaines
   error.rs        erreurs envoyées à l'interface ({ kind, message, retryAfter })
@@ -112,7 +143,9 @@ src/
   lib/nav.svelte.ts          navigation entre les vues
   lib/paged.svelte.ts        listes paginées « afficher plus »
   lib/components/            GamesView, ModsView, ModView, LibraryView,
-                             AccountView, SettingsView…
+                             AccountView, InstalledView, InstallPanel,
+                             FolderSetup, SettingsView…
+  lib/installs.svelte.ts     état des mods installés
 ```
 
 ## Tests
@@ -131,6 +164,12 @@ Pour le compte : connexion par code et par jeton, rangement du jeton dans le
 trousseau, session restaurée au lancement, session expirée oubliée, messages
 clairs pour un code expiré ou refusé, abonnements idempotents, pagination de
 « Mes mods », et déconnexion qui ne révoque que les jetons obtenus par e-mail.
+
+Pour l'installation : installation complète contre un faux mod.io, MD5 faux,
+téléchargement annulé, fichier signalé par l'antivirus, « zip slip »,
+« zip bomb », conflits de fichiers, mise à jour qui retire les anciens
+fichiers, désinstallation qui garde les fichiers ajoutés par l'utilisateur, et
+découpage du jeton pour la limite du Gestionnaire d'identification Windows.
 
 ## Sécurité
 
@@ -151,8 +190,8 @@ clairs pour un code expiré ou refusé, abonnements idempotents, pagination de
   DOMPurify, et l'appli applique une politique CSP stricte. Les liens s'ouvrent
   dans ton navigateur, jamais dans l'appli.
 
-## Prochaine étape : v0.3
+## Idées pour la suite
 
-Installation manuelle : téléchargement avec barre de progression, vérification
-MD5, extraction dans un dossier par jeu, dépendances, mises à jour et
-désinstallation.
+- Noter les mods (pouce haut / bas).
+- Profils de mods (activer ou désactiver un ensemble de mods d'un coup).
+- Build Linux (.AppImage, .deb) dans GitHub Actions.

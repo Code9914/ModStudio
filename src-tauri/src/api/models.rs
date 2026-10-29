@@ -310,6 +310,15 @@ pub struct Modfile {
     pub changelog: Option<String>,
     #[serde(default, deserialize_with = "lenient")]
     pub filehash: Option<FileHash>,
+    /// Lien de téléchargement temporaire : utilisé par le backend seulement.
+    #[serde(default, deserialize_with = "lenient", skip_serializing)]
+    pub download: Option<Download>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Download {
+    #[serde(default, deserialize_with = "lenient")]
+    pub binary_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -32,17 +32,31 @@ pub enum Auth<'a> {
 
 pub struct ModioClient {
     http: Client,
+    /// Client sans délai total, pour les gros téléchargements.
+    downloads: Client,
 }
+
+const USER_AGENT: &str = concat!("ModStudio/", env!("CARGO_PKG_VERSION"), " (client mod.io non officiel)");
 
 impl ModioClient {
     pub fn new() -> Self {
         let http = Client::builder()
-            .user_agent(concat!("ModStudio/", env!("CARGO_PKG_VERSION"), " (client mod.io non officiel)"))
+            .user_agent(USER_AGENT)
             .timeout(Duration::from_secs(20))
             .connect_timeout(Duration::from_secs(10))
             .build()
             .expect("client HTTP");
-        Self { http }
+        let downloads = Client::builder()
+            .user_agent(USER_AGENT)
+            .connect_timeout(Duration::from_secs(15))
+            .read_timeout(Duration::from_secs(60))
+            .build()
+            .expect("client HTTP");
+        Self { http, downloads }
+    }
+
+    pub fn downloads(&self) -> &Client {
+        &self.downloads
     }
 
     /// GET avec la clé API.

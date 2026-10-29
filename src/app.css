@@ -221,6 +221,12 @@ button.chip:hover {
   font-weight: 600;
 }
 
+.chip-accent {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
 .muted {
   color: var(--muted);
 }

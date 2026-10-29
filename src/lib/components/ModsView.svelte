@@ -3,6 +3,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api, type Game, type Mod, type ModSort, type TagOption } from "$lib/api";
   import { count, exact } from "$lib/format";
+  import { installs } from "$lib/installs.svelte";
   import { nav } from "$lib/nav.svelte";
   import { PagedList } from "$lib/paged.svelte";
   import Icon from "./Icon.svelte";
@@ -189,6 +190,11 @@
                   src={m.logo?.thumb_640x360 ?? m.logo?.thumb_320x180 ?? m.logo?.original}
                   label={m.name ?? ""}
                   badges={[
+                    ...(installs.installed(game.id, m.id)
+                      ? installs.outdated(game.id, m.id, m.modfile?.id)
+                        ? [{ text: "Mise à jour", tone: "accent" as const }]
+                        : [{ text: "Installé", tone: "ok" as const }]
+                      : []),
                     ...(nav.subs.has(m.id) ? [{ text: "Abonné", tone: "ok" as const }] : []),
                     ...(m.maturity_option > 0 ? [{ text: "Adulte", tone: "warn" as const }] : []),
                   ]}

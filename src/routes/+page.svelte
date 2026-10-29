@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, asAppError, type AppError } from "$lib/api";
+  import { installs } from "$lib/installs.svelte";
   import { nav } from "$lib/nav.svelte";
   import AccountView from "$lib/components/AccountView.svelte";
   import ErrorNotice from "$lib/components/ErrorNotice.svelte";
   import GamesView from "$lib/components/GamesView.svelte";
   import Icon from "$lib/components/Icon.svelte";
+  import InstalledView from "$lib/components/InstalledView.svelte";
   import LibraryView from "$lib/components/LibraryView.svelte";
   import ModsView from "$lib/components/ModsView.svelte";
   import ModView from "$lib/components/ModView.svelte";
@@ -18,11 +20,31 @@
     try {
       nav.settings = await api.getSettings();
       if (!nav.settings.hasApiKey) nav.openSettings();
-      else nav.refreshAuth();
+      else {
+        nav.refreshAuth();
+        checkInstalled();
+      }
     } catch (e) {
       startError = asAppError(e);
     }
   }
+
+  /** Charge les mods installés et cherche leurs mises à jour, sans bloquer. */
+  async function checkInstalled() {
+    try {
+      await installs.load();
+      await Promise.all(Object.keys(installs.games).map((id) => installs.checkUpdates(Number(id))));
+    } catch {
+      /* la page Installés affichera l'erreur */
+    }
+  }
+
+  const updates = $derived(
+    Object.values(installs.games).reduce(
+      (n, g) => n + Object.values(g.mods).filter((m) => installs.outdated(g.gameId, m.modId)).length,
+      0,
+    ),
+  );
 
   onMount(start);
 
@@ -88,6 +110,19 @@
       <li>
         <button
           class="nav-item"
+          aria-current={nav.view.name === "installed" || (nav.view.name === "mod" && nav.modOrigin === "installed")
+            ? "page"
+            : undefined}
+          disabled={!ready}
+          onclick={() => nav.openInstalled()}
+        >
+          <Icon name="download" size={18} />Installés
+          {#if updates > 0}<span class="badge" aria-label="{updates} mises à jour">{updates}</span>{/if}
+        </button>
+      </li>
+      <li>
+        <button
+          class="nav-item"
           aria-current={nav.view.name === "settings" ? "page" : undefined}
           onclick={() => nav.openSettings()}
         >
@@ -123,7 +158,7 @@
           {/if}
         </button>
       {/if}
-      <p class="version muted">Version 0.2, client non officiel</p>
+      <p class="version muted">Version 0.3, client non officiel</p>
     </div>
   </nav>
 
@@ -140,6 +175,7 @@
             {/key}
           {/if}
           <div class="pane" hidden={nav.view.name !== "library"}><LibraryView /></div>
+          <div class="pane" hidden={nav.view.name !== "installed"}><InstalledView /></div>
         {/key}
         {#if nav.view.name === "mod" && nav.game}
           <div class="pane"><ModView game={nav.game} modId={nav.view.modId} /></div>
@@ -291,6 +327,19 @@
   .version {
     padding: 0 0.6rem;
     font-size: var(--t-xs);
+  }
+
+  .badge {
+    margin-left: auto;
+    min-width: 1.3rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: var(--accent-fill);
+    color: var(--on-accent);
+    font-size: var(--t-xs);
+    font-weight: 700;
+    text-align: center;
+    line-height: 1.3rem;
   }
 
   .stage {

@@ -3,6 +3,8 @@ mod api;
 mod auth;
 mod commands;
 mod error;
+mod install_commands;
+mod installer;
 mod settings;
 #[cfg(test)]
 mod testutil;
@@ -15,10 +17,12 @@ use commands::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let settings_path = app.path().app_config_dir()?.join("settings.json");
             let loaded = settings::load(&settings_path);
-            app.manage(AppState::new(loaded, settings_path, Box::new(auth::ChunkedStore::new(auth::KeyringBackend))));
+            let secrets = Box::new(auth::ChunkedStore::new(auth::KeyringBackend));
+            app.manage(AppState::new(loaded, settings_path, secrets));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -40,6 +44,13 @@ pub fn run() {
             account::list_subscribed_ids,
             account::subscribe_mod,
             account::unsubscribe_mod,
+            install_commands::install_overview,
+            install_commands::set_game_folder,
+            install_commands::install_mod,
+            install_commands::cancel_install,
+            install_commands::uninstall_mod,
+            install_commands::latest_installed_files,
+            install_commands::reveal_install,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de ModStudio");

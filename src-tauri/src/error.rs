@@ -57,6 +57,41 @@ pub enum AppError {
 
     #[error("mod.io a refusé ce jeton d'accès. Vérifie que tu l'as copié en entier et qu'il a les droits de lecture et d'écriture.")]
     InvalidToken,
+
+    // ------------------------------------------------------------ Installation
+
+    #[error("Choisis d'abord le dossier où installer les mods de ce jeu.")]
+    NoGameFolder,
+
+    #[error("Ce mod est déjà en cours d'installation.")]
+    InstallInProgress,
+
+    #[error("Ce mod n'a aucun fichier publié à installer.")]
+    NoModfile,
+
+    #[error("Installation bloquée : l'antivirus de mod.io a signalé ce fichier.")]
+    VirusFlagged,
+
+    #[error("Le fichier téléchargé est abîmé (somme de contrôle MD5 différente). Réessaie.")]
+    Corrupted,
+
+    #[error("Installation annulée.")]
+    Cancelled,
+
+    #[error("Des fichiers existent déjà à cet endroit et ModStudio ne les écrase pas : {0}")]
+    Conflict(String),
+
+    #[error("Erreur de fichier : {0}")]
+    Io(String),
+
+    #[error("Archive illisible : {0}")]
+    BadArchive(String),
+
+    #[error("mod.io refuse le téléchargement de ce fichier : {0}")]
+    DownloadRefused(String),
+
+    #[error("Ce jeu demande d'être connecté à mod.io pour télécharger ses mods.")]
+    LoginRequiredForDownload,
 }
 
 impl AppError {
@@ -78,6 +113,17 @@ impl AppError {
             AppError::EmailLoginUnavailable(_) => "email_login_unavailable",
             AppError::InvalidCode(_) => "invalid_code",
             AppError::InvalidToken => "invalid_token",
+            AppError::NoGameFolder => "no_game_folder",
+            AppError::InstallInProgress => "install_in_progress",
+            AppError::NoModfile => "no_modfile",
+            AppError::VirusFlagged => "virus_flagged",
+            AppError::Corrupted => "corrupted",
+            AppError::Cancelled => "cancelled",
+            AppError::Conflict(_) => "conflict",
+            AppError::Io(_) => "io",
+            AppError::BadArchive(_) => "bad_archive",
+            AppError::DownloadRefused(_) => "download_refused",
+            AppError::LoginRequiredForDownload => "login_required_for_download",
         }
     }
 

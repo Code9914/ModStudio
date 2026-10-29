@@ -6,6 +6,7 @@
   import { nav } from "$lib/nav.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
+  import InstallPanel from "./InstallPanel.svelte";
   import Thumb from "./Thumb.svelte";
 
   let { game, modId }: { game: Game; modId: number } = $props();
@@ -196,7 +197,9 @@
         ? "Retour"
         : nav.modOrigin === "library"
           ? "Retour à Mes mods"
-          : `Retour à ${game.name}`}
+          : nav.modOrigin === "installed"
+            ? "Retour aux mods installés"
+            : `Retour à ${game.name}`}
     </button>
   </div>
 
@@ -344,6 +347,9 @@
       </main>
 
       <aside class="side">
+        {#key mod.id}
+          <InstallPanel {game} {mod} {deps} />
+        {/key}
         <dl class="stats">
           <div>
             <dt>Téléchargements</dt>
@@ -755,6 +761,7 @@
     display: grid;
     align-content: start;
     gap: 2rem;
+    min-width: 0;
   }
 
   .stats {

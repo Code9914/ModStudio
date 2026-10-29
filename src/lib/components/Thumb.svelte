@@ -1,6 +1,6 @@
 <script lang="ts">
   // Image 16:9 chargée paresseusement, avec repli sur l'initiale si absente ou cassée.
-  export type Badge = { text: string; tone: "warn" | "ok" };
+  export type Badge = { text: string; tone: "warn" | "ok" | "accent" };
 
   let { src, label, badges = [] }: { src: string | null | undefined; label: string; badges?: Badge[] } =
     $props();
@@ -23,7 +23,12 @@
   {#if badges.length}
     <span class="badges">
       {#each badges as b (b.text)}
-        <span class="chip" class:chip-warn={b.tone === "warn"} class:chip-ok={b.tone === "ok"}>{b.text}</span>
+        <span
+          class="chip"
+          class:chip-warn={b.tone === "warn"}
+          class:chip-ok={b.tone === "ok"}
+          class:chip-accent={b.tone === "accent"}>{b.text}</span
+        >
       {/each}
     </span>
   {/if}

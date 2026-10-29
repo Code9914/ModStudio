@@ -1,5 +1,5 @@
 // Appels au backend Rust (voir src-tauri/src/commands.rs).
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 // ------------------------------------------------------------------ Types
 
@@ -21,6 +21,17 @@ export interface AppError {
     | "email_login_unavailable"
     | "invalid_code"
     | "invalid_token"
+    | "no_game_folder"
+    | "install_in_progress"
+    | "no_modfile"
+    | "virus_flagged"
+    | "corrupted"
+    | "cancelled"
+    | "conflict"
+    | "io"
+    | "bad_archive"
+    | "download_refused"
+    | "login_required_for_download"
     | "unknown";
   message: string;
   retryAfter: number | null;
@@ -231,7 +242,70 @@ export const api = {
   subscribe: (gameId: number, modId: number) => call<null>("subscribe_mod", { gameId, modId }),
 
   unsubscribe: (gameId: number, modId: number) => call<null>("unsubscribe_mod", { gameId, modId }),
+
+  // ---------------------------------------------------------------- Installation
+
+  installOverview: () => call<GameInstall[]>("install_overview"),
+
+  setGameFolder: (gameId: number, gameName: string, icon: string | null, folder: string, layout: Layout) =>
+    call<GameInstall>("set_game_folder", { gameId, gameName, icon, folder, layout }),
+
+  installMod: (gameId: number, modId: number, onProgress: (e: InstallEvent) => void) => {
+    const onEvent = new Channel<InstallEvent>();
+    onEvent.onmessage = onProgress;
+    return call<InstalledMod>("install_mod", { gameId, modId, onEvent });
+  },
+
+  cancelInstall: (modId: number) => call<null>("cancel_install", { modId }),
+
+  uninstallMod: (gameId: number, modId: number) => call<UninstallResult>("uninstall_mod", { gameId, modId }),
+
+  latestInstalledFiles: (gameId: number) => call<LatestFile[]>("latest_installed_files", { gameId }),
+
+  revealInstall: (gameId: number, modId: number | null = null) => call<null>("reveal_install", { gameId, modId }),
 };
+
+export type Layout = "subfolder" | "flat" | "archive";
+
+export interface InstalledMod {
+  modId: number;
+  name: string;
+  logo: string | null;
+  version: string | null;
+  modfileId: number;
+  size: number;
+  installedAt: number;
+  layout: Layout;
+  root: string | null;
+  files: string[];
+  dirs: string[];
+}
+
+export interface GameInstall {
+  gameId: number;
+  gameName: string;
+  icon: string | null;
+  folder: string;
+  layout: Layout;
+  mods: Record<string, InstalledMod>;
+}
+
+export type InstallEvent =
+  | { phase: "preparing" }
+  | { phase: "downloading"; received: number; total: number }
+  | { phase: "verifying" }
+  | { phase: "extracting"; done: number; total: number }
+  | { phase: "finishing" };
+
+export interface LatestFile {
+  modId: number;
+  modfileId: number;
+  version: string | null;
+}
+
+export interface UninstallResult {
+  leftFolder: string | null;
+}
 
 export interface AuthView {
   loggedIn: boolean;

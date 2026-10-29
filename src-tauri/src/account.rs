@@ -93,7 +93,7 @@ impl AppState {
         }
     }
 
-    fn token(&self) -> AppResult<String> {
+    pub(crate) fn token(&self) -> AppResult<String> {
         self.ensure_auth_loaded();
         self.auth
             .read()
@@ -140,7 +140,7 @@ impl AppState {
     }
 
     /// Si mod.io dit que la session n'est plus valable, on l'oublie.
-    fn check_session<T>(&self, result: AppResult<T>) -> AppResult<T> {
+    pub(crate) fn check_session<T>(&self, result: AppResult<T>) -> AppResult<T> {
         if matches!(result, Err(AppError::SessionExpired)) {
             self.end_session(true);
         }
