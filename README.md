@@ -60,9 +60,26 @@ npm run tauri build
 
 Les fichiers sortent dans `src-tauri/target/release/bundle/`.
 
+### Développer sur ton PC (mode rapide)
+
+Pour essayer chaque modification sans attendre GitHub :
+
+1. **Une seule fois :** double-clique sur `scripts/setup.bat`. Il installe ce
+   qui manque (outils C++ de Visual Studio, Git, Node.js, Rust) avec winget,
+   télécharge le projet dans `Documents\ModStudio` (branche `dev`) et crée le
+   raccourci **« ModStudio (dev) »** sur le Bureau.
+2. **À chaque nouvelle version :** double-clique sur « ModStudio (dev) »
+   (`dev.bat`). Il récupère les dernières modifications de la branche `dev` et
+   lance l'appli directement depuis le code (`npm run tauri dev`).
+3. `build.bat` produit un installateur sur ton PC si besoin.
+
+Le développement se fait sur la branche `dev`, que GitHub ne compile pas. Une
+fois la version validée, `dev` est fusionnée dans `main` et GitHub produit
+l'installateur officiel.
+
 ### Build Windows automatique (GitHub Actions)
 
-À chaque push sur `main`, le workflow `.github/workflows/build-windows.yml`
+À chaque push sur `main` (pas sur `dev`), le workflow `.github/workflows/build-windows.yml`
 compile l'appli sur une machine Windows de GitHub, lance les tests, puis publie
 l'installateur `.exe` et le paquet `.msi` dans l'onglet **Releases** du dépôt.
 Le build se relance aussi à la main depuis l'onglet **Actions** (« Run workflow »).
