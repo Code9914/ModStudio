@@ -15,7 +15,8 @@ function Refresh-Path {
 function Install-Tool($id, $name, $extra = @()) {
     Write-Host "   Installation de $name (Windows peut demander une autorisation)..."
     winget install --id $id -e --accept-source-agreements --accept-package-agreements @extra
-    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189) {
+    # -1978335189 et -1978335135 : déjà installé / rien à mettre à jour.
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189 -and $LASTEXITCODE -ne -1978335135) {
         throw "L'installation de $name a échoué (code $LASTEXITCODE)."
     }
     Refresh-Path
