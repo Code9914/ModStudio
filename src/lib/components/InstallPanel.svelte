@@ -65,7 +65,7 @@
       depId = d.mod_id;
       depLabel = `Mod nécessaire ${i + 1} sur ${extra.length} : ${d.name ?? `mod ${d.mod_id}`}`;
       try {
-        await installs.install(game.id, d.mod_id);
+        await installs.install(game.id, d.mod_id, mod.id);
       } catch {
         failed++;
       }
@@ -101,12 +101,38 @@
       note = r.leftFolder
         ? `Désinstallé. Le dossier « ${r.leftFolder} » contient des fichiers ajoutés depuis, il a été laissé en place.`
         : "Désinstallé.";
+      orphans = r.orphans;
     } catch (e) {
       error = asAppError(e);
     } finally {
       removing = false;
     }
   }
+
+  /** Mods nécessaires installés avec ce mod et dont plus rien n'a besoin. */
+  let orphans = $state<{ modId: number; name: string }[]>([]);
+  let removingOrphans = $state(false);
+
+  async function removeOrphans() {
+    removingOrphans = true;
+    const failed: string[] = [];
+    for (const o of orphans) {
+      try {
+        await installs.uninstall(game.id, o.modId);
+      } catch {
+        failed.push(o.name);
+      }
+    }
+    removingOrphans = false;
+    orphans = [];
+    note = failed.length
+      ? `Impossible de désinstaller : ${failed.join(", ")}. Ferme le jeu puis réessaie depuis la page Installés.`
+      : "Désinstallé, avec les mods nécessaires qui ne servaient plus.";
+  }
+
+  const parents = $derived(
+    (record?.requiredBy ?? []).map((id) => installs.installed(game.id, id)?.name ?? `mod ${id}`),
+  );
 
   function reveal(withMod: boolean) {
     api.revealInstall(game.id, withMod ? mod.id : null).catch((e) => (error = asAppError(e)));
@@ -125,6 +151,7 @@
       gameId={game.id}
       gameName={game.name ?? `Jeu ${game.id}`}
       icon={icon()}
+      guideUrl={game.instructions_url}
       onsaved={() => {
         setupOpen = false;
         if (pendingInstall) {
@@ -147,6 +174,9 @@
         {record.version ? `version ${record.version}` : "version sans numéro"}, {bytes(record.size)}
       </span>
     </p>
+    {#if record.auto && parents.length}
+      <p class="small muted">Installé comme mod nécessaire de « {parents.join(" », « ")} ».</p>
+    {/if}
     {#if outdated}
       <p class="small">Une nouvelle version est disponible{fileVersion ? ` (${fileVersion})` : ""}.</p>
       <button class="btn btn-primary" onclick={start} disabled={busy}>
@@ -190,6 +220,22 @@
 
   {#if error}<ErrorNotice {error} onretry={error.kind === "conflict" ? undefined : start} />{/if}
   {#if note}<p class="note small" role="status">{note}</p>{/if}
+  {#if orphans.length}
+    <div class="orphans">
+      <p class="small">
+        {orphans.length > 1
+          ? `${orphans.map((o) => `« ${o.name} »`).join(", ")} avaient été installés avec ce mod et ne servent plus à aucun autre.`
+          : `« ${orphans[0].name} » avait été installé avec ce mod et ne sert plus à aucun autre.`}
+        {orphans.length > 1 ? "Les désinstaller aussi ?" : "Le désinstaller aussi ?"}
+      </p>
+      <div class="row">
+        <button class="btn btn-primary" onclick={removeOrphans} disabled={removingOrphans}>
+          {removingOrphans ? "Désinstallation…" : "Désinstaller aussi"}
+        </button>
+        <button class="btn btn-ghost" onclick={() => (orphans = [])}>Garder</button>
+      </div>
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -266,5 +312,13 @@
 
   .note {
     color: var(--ok);
+  }
+
+  .orphans {
+    display: grid;
+    gap: 0.6rem;
+    padding: 0.8rem 0.9rem;
+    border-radius: var(--r-md);
+    background: var(--raise);
   }
 </style>

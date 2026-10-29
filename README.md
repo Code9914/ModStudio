@@ -112,7 +112,13 @@ Pour les jeux qui chargent leurs mods depuis un dossier, sans passer par mod.io 
 - Au premier mod d'un jeu, tu choisis son dossier de mods et le rangement :
   un sous-dossier par mod (par défaut), extraction directe dans le dossier, ou
   archive gardée telle quelle.
-- Option pour installer aussi les mods nécessaires (dépendances).
+- Option pour installer aussi les mods nécessaires (dépendances). Ils sont
+  notés comme tels : quand tu désinstalles le mod qui en avait besoin,
+  ModStudio propose de les retirer aussi s'ils ne servent plus à rien.
+- Aide au choix du dossier : dossier habituel proposé pour les jeux connus
+  (Bonelab pour l'instant, créé s'il n'existe pas encore), alerte si le dossier
+  choisi ressemble au dossier d'installation du jeu, conseils pour trouver le
+  bon dossier.
 - Page « Installés » : mods installés par jeu, versions, mises à jour
   disponibles (badge dans le menu), « Tout mettre à jour », désinstallation.
 - Badges « Installé » et « Mise à jour » dans les listes de mods.

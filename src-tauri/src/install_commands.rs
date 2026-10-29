@@ -33,6 +33,32 @@ pub struct LatestFile {
 pub struct UninstallResult {
     /// Dossier laissé en place parce qu'il contient des fichiers ajoutés depuis.
     pub left_folder: Option<String>,
+    /// Mods nécessaires installés avec celui-ci et devenus inutiles.
+    pub orphans: Vec<Orphan>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Orphan {
+    pub mod_id: i64,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderSuggestion {
+    pub path: String,
+    pub layout: Layout,
+    /// Le dossier existe déjà (sinon il sera créé).
+    pub exists: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderInfo {
+    pub exists: bool,
+    /// Ressemble au dossier d'installation du jeu plutôt qu'à son dossier de mods.
+    pub looks_like_game_root: bool,
 }
 
 fn now() -> i64 {
@@ -72,11 +98,16 @@ pub fn set_folder(
     icon: Option<String>,
     folder: String,
     layout: Layout,
+    create: bool,
 ) -> AppResult<GameInstall> {
     if game_id <= 0 {
         return Err(AppError::InvalidArgument(format!("jeu {game_id}")));
     }
     let folder = PathBuf::from(folder.trim());
+    // Création demandée explicitement (dossier habituel pas encore créé par le jeu).
+    if create && folder.is_absolute() && folder.parent().is_some() && !folder.exists() {
+        fs::create_dir_all(&folder).map_err(installer::io_err)?;
+    }
     installer::check_folder(&folder)?;
 
     let mut lib = state.library.lock().expect("library");
@@ -108,10 +139,27 @@ pub fn set_folder(
 
 // ---------------------------------------------------------------- Installation
 
+pub fn suggestion(game_id: i64) -> Option<FolderSuggestion> {
+    let (template, layout) = installer::known_folder(game_id)?;
+    let path = installer::expand_env(template, |name| std::env::var(name).ok())?;
+    let exists = PathBuf::from(&path).is_dir();
+    Some(FolderSuggestion { path, layout, exists })
+}
+
+pub fn inspect(folder: &str) -> FolderInfo {
+    let path = PathBuf::from(folder.trim());
+    FolderInfo {
+        exists: path.is_dir(),
+        looks_like_game_root: installer::looks_like_game_root(&path),
+    }
+}
+
+/// `required_by` : mod qui a demandé cette installation (mod nécessaire).
 pub async fn install(
     state: &AppState,
     game_id: i64,
     mod_id: i64,
+    required_by: Option<i64>,
     emit: Arc<dyn Fn(InstallEvent) + Send + Sync>,
 ) -> AppResult<InstalledMod> {
     if game_id <= 0 || mod_id <= 0 {
@@ -242,6 +290,7 @@ pub async fn install(
     cleanup();
     let placed = placed?;
 
+    let (auto, required_by) = dependency_state(required_by, old.as_ref());
     let record = InstalledMod {
         mod_id,
         name: m.name.clone().unwrap_or_else(|| format!("Mod {mod_id}")),
@@ -254,6 +303,8 @@ pub async fn install(
         root: placed.root,
         files: placed.files,
         dirs: placed.dirs,
+        auto,
+        required_by,
     };
     let mut lib = state.library.lock().expect("library");
     if let Some(game) = lib.games.get_mut(&game_id) {
@@ -261,6 +312,22 @@ pub async fn install(
     }
     state.save_library(&lib)?;
     Ok(record)
+}
+
+/// Un mod nécessaire reste « automatique » tant que l'utilisateur ne l'a pas
+/// installé lui-même ; une installation directe le rend permanent.
+fn dependency_state(required_by: Option<i64>, old: Option<&InstalledMod>) -> (bool, Vec<i64>) {
+    match (required_by, old) {
+        (None, _) => (false, Vec::new()),
+        (Some(_), Some(o)) if !o.auto => (false, Vec::new()),
+        (Some(parent), o) => {
+            let mut list = o.map(|o| o.required_by.clone()).unwrap_or_default();
+            if !list.contains(&parent) {
+                list.push(parent);
+            }
+            (true, list)
+        }
+    }
 }
 
 pub fn cancel(state: &AppState, mod_id: i64) {
@@ -290,9 +357,24 @@ pub fn remove(state: &AppState, game_id: i64, mod_id: i64) -> AppResult<Uninstal
         )));
     }
     game.mods.remove(&mod_id);
+
+    // Mods nécessaires installés avec lui et dont plus aucun mod n'a besoin.
+    let mut orphans = Vec::new();
+    for other in game.mods.values_mut() {
+        if other.required_by.contains(&mod_id) {
+            other.required_by.retain(|id| *id != mod_id);
+            if other.auto && other.required_by.is_empty() {
+                orphans.push(Orphan {
+                    mod_id: other.mod_id,
+                    name: other.name.clone(),
+                });
+            }
+        }
+    }
     state.save_library(&lib)?;
     Ok(UninstallResult {
         left_folder: removal.left_folder,
+        orphans,
     })
 }
 
@@ -355,8 +437,19 @@ pub fn set_game_folder(
     icon: Option<String>,
     folder: String,
     layout: Layout,
+    create: Option<bool>,
 ) -> AppResult<GameInstall> {
-    set_folder(&state, game_id, game_name, icon, folder, layout)
+    set_folder(&state, game_id, game_name, icon, folder, layout, create.unwrap_or(false))
+}
+
+#[tauri::command]
+pub fn folder_suggestion(game_id: i64) -> Option<FolderSuggestion> {
+    suggestion(game_id)
+}
+
+#[tauri::command]
+pub fn inspect_folder(folder: String) -> FolderInfo {
+    inspect(&folder)
 }
 
 #[tauri::command]
@@ -364,12 +457,13 @@ pub async fn install_mod(
     state: State<'_, AppState>,
     game_id: i64,
     mod_id: i64,
+    required_by: Option<i64>,
     on_event: Channel<InstallEvent>,
 ) -> AppResult<InstalledMod> {
     let emit: Arc<dyn Fn(InstallEvent) + Send + Sync> = Arc::new(move |e| {
         let _ = on_event.send(e);
     });
-    install(&state, game_id, mod_id, emit).await
+    install(&state, game_id, mod_id, required_by, emit).await
 }
 
 #[tauri::command]
@@ -455,7 +549,7 @@ mod tests {
         let config = tempdir("cfg");
         let game_folder = tempdir("mods");
         let s = state(&server.base, &config);
-        set_folder(&s, 3, "Tidebreak".into(), None, game_folder.to_string_lossy().into_owned(), layout).unwrap();
+        set_folder(&s, 3, "Tidebreak".into(), None, game_folder.to_string_lossy().into_owned(), layout, false).unwrap();
 
         let events = Arc::new(Mutex::new(Vec::<String>::new()));
         let ev = events.clone();
@@ -466,7 +560,7 @@ mod tests {
                 v.push(tag);
             }
         });
-        let result = install(&s, 3, 5, emit).await;
+        let result = install(&s, 3, 5, None, emit).await;
         let phases = events.lock().unwrap().clone();
         // Le manifeste est relu depuis le disque pour vérifier la sauvegarde.
         let reloaded = installer::Library::load(&config.join("installed.json"));
@@ -518,11 +612,11 @@ mod tests {
         let config = tempdir("cfg2");
         let s = state("http://127.0.0.1:9/v1", &config);
         let emit: Arc<dyn Fn(InstallEvent) + Send + Sync> = Arc::new(|_| {});
-        assert!(matches!(install(&s, 3, 5, emit).await, Err(AppError::NoGameFolder)));
+        assert!(matches!(install(&s, 3, 5, None, emit).await, Err(AppError::NoGameFolder)));
 
         // Installation simulée, puis désinstallation.
         let folder = tempdir("mods2");
-        set_folder(&s, 3, "Jeu".into(), None, folder.to_string_lossy().into_owned(), Layout::Flat).unwrap();
+        set_folder(&s, 3, "Jeu".into(), None, folder.to_string_lossy().into_owned(), Layout::Flat, false).unwrap();
         fs::create_dir_all(folder.join("m")).unwrap();
         fs::write(folder.join("m/a.pak"), b"x").unwrap();
         s.library.lock().unwrap().games.get_mut(&3).unwrap().mods.insert(
@@ -539,16 +633,88 @@ mod tests {
                 root: None,
                 files: vec!["m/a.pak".into()],
                 dirs: vec!["m".into()],
+                auto: false,
+                required_by: Vec::new(),
             },
         );
         let r = remove(&s, 3, 5).unwrap();
         assert!(r.left_folder.is_none());
+        assert!(r.orphans.is_empty());
         assert!(!folder.join("m").exists());
         assert!(overview(&s)[0].mods.is_empty());
 
         // Changer de dossier est possible tant qu'aucun mod n'est installé.
         let other = tempdir("mods3");
-        assert!(set_folder(&s, 3, "Jeu".into(), None, other.to_string_lossy().into_owned(), Layout::Subfolder).is_ok());
-        assert!(set_folder(&s, 3, "Jeu".into(), None, "relatif/chemin".into(), Layout::Flat).is_err());
+        assert!(set_folder(&s, 3, "Jeu".into(), None, other.to_string_lossy().into_owned(), Layout::Subfolder, false).is_ok());
+        assert!(set_folder(&s, 3, "Jeu".into(), None, "relatif/chemin".into(), Layout::Flat, true).is_err());
+
+        // Dossier habituel pas encore créé par le jeu : créé à la demande.
+        let missing = tempdir("parent").join("Stress Level Zero").join("BONELAB").join("Mods");
+        let other_game = set_folder(&s, 9, "Bonelab".into(), None, missing.to_string_lossy().into_owned(), Layout::Flat, true).unwrap();
+        assert!(other_game.folder.is_dir());
+    }
+
+    fn fake_record(mod_id: i64, name: &str, auto: bool, required_by: Vec<i64>) -> InstalledMod {
+        InstalledMod {
+            mod_id,
+            name: name.into(),
+            logo: None,
+            version: None,
+            modfile_id: 1,
+            size: 0,
+            installed_at: 0,
+            layout: Layout::Flat,
+            root: None,
+            files: Vec::new(),
+            dirs: Vec::new(),
+            auto,
+            required_by,
+        }
+    }
+
+    #[test]
+    fn dependency_bookkeeping() {
+        // Installé comme mod nécessaire : automatique.
+        assert_eq!(dependency_state(Some(5), None), (true, vec![5]));
+        // Déjà automatique pour un autre mod : on ajoute le nouveau parent.
+        let auto = fake_record(6, "Lib", true, vec![8]);
+        assert_eq!(dependency_state(Some(5), Some(&auto)), (true, vec![8, 5]));
+        // Installé par l'utilisateur lui-même : jamais automatique.
+        let manual = fake_record(6, "Lib", false, vec![]);
+        assert_eq!(dependency_state(Some(5), Some(&manual)), (false, vec![]));
+        assert_eq!(dependency_state(None, Some(&auto)), (false, vec![]));
+    }
+
+    #[test]
+    fn uninstall_reports_dependencies_no_longer_needed() {
+        let config = tempdir("cfg-deps");
+        let s = state("http://127.0.0.1:9/v1", &config);
+        let folder = tempdir("mods-deps");
+        set_folder(&s, 3, "Jeu".into(), None, folder.to_string_lossy().into_owned(), Layout::Flat, false).unwrap();
+        {
+            let mut lib = s.library.lock().unwrap();
+            let mods = &mut lib.games.get_mut(&3).unwrap().mods;
+            mods.insert(5, fake_record(5, "Mod principal", false, vec![]));
+            mods.insert(6, fake_record(6, "7/11 Extra Content", true, vec![5]));
+            mods.insert(7, fake_record(7, "Partagé", true, vec![5, 8]));
+            mods.insert(9, fake_record(9, "Installé à la main", false, vec![]));
+        }
+        let r = remove(&s, 3, 5).unwrap();
+        let names: Vec<_> = r.orphans.iter().map(|o| o.name.as_str()).collect();
+        assert_eq!(names, vec!["7/11 Extra Content"]);
+        let lib = s.library.lock().unwrap();
+        assert_eq!(lib.games[&3].mods[&7].required_by, vec![8], "encore nécessaire au mod 8");
+        assert!(lib.games[&3].mods.contains_key(&6), "rien n'est retiré sans l'accord de l'utilisateur");
+    }
+
+    #[test]
+    fn suggests_folders_and_spots_game_roots() {
+        assert!(suggestion(1).is_none());
+        let root = tempdir("root-inspect");
+        fs::write(root.join("Game.exe"), b"").unwrap();
+        fs::write(root.join("UnityPlayer.dll"), b"").unwrap();
+        let info = inspect(&root.to_string_lossy());
+        assert!(info.exists && info.looks_like_game_root);
+        assert!(!inspect("/n/existe/pas").exists);
     }
 }

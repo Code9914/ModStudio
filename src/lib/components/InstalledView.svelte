@@ -89,11 +89,35 @@
       if (r.leftFolder) {
         notes.set(-g.gameId, `« ${m.name} » désinstallé. Son dossier contient des fichiers ajoutés depuis, il a été laissé en place.`);
       }
+      if (r.orphans.length) orphans.set(g.gameId, { parent: m.name, mods: r.orphans });
     } catch (e) {
       rowErrors.set(m.modId, asAppError(e).message);
     } finally {
       removing.delete(m.modId);
     }
+  }
+
+  /** Mods nécessaires devenus inutiles après une désinstallation, par jeu. */
+  const orphans = new SvelteMap<number, { parent: string; mods: { modId: number; name: string }[] }>();
+
+  async function removeOrphans(g: GameInstall) {
+    const entry = orphans.get(g.gameId);
+    orphans.delete(g.gameId);
+    if (!entry) return;
+    for (const o of entry.mods) {
+      removing.add(o.modId);
+      try {
+        await installs.uninstall(g.gameId, o.modId);
+      } catch (e) {
+        rowErrors.set(o.modId, asAppError(e).message);
+      } finally {
+        removing.delete(o.modId);
+      }
+    }
+  }
+
+  function parentNames(g: GameInstall, m: InstalledMod) {
+    return m.requiredBy.map((id) => g.mods[id]?.name ?? `mod ${id}`);
   }
 
   async function openMod(g: GameInstall, m: InstalledMod) {
@@ -188,6 +212,21 @@
 
       {#if notes.get(-g.gameId)}<p class="note">{notes.get(-g.gameId)}</p>{/if}
 
+      {#if orphans.get(g.gameId)}
+        {@const o = orphans.get(g.gameId)!}
+        <div class="orphans">
+          <p class="small">
+            {o.mods.map((x) => `« ${x.name} »`).join(", ")}
+            {o.mods.length > 1 ? "avaient été installés" : "avait été installé"} avec « {o.parent} » et ne
+            {o.mods.length > 1 ? "servent" : "sert"} plus à aucun autre mod.
+          </p>
+          <button class="btn btn-primary" onclick={() => removeOrphans(g)}>
+            {o.mods.length > 1 ? "Les désinstaller aussi" : "Le désinstaller aussi"}
+          </button>
+          <button class="btn btn-ghost" onclick={() => orphans.delete(g.gameId)}>Garder</button>
+        </div>
+      {/if}
+
       {#if Object.keys(g.mods).length === 0}
         <p class="muted small">Aucun mod installé pour ce jeu.</p>
       {:else if list.length === 0}
@@ -208,6 +247,9 @@
                   <span>{m.version ? `version ${m.version}` : "version sans numéro"}</span>
                   <span>{bytes(m.size)}</span>
                   <span>installé {ago(m.installedAt)}</span>
+                  {#if m.auto && m.requiredBy.length}
+                    <span>nécessaire à « {parentNames(g, m).join(" », « ")} »</span>
+                  {/if}
                 </span>
                 {#if rowErrors.get(m.modId)}
                   <span class="row-error">{rowErrors.get(m.modId)}</span>
@@ -337,6 +379,20 @@
     padding: 1.1rem;
     border-radius: var(--r-md);
     background: var(--panel);
+  }
+
+  .orphans {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem 0.8rem;
+    padding: 0.8rem 1rem;
+    border-radius: var(--r-md);
+    background: var(--raise);
+  }
+
+  .orphans p {
+    flex: 1 1 22rem;
   }
 
   .note,

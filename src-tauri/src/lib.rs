@@ -46,6 +46,8 @@ pub fn run() {
             account::unsubscribe_mod,
             install_commands::install_overview,
             install_commands::set_game_folder,
+            install_commands::folder_suggestion,
+            install_commands::inspect_folder,
             install_commands::install_mod,
             install_commands::cancel_install,
             install_commands::uninstall_mod,

@@ -58,6 +58,12 @@ pub struct InstalledMod {
     /// Dossiers créés par l'installation, relatifs au dossier du jeu.
     #[serde(default)]
     pub dirs: Vec<String>,
+    /// Installé automatiquement comme mod nécessaire d'un autre mod.
+    #[serde(default)]
+    pub auto: bool,
+    /// Mods installés qui ont entraîné l'installation de celui-ci.
+    #[serde(default)]
+    pub required_by: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -588,6 +594,58 @@ pub fn check_folder(path: &Path) -> AppResult<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------- Aide au choix du dossier
+
+/// Le dossier ressemble au dossier d'installation d'un jeu (exécutable,
+/// moteur…), ce qui n'est presque jamais le dossier où il charge ses mods.
+pub fn looks_like_game_root(path: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(path) else { return false };
+    let mut exe = false;
+    let mut engine = false;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if !is_dir && name.ends_with(".exe") && !name.starts_with("unins") {
+            exe = true;
+        }
+        let engine_file = matches!(
+            name.as_str(),
+            "unityplayer.dll" | "gameassembly.dll" | "steam_api64.dll" | "steam_api.dll" | "eossdk-win64-shipping.dll"
+        );
+        let engine_dir = is_dir && (name.ends_with("_data") || name == "engine" || name == "binaries");
+        if engine_file || engine_dir {
+            engine = true;
+        }
+    }
+    exe && engine
+}
+
+/// Dossier de mods habituel des jeux connus, avec le rangement adapté.
+/// Les chemins contiennent des variables d'environnement Windows (`%USERPROFILE%`).
+pub fn known_folder(game_id: i64) -> Option<(&'static str, Layout)> {
+    match game_id {
+        // Bonelab : les « pallets » vont directement dans Mods.
+        3809 => Some((r"%USERPROFILE%\AppData\LocalLow\Stress Level Zero\BONELAB\Mods", Layout::Flat)),
+        _ => None,
+    }
+}
+
+/// Remplace `%NOM%` par la variable d'environnement correspondante.
+/// Renvoie `None` si une variable est absente.
+pub fn expand_env(template: &str, lookup: impl Fn(&str) -> Option<String>) -> Option<String> {
+    let mut out = String::new();
+    let mut rest = template;
+    while let Some(start) = rest.find('%') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        let end = after.find('%')?;
+        out.push_str(&lookup(&after[..end])?);
+        rest = &after[end + 1..];
+    }
+    out.push_str(rest);
+    Some(out)
+}
+
 // ---------------------------------------------------------------- Tests
 
 #[cfg(test)]
@@ -647,6 +705,8 @@ pub mod tests {
             root: placed.root.clone(),
             files: placed.files.clone(),
             dirs: placed.dirs.clone(),
+            auto: false,
+            required_by: Vec::new(),
         }
     }
 
@@ -827,6 +887,41 @@ pub mod tests {
         let back = Library::load(&path);
         assert_eq!(back.games[&7].layout, Layout::Flat);
         assert!(Library::load(&dir.join("absent.json")).games.is_empty());
+
+        // Un manifeste écrit par la v0.3 (sans `auto` ni `requiredBy`) reste lisible.
+        let old = r#"{"games":{"3":{"gameId":3,"gameName":"J","folder":"/x","layout":"flat","mods":{"5":
+            {"modId":5,"name":"M","modfileId":1,"installedAt":0,"layout":"flat","files":["a"],"dirs":[]}}}}}"#;
+        fs::write(&path, old).unwrap();
+        let back = Library::load(&path);
+        let m = &back.games[&3].mods[&5];
+        assert!(!m.auto && m.required_by.is_empty());
+    }
+
+    #[test]
+    fn spots_game_install_folders() {
+        let root = tempdir("gameroot");
+        fs::write(root.join("BONELAB_Steam_Windows64.exe"), b"").unwrap();
+        fs::write(root.join("UnityPlayer.dll"), b"").unwrap();
+        fs::create_dir(root.join("BONELAB_Steam_Windows64_Data")).unwrap();
+        assert!(looks_like_game_root(&root));
+
+        let mods = tempdir("modsdir");
+        fs::create_dir(mods.join("BaBaCorp.711ExtraContent")).unwrap();
+        fs::write(mods.join("readme.txt"), b"").unwrap();
+        assert!(!looks_like_game_root(&mods));
+    }
+
+    #[test]
+    fn expands_known_folders() {
+        let env = |name: &str| (name == "USERPROFILE").then(|| r"C:\Users\Code".to_string());
+        let (template, layout) = known_folder(3809).unwrap();
+        assert_eq!(
+            expand_env(template, env).unwrap(),
+            r"C:\Users\Code\AppData\LocalLow\Stress Level Zero\BONELAB\Mods"
+        );
+        assert_eq!(layout, Layout::Flat);
+        assert!(expand_env("%ABSENTE%\\x", env).is_none());
+        assert!(known_folder(1).is_none());
     }
 
     fn file_response(body: &[u8]) -> String {

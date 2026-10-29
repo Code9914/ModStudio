@@ -116,6 +116,9 @@ pub struct Game {
     pub summary: Option<String>,
     #[serde(default, deserialize_with = "lenient")]
     pub profile_url: Option<String>,
+    /// Guide ou wiki de modding fourni par le jeu.
+    #[serde(default, deserialize_with = "lenient")]
+    pub instructions_url: Option<String>,
     #[serde(default, deserialize_with = "lenient")]
     pub ugc_name: Option<String>,
     #[serde(default, deserialize_with = "lenient")]

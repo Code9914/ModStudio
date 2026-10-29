@@ -86,6 +86,7 @@ export interface Game {
   name_id: string | null;
   summary: string | null;
   profile_url: string | null;
+  instructions_url: string | null;
   ugc_name: string | null;
   date_updated: number | null;
   icon: Icon | null;
@@ -259,13 +260,24 @@ export const api = {
 
   installOverview: () => call<GameInstall[]>("install_overview"),
 
-  setGameFolder: (gameId: number, gameName: string, icon: string | null, folder: string, layout: Layout) =>
-    call<GameInstall>("set_game_folder", { gameId, gameName, icon, folder, layout }),
+  setGameFolder: (
+    gameId: number,
+    gameName: string,
+    icon: string | null,
+    folder: string,
+    layout: Layout,
+    create = false,
+  ) => call<GameInstall>("set_game_folder", { gameId, gameName, icon, folder, layout, create }),
 
-  installMod: (gameId: number, modId: number, onProgress: (e: InstallEvent) => void) => {
+  folderSuggestion: (gameId: number) => call<FolderSuggestion | null>("folder_suggestion", { gameId }),
+
+  inspectFolder: (folder: string) => call<FolderInfo>("inspect_folder", { folder }),
+
+  /** `requiredBy` : mod qui demande cette installation (mod nécessaire). */
+  installMod: (gameId: number, modId: number, onProgress: (e: InstallEvent) => void, requiredBy: number | null = null) => {
     const onEvent = new Channel<InstallEvent>();
     onEvent.onmessage = onProgress;
-    return call<InstalledMod>("install_mod", { gameId, modId, onEvent });
+    return call<InstalledMod>("install_mod", { gameId, modId, requiredBy, onEvent });
   },
 
   cancelInstall: (modId: number) => call<null>("cancel_install", { modId }),
@@ -291,6 +303,20 @@ export interface InstalledMod {
   root: string | null;
   files: string[];
   dirs: string[];
+  /** Installé automatiquement comme mod nécessaire. */
+  auto: boolean;
+  requiredBy: number[];
+}
+
+export interface FolderSuggestion {
+  path: string;
+  layout: Layout;
+  exists: boolean;
+}
+
+export interface FolderInfo {
+  exists: boolean;
+  looksLikeGameRoot: boolean;
 }
 
 export interface GameInstall {
@@ -317,6 +343,8 @@ export interface LatestFile {
 
 export interface UninstallResult {
   leftFolder: string | null;
+  /** Mods nécessaires installés avec celui-ci et devenus inutiles. */
+  orphans: { modId: number; name: string }[];
 }
 
 export interface AuthView {
