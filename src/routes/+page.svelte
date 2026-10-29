@@ -2,9 +2,11 @@
   import { onMount } from "svelte";
   import { api, asAppError, type AppError } from "$lib/api";
   import { nav } from "$lib/nav.svelte";
+  import AccountView from "$lib/components/AccountView.svelte";
   import ErrorNotice from "$lib/components/ErrorNotice.svelte";
   import GamesView from "$lib/components/GamesView.svelte";
   import Icon from "$lib/components/Icon.svelte";
+  import LibraryView from "$lib/components/LibraryView.svelte";
   import ModsView from "$lib/components/ModsView.svelte";
   import ModView from "$lib/components/ModView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
@@ -16,6 +18,7 @@
     try {
       nav.settings = await api.getSettings();
       if (!nav.settings.hasApiKey) nav.openSettings();
+      else nav.refreshAuth();
     } catch (e) {
       startError = asAppError(e);
     }
@@ -27,12 +30,14 @@
     const typing = (event.target as HTMLElement)?.closest("input, textarea, select");
     if (typing) return;
     if ((event.key === "Escape" || (event.altKey && event.key === "ArrowLeft")) && nav.view.name !== "games") {
-      if (nav.view.name === "settings") nav.openGames();
-      else nav.back();
+      if (nav.view.name === "mod" || nav.view.name === "mods") nav.back();
+      else nav.openGames();
     }
   }
 
   const ready = $derived(nav.settings?.hasApiKey === true);
+  const user = $derived(nav.auth?.user ?? null);
+  const avatar = $derived(user?.avatar?.thumb_50x50 ?? user?.avatar?.thumb_100x100 ?? user?.avatar?.original ?? null);
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -56,7 +61,9 @@
         <li>
           <button
             class="nav-item sub"
-            aria-current={nav.view.name === "mods" || nav.view.name === "mod" ? "page" : undefined}
+            aria-current={nav.view.name === "mods" || (nav.view.name === "mod" && nav.modOrigin === "mods")
+              ? "page"
+              : undefined}
             onclick={() => nav.game && nav.openGame(nav.game)}
           >
             {#if nav.game.icon?.thumb_64x64}
@@ -69,6 +76,18 @@
       <li>
         <button
           class="nav-item"
+          aria-current={nav.view.name === "library" || (nav.view.name === "mod" && nav.modOrigin === "library")
+            ? "page"
+            : undefined}
+          disabled={!ready}
+          onclick={() => nav.openLibrary()}
+        >
+          <Icon name="library" size={18} />Mes mods
+        </button>
+      </li>
+      <li>
+        <button
+          class="nav-item"
           aria-current={nav.view.name === "settings" ? "page" : undefined}
           onclick={() => nav.openSettings()}
         >
@@ -77,7 +96,35 @@
       </li>
     </ul>
 
-    <p class="version muted">Version 0.1, client non officiel</p>
+    <div class="rail-foot">
+      {#if ready}
+        <button
+          class="account"
+          aria-current={nav.view.name === "account" ? "page" : undefined}
+          aria-label={nav.loggedIn ? "Mon compte mod.io" : "Se connecter à mod.io"}
+          onclick={() => nav.openAccount()}
+        >
+          {#if nav.loggedIn}
+            {#if avatar}
+              <img class="account-avatar" src={avatar} alt="" />
+            {:else}
+              <span class="account-avatar placeholder"><Icon name="user" size={16} /></span>
+            {/if}
+            <span class="account-text">
+              <span class="ellipsis account-name">{user?.username ?? user?.display_name_portal ?? "Connecté"}</span>
+              <span class="account-sub">Compte mod.io</span>
+            </span>
+          {:else}
+            <span class="account-avatar placeholder"><Icon name="user" size={16} /></span>
+            <span class="account-text">
+              <span class="account-name">Se connecter</span>
+              <span class="account-sub">pour s'abonner</span>
+            </span>
+          {/if}
+        </button>
+      {/if}
+      <p class="version muted">Version 0.2, client non officiel</p>
+    </div>
   </nav>
 
   <main class="stage">
@@ -92,9 +139,13 @@
               <div class="pane" hidden={nav.view.name !== "mods"}><ModsView game={nav.game} /></div>
             {/key}
           {/if}
+          <div class="pane" hidden={nav.view.name !== "library"}><LibraryView /></div>
         {/key}
         {#if nav.view.name === "mod" && nav.game}
           <div class="pane"><ModView game={nav.game} modId={nav.view.modId} /></div>
+        {/if}
+        {#if nav.view.name === "account"}
+          <div class="pane"><AccountView /></div>
         {/if}
       {/if}
       {#if nav.view.name === "settings"}
@@ -160,7 +211,8 @@
     cursor: not-allowed;
   }
 
-  .nav-item[aria-current="page"] {
+  .nav-item[aria-current="page"],
+  .account[aria-current="page"] {
     background: var(--raise);
     color: var(--text);
     box-shadow: inset 3px 0 0 var(--accent-fill);
@@ -182,8 +234,61 @@
     white-space: nowrap;
   }
 
-  .version {
+  .rail-foot {
     margin-top: auto;
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .account {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    text-align: left;
+    color: var(--text);
+  }
+
+  .account:hover .account-name {
+    color: var(--accent);
+  }
+
+  .account-avatar {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    object-fit: cover;
+    flex: none;
+    background: var(--raise);
+  }
+
+  .account-avatar.placeholder {
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+  }
+
+  .account-text {
+    display: grid;
+    min-width: 0;
+    line-height: 1.25;
+  }
+
+  .account-name {
+    font-weight: 600;
+    font-size: var(--t-sm);
+  }
+
+  .account-sub {
+    font-size: var(--t-xs);
+    color: var(--muted);
+  }
+
+  .version {
     padding: 0 0.6rem;
     font-size: var(--t-xs);
   }

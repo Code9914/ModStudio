@@ -1,6 +1,9 @@
 <script lang="ts">
   // Image 16:9 chargée paresseusement, avec repli sur l'initiale si absente ou cassée.
-  let { src, label, badge }: { src: string | null | undefined; label: string; badge?: string } = $props();
+  export type Badge = { text: string; tone: "warn" | "ok" };
+
+  let { src, label, badges = [] }: { src: string | null | undefined; label: string; badges?: Badge[] } =
+    $props();
 
   let failed = $state(false);
   $effect(() => {
@@ -17,8 +20,12 @@
   {:else}
     <span class="fallback" aria-hidden="true">{initial}</span>
   {/if}
-  {#if badge}
-    <span class="badge chip chip-warn">{badge}</span>
+  {#if badges.length}
+    <span class="badges">
+      {#each badges as b (b.text)}
+        <span class="chip" class:chip-warn={b.tone === "warn"} class:chip-ok={b.tone === "ok"}>{b.text}</span>
+      {/each}
+    </span>
   {/if}
 </div>
 
@@ -34,9 +41,11 @@
     color: var(--muted);
   }
 
-  .badge {
+  .badges {
     position: absolute;
     top: 0.5rem;
     left: 0.5rem;
+    display: flex;
+    gap: 0.3rem;
   }
 </style>

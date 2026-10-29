@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use reqwest::header::{HeaderMap, ACCEPT};
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, Method, StatusCode};
 use serde::de::DeserializeOwned;
 
 use super::models::ApiErrorBody;
@@ -21,6 +21,15 @@ pub struct ApiConfig {
     pub api_path: String,
 }
 
+/// Comment une requête s'authentifie auprès de mod.io.
+#[derive(Debug, Clone, Copy)]
+pub enum Auth<'a> {
+    /// Clé API en paramètre : lecture seule et flux de connexion.
+    ApiKey,
+    /// Jeton OAuth 2 de l'utilisateur, dans l'en-tête `Authorization`.
+    Token(&'a str),
+}
+
 pub struct ModioClient {
     http: Client,
 }
@@ -36,40 +45,82 @@ impl ModioClient {
         Self { http }
     }
 
-    /// GET `{api_path}{path}?api_key=…&query…`, avec un nouvel essai automatique
-    /// si mod.io demande d'attendre quelques secondes.
+    /// GET avec la clé API.
     pub async fn get<T: DeserializeOwned>(
         &self,
         cfg: &ApiConfig,
         path: &str,
         query: &[(&str, String)],
     ) -> AppResult<T> {
-        match self.get_once(cfg, path, query).await {
+        self.get_as(cfg, Auth::ApiKey, path, query).await
+    }
+
+    /// GET avec l'authentification choisie, et un nouvel essai automatique si
+    /// mod.io demande d'attendre quelques secondes.
+    pub async fn get_as<T: DeserializeOwned>(
+        &self,
+        cfg: &ApiConfig,
+        auth: Auth<'_>,
+        path: &str,
+        query: &[(&str, String)],
+    ) -> AppResult<T> {
+        match self.send(cfg, auth, Method::GET, path, query, None).await {
             Err(AppError::RateLimited(secs)) if secs <= MAX_SILENT_RETRY_SECS => {
                 tokio::time::sleep(Duration::from_secs(secs.max(1))).await;
-                self.get_once(cfg, path, query).await
+                self.send(cfg, auth, Method::GET, path, query, None).await
             }
             other => other,
         }
     }
 
-    async fn get_once<T: DeserializeOwned>(
+    /// POST `application/x-www-form-urlencoded`.
+    pub async fn post_form<T: DeserializeOwned>(
         &self,
         cfg: &ApiConfig,
+        auth: Auth<'_>,
+        path: &str,
+        form: &[(&str, String)],
+    ) -> AppResult<T> {
+        self.send(cfg, auth, Method::POST, path, &[], Some(form)).await
+    }
+
+    pub async fn delete<T: DeserializeOwned>(
+        &self,
+        cfg: &ApiConfig,
+        auth: Auth<'_>,
+        path: &str,
+    ) -> AppResult<T> {
+        // mod.io attend le même type de contenu que pour un POST, même vide.
+        self.send(cfg, auth, Method::DELETE, path, &[], Some(&[])).await
+    }
+
+    async fn send<T: DeserializeOwned>(
+        &self,
+        cfg: &ApiConfig,
+        auth: Auth<'_>,
+        method: Method,
         path: &str,
         query: &[(&str, String)],
+        form: Option<&[(&str, String)]>,
     ) -> AppResult<T> {
-        if cfg.api_key.trim().is_empty() {
-            return Err(AppError::MissingApiKey);
+        let url = format!("{}{}", cfg.api_path, path);
+        let mut request = self.http.request(method, &url).header(ACCEPT, "application/json");
+
+        request = match auth {
+            Auth::ApiKey => {
+                if cfg.api_key.trim().is_empty() {
+                    return Err(AppError::MissingApiKey);
+                }
+                request.query(&[("api_key", cfg.api_key.as_str())])
+            }
+            Auth::Token(token) => request.bearer_auth(token),
+        };
+        request = request.query(query);
+        if let Some(form) = form {
+            request = request.form(form);
         }
 
-        let url = format!("{}{}", cfg.api_path, path);
-        let response = self
-            .http
-            .get(&url)
-            .header(ACCEPT, "application/json")
-            .query(&[("api_key", cfg.api_key.as_str())])
-            .query(query)
+        let response = request
             .send()
             .await
             // `without_url` : l'URL contient la clé API, elle ne doit jamais
@@ -78,32 +129,47 @@ impl ModioClient {
 
         let status = response.status();
         if status.is_success() {
-            return response
-                .json::<T>()
+            let body = response
+                .bytes()
                 .await
-                .map_err(|e| AppError::Decode(e.without_url().to_string()));
+                .map_err(|e| AppError::Network(e.without_url().to_string()))?;
+            // 204 No Content : rien à lire.
+            let body: &[u8] = if body.iter().all(u8::is_ascii_whitespace) { b"null" } else { &body };
+            return serde_json::from_slice(body).map_err(|e| AppError::Decode(e.to_string()));
         }
 
         let retry_after = retry_after_secs(response.headers());
-        let message = response
+        let detail = response
             .json::<ApiErrorBody>()
             .await
-            .ok()
-            .and_then(|body| body.error.message)
+            .map(|b| b.error)
+            .unwrap_or_default();
+        let message = detail
+            .message
             .unwrap_or_else(|| status.canonical_reason().unwrap_or("erreur inconnue").to_string());
+        Err(map_status(status, detail.error_ref, message, retry_after, auth))
+    }
+}
 
-        Err(match status {
-            StatusCode::UNAUTHORIZED => AppError::Unauthorized(message),
-            StatusCode::FORBIDDEN => AppError::Forbidden(message),
-            StatusCode::NOT_FOUND => AppError::NotFound,
-            StatusCode::TOO_MANY_REQUESTS => {
-                AppError::RateLimited(retry_after.unwrap_or(DEFAULT_RETRY_SECS))
-            }
-            other => AppError::Api {
-                status: other.as_u16(),
-                message,
-            },
-        })
+fn map_status(
+    status: StatusCode,
+    error_ref: Option<i64>,
+    message: String,
+    retry_after: Option<u64>,
+    auth: Auth<'_>,
+) -> AppError {
+    match status {
+        // Avec un jeton, un 401 veut dire que la session n'est plus valable.
+        StatusCode::UNAUTHORIZED if matches!(auth, Auth::Token(_)) => AppError::SessionExpired,
+        StatusCode::UNAUTHORIZED => AppError::Unauthorized { message, error_ref },
+        StatusCode::FORBIDDEN => AppError::Forbidden { message, error_ref },
+        StatusCode::NOT_FOUND => AppError::NotFound,
+        StatusCode::TOO_MANY_REQUESTS => AppError::RateLimited(retry_after.unwrap_or(DEFAULT_RETRY_SECS)),
+        other => AppError::Api {
+            status: other.as_u16(),
+            message,
+            error_ref,
+        },
     }
 }
 
@@ -117,10 +183,10 @@ fn retry_after_secs(headers: &HeaderMap) -> Option<u64> {
 mod tests {
     use super::*;
     use crate::api::models::{Game, Page};
+    use crate::testutil::{fake_server, json_response, ApiConfigExt};
     use reqwest::header::HeaderValue;
-    use std::io::{BufRead, BufReader, Write};
+    use serde::de::IgnoredAny;
     use std::net::TcpListener;
-    use std::sync::{Arc, Mutex};
 
     #[test]
     fn reads_retry_after_headers() {
@@ -132,95 +198,88 @@ mod tests {
         assert_eq!(retry_after_secs(&h), Some(3));
     }
 
-    /// Petit faux serveur HTTP : renvoie les réponses fournies dans l'ordre
-    /// et garde la ligne de requête reçue.
-    fn fake_server(responses: Vec<&'static str>) -> (String, Arc<Mutex<Vec<String>>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let seen_thread = seen.clone();
-        std::thread::spawn(move || {
-            for response in responses {
-                let (mut stream, _) = listener.accept().unwrap();
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                seen_thread.lock().unwrap().push(line.trim().to_string());
-                // Vide les en-têtes.
-                loop {
-                    let mut h = String::new();
-                    reader.read_line(&mut h).unwrap();
-                    if h == "\r\n" || h.is_empty() {
-                        break;
-                    }
-                }
-                stream.write_all(response.as_bytes()).unwrap();
-            }
-        });
-        (format!("http://{addr}/v1"), seen)
-    }
-
-    fn cfg(path: String) -> ApiConfig {
-        ApiConfig {
-            api_key: "secretkey1234".into(),
-            api_path: path,
-        }
-    }
-
     #[tokio::test]
     async fn sends_key_and_query_and_parses_page() {
         let body = r#"{"data":[{"id":1,"name":"Un jeu"}],"result_count":1,"result_offset":0,"result_limit":1,"result_total":9}"#;
-        let resp: &'static str = Box::leak(
-            format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body)
-                .into_boxed_str(),
-        );
-        let (path, seen) = fake_server(vec![resp]);
+        let server = fake_server(vec![json_response(200, body)]);
         let page: Page<Game> = ModioClient::new()
-            .get(&cfg(path), "/games", &[("_q", "été cool".into())])
+            .get(&ApiConfig::test(&server.base), "/games", &[("_q", "été cool".into())])
             .await
             .unwrap();
         assert_eq!(page.result_total, 9);
         assert_eq!(page.data[0].name.as_deref(), Some("Un jeu"));
-        let line = seen.lock().unwrap()[0].clone();
-        assert!(line.starts_with("GET /v1/games?api_key=secretkey1234&_q="), "{line}");
+        let req = server.request(0);
+        assert!(req.line.starts_with("GET /v1/games?api_key=secretkey1234&_q="), "{}", req.line);
+        assert!(req.header("authorization").is_none());
     }
 
     #[tokio::test]
     async fn maps_401_without_leaking_key() {
-        let body = r#"{"error":{"code":401,"error_ref":11000,"message":"Invalid API key."}}"#;
-        let resp: &'static str = Box::leak(
-            format!("HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body)
-                .into_boxed_str(),
-        );
-        let (path, _) = fake_server(vec![resp]);
+        let body = r#"{"error":{"code":401,"error_ref":11002,"message":"Invalid API key."}}"#;
+        let server = fake_server(vec![json_response(401, body)]);
         let err = ModioClient::new()
-            .get::<Page<Game>>(&cfg(path), "/games", &[])
+            .get::<Page<Game>>(&ApiConfig::test(&server.base), "/games", &[])
             .await
             .unwrap_err();
-        assert!(matches!(err, AppError::Unauthorized(ref m) if m == "Invalid API key."));
+        assert!(matches!(err, AppError::Unauthorized { ref message, error_ref: Some(11002) } if message == "Invalid API key."));
         assert!(!err.to_string().contains("secretkey1234"));
     }
 
     #[tokio::test]
+    async fn token_requests_use_bearer_and_401_means_session_expired() {
+        let body = r#"{"error":{"code":401,"error_ref":11005,"message":"Expired."}}"#;
+        let server = fake_server(vec![json_response(401, body)]);
+        let err = ModioClient::new()
+            .get_as::<IgnoredAny>(&ApiConfig::test(&server.base), Auth::Token("tok123"), "/me", &[])
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::SessionExpired));
+        let req = server.request(0);
+        assert_eq!(req.header("authorization").as_deref(), Some("Bearer tok123"));
+        assert!(!req.line.contains("api_key"), "{}", req.line);
+    }
+
+    #[tokio::test]
+    async fn posts_form_and_accepts_empty_204() {
+        let server = fake_server(vec![
+            json_response(200, r#"{"code":200,"message":"ok"}"#),
+            "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n".to_string(),
+        ]);
+        let client = ModioClient::new();
+        let cfg = ApiConfig::test(&server.base);
+        let _: IgnoredAny = client
+            .post_form(&cfg, Auth::ApiKey, "/oauth/emailrequest", &[("email", "a+b@exemple.fr".into())])
+            .await
+            .unwrap();
+        let _: IgnoredAny = client
+            .delete(&cfg, Auth::Token("t"), "/games/1/mods/2/subscribe")
+            .await
+            .unwrap();
+        let post = server.request(0);
+        assert!(post.line.starts_with("POST /v1/oauth/emailrequest?api_key=secretkey1234"), "{}", post.line);
+        assert_eq!(post.header("content-type").as_deref(), Some("application/x-www-form-urlencoded"));
+        assert_eq!(post.body, "email=a%2Bb%40exemple.fr");
+        assert!(server.request(1).line.starts_with("DELETE /v1/games/1/mods/2/subscribe"));
+    }
+
+    #[tokio::test]
     async fn retries_once_after_short_rate_limit() {
-        let ok = r#"{"data":[],"result_total":0}"#;
-        let ok_resp: &'static str = Box::leak(
-            format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", ok.len(), ok)
-                .into_boxed_str(),
-        );
-        let limited = "HTTP/1.1 429 Too Many Requests\r\nretry-after: 1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-        let (path, seen) = fake_server(vec![limited, ok_resp]);
-        let page: Page<Game> = ModioClient::new().get(&cfg(path), "/games", &[]).await.unwrap();
+        let limited = "HTTP/1.1 429 Too Many Requests\r\nretry-after: 1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string();
+        let server = fake_server(vec![limited, json_response(200, r#"{"data":[],"result_total":0}"#)]);
+        let page: Page<Game> = ModioClient::new()
+            .get(&ApiConfig::test(&server.base), "/games", &[])
+            .await
+            .unwrap();
         assert!(page.data.is_empty());
-        assert_eq!(seen.lock().unwrap().len(), 2);
+        assert_eq!(server.count(), 2);
     }
 
     #[tokio::test]
     async fn long_rate_limit_is_reported() {
-        let limited = "HTTP/1.1 429 Too Many Requests\r\nretry-after: 45\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-        let (path, _) = fake_server(vec![limited]);
+        let limited = "HTTP/1.1 429 Too Many Requests\r\nretry-after: 45\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string();
+        let server = fake_server(vec![limited]);
         let err = ModioClient::new()
-            .get::<Page<Game>>(&cfg(path), "/games", &[])
+            .get::<Page<Game>>(&ApiConfig::test(&server.base), "/games", &[])
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::RateLimited(45)));
@@ -233,7 +292,7 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         drop(listener);
         let err = ModioClient::new()
-            .get::<Page<Game>>(&cfg(format!("http://{addr}/v1")), "/games", &[])
+            .get::<Page<Game>>(&ApiConfig::test(&format!("http://{addr}/v1")), "/games", &[])
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::Network(_)));

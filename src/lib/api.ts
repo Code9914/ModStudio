@@ -16,6 +16,11 @@ export interface AppError {
     | "invalid_api_path"
     | "storage"
     | "invalid_argument"
+    | "not_logged_in"
+    | "session_expired"
+    | "email_login_unavailable"
+    | "invalid_code"
+    | "invalid_token"
     | "unknown";
   message: string;
   retryAfter: number | null;
@@ -206,4 +211,39 @@ export const api = {
 
   listDependencies: (gameId: number, modId: number) =>
     call<Dependency[]>("list_dependencies", { gameId, modId }),
+
+  // ---------------------------------------------------------------- Compte
+
+  authStatus: () => call<AuthView>("auth_status"),
+
+  requestCode: (email: string) => call<null>("auth_request_code", { email }),
+
+  exchangeCode: (code: string) => call<AuthView>("auth_exchange_code", { code }),
+
+  useToken: (token: string) => call<AuthView>("auth_use_token", { token }),
+
+  logout: () => call<AuthView>("auth_logout"),
+
+  listMyMods: () => call<MyMods>("list_my_mods"),
+
+  listSubscribedIds: (gameId: number) => call<number[]>("list_subscribed_ids", { gameId }),
+
+  subscribe: (gameId: number, modId: number) => call<null>("subscribe_mod", { gameId, modId }),
+
+  unsubscribe: (gameId: number, modId: number) => call<null>("unsubscribe_mod", { gameId, modId }),
 };
+
+export interface AuthView {
+  loggedIn: boolean;
+  user: User | null;
+  source: "email" | "manual" | null;
+  persisted: boolean;
+  storageWarning: string | null;
+  expired: boolean;
+}
+
+export interface MyMods {
+  games: Game[];
+  mods: Mod[];
+  truncated: boolean;
+}

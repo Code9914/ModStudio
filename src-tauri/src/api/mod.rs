@@ -1,4 +1,4 @@
 pub mod client;
 pub mod models;
 
-pub use client::{ApiConfig, ModioClient};
+pub use client::{ApiConfig, Auth, ModioClient};

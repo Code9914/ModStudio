@@ -1,9 +1,11 @@
+mod account;
 mod api;
+mod auth;
 mod commands;
 mod error;
 mod settings;
-
-use std::sync::RwLock;
+#[cfg(test)]
+mod testutil;
 
 use tauri::Manager;
 
@@ -16,11 +18,7 @@ pub fn run() {
         .setup(|app| {
             let settings_path = app.path().app_config_dir()?.join("settings.json");
             let loaded = settings::load(&settings_path);
-            app.manage(AppState {
-                client: api::ModioClient::new(),
-                settings: RwLock::new(loaded),
-                settings_path,
-            });
+            app.manage(AppState::new(loaded, settings_path, Box::new(auth::KeyringStore)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -33,6 +31,15 @@ pub fn run() {
             commands::get_mod,
             commands::list_mod_files,
             commands::list_dependencies,
+            account::auth_status,
+            account::auth_request_code,
+            account::auth_exchange_code,
+            account::auth_use_token,
+            account::auth_logout,
+            account::list_my_mods,
+            account::list_subscribed_ids,
+            account::subscribe_mod,
+            account::unsubscribe_mod,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de ModStudio");

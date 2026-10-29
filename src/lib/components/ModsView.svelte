@@ -39,6 +39,12 @@
     untrack(() => list.reload());
   });
 
+  // Mods suivis dans ce jeu, pour le badge « Abonné ».
+  $effect(() => {
+    const id = game.id;
+    untrack(() => nav.loadSubs(id));
+  });
+
   const sorts: { value: ModSort; label: string }[] = [
     { value: "-downloads_today", label: "Tendances du jour" },
     { value: "-downloads_total", label: "Plus téléchargés" },
@@ -182,7 +188,10 @@
                 <Thumb
                   src={m.logo?.thumb_640x360 ?? m.logo?.thumb_320x180 ?? m.logo?.original}
                   label={m.name ?? ""}
-                  badge={m.maturity_option > 0 ? "Adulte" : undefined}
+                  badges={[
+                    ...(nav.subs.has(m.id) ? [{ text: "Abonné", tone: "ok" as const }] : []),
+                    ...(m.maturity_option > 0 ? [{ text: "Adulte", tone: "warn" as const }] : []),
+                  ]}
                 />
                 <span class="card-title">{m.name ?? "Sans nom"}</span>
                 <span class="card-meta">

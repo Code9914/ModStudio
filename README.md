@@ -1,11 +1,11 @@
-# ModStudio — client de bureau pour mod.io (v0.1)
+# ModStudio — client de bureau pour mod.io (v0.2)
 
 ModStudio parcourt les mods de [mod.io](https://mod.io) depuis une appli de bureau
 (Windows et Linux), construite avec Tauri 2, Rust et Svelte 5.
 
 > Client **non officiel** : il n'est ni affilié à mod.io ni soutenu par mod.io.
 
-## Ce que fait la v0.1 (lecture seule)
+## Parcourir (v0.1)
 
 - Premier lancement guidé : saisie et test de la clé API mod.io.
 - Liste de tous les jeux mod.io, avec recherche et tri.
@@ -71,6 +71,20 @@ L'installateur n'est pas signé : au premier lancement, Windows SmartScreen
 affiche un avertissement. Clique sur « Informations complémentaires » puis
 « Exécuter quand même ».
 
+## Compte et abonnements (v0.2)
+
+- Connexion au compte mod.io, au choix :
+  - **par code e-mail** : ModStudio demande un code à mod.io, tu le recopies ;
+  - **par jeton d'accès** : tu crées un jeton (lecture + écriture) sur
+    <https://mod.io/me/access> et tu le colles. C'est la solution de repli si
+    mod.io refuse la connexion par e-mail avec une clé API personnelle.
+- Bouton « S'abonner » sur la fiche d'un mod, avec option pour s'abonner aussi
+  aux mods nécessaires (dépendances).
+- Badge « Abonné » dans les listes de mods.
+- Page « Mes mods » : tous tes abonnements, regroupés par jeu, avec filtre et
+  désabonnement (annulable tant que la page est ouverte).
+- Les jeux qui gèrent mod.io téléchargent tes abonnements à leur prochain lancement.
+
 ## Obtenir ta clé API
 
 1. Ouvre <https://mod.io/me/access> et connecte-toi.
@@ -85,7 +99,9 @@ La clé est en lecture seule : elle permet de parcourir, pas de modifier ton com
 ```
 src-tauri/src/
   lib.rs          démarrage de l'appli, enregistrement des commandes
-  commands.rs     commandes appelées par l'interface (jeux, mods, fichiers…)
+  commands.rs     commandes de navigation (jeux, mods, fichiers…)
+  account.rs      connexion, déconnexion, abonnements
+  auth.rs         jeton de connexion et trousseau du système
   settings.rs     réglages (clé, chemin d'API), vérification des domaines
   error.rs        erreurs envoyées à l'interface ({ kind, message, retryAfter })
   api/client.rs   requêtes HTTP vers mod.io, gestion des erreurs 401 / 429
@@ -95,7 +111,8 @@ src/
   lib/api.ts                 types et appels au backend
   lib/nav.svelte.ts          navigation entre les vues
   lib/paged.svelte.ts        listes paginées « afficher plus »
-  lib/components/            GamesView, ModsView, ModView, SettingsView…
+  lib/components/            GamesView, ModsView, ModView, LibraryView,
+                             AccountView, SettingsView…
 ```
 
 ## Tests
@@ -110,6 +127,11 @@ la gestion des erreurs 401 et 429 (avec nouvel essai automatique si l'attente
 est courte), la liste blanche des tris et des domaines d'API, et le fait que la
 clé API n'apparaît jamais dans un message d'erreur.
 
+Pour le compte : connexion par code et par jeton, rangement du jeton dans le
+trousseau, session restaurée au lancement, session expirée oubliée, messages
+clairs pour un code expiré ou refusé, abonnements idempotents, pagination de
+« Mes mods », et déconnexion qui ne révoque que les jetons obtenus par e-mail.
+
 ## Sécurité
 
 - La clé API ne quitte l'appli que vers un domaine mod.io
@@ -117,11 +139,20 @@ clé API n'apparaît jamais dans un message d'erreur.
 - Elle est enregistrée dans `settings.json`, dans le dossier de configuration :
   `%APPDATA%\fr.modstudio.app\` sous Windows,
   `~/.config/fr.modstudio.app/` sous Linux (lisible par toi seul).
+- Le jeton de connexion (accès en écriture au compte) est rangé dans le
+  trousseau du système : Gestionnaire d'identification sous Windows, Secret
+  Service (GNOME Keyring, KWallet) sous Linux. L'interface ne le voit jamais.
+  Si le trousseau est indisponible, la session reste en mémoire et l'appli le
+  signale.
+- Se déconnecter révoque le jeton obtenu par e-mail. Un jeton créé à la main
+  sur mod.io est seulement oublié : supprime-le sur mod.io/me/access pour le
+  révoquer.
 - Les descriptions de mods (HTML écrit par leurs auteurs) passent par
   DOMPurify, et l'appli applique une politique CSP stricte. Les liens s'ouvrent
   dans ton navigateur, jamais dans l'appli.
 
-## Prochaine étape : v0.2
+## Prochaine étape : v0.3
 
-Connexion au compte mod.io par code e-mail, abonnements, page « Mes mods ».
-Le jeton de connexion sera rangé dans le trousseau du système.
+Installation manuelle : téléchargement avec barre de progression, vérification
+MD5, extraction dans un dossier par jeu, dépendances, mises à jour et
+désinstallation.

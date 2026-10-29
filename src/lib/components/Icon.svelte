@@ -1,6 +1,21 @@
 <script lang="ts">
   // Petites icônes au trait, héritent de la couleur du texte.
-  type Name = "download" | "thumb" | "users" | "back" | "search" | "external" | "gear" | "grid" | "warning" | "close";
+  type Name =
+    | "download"
+    | "thumb"
+    | "users"
+    | "back"
+    | "search"
+    | "external"
+    | "gear"
+    | "grid"
+    | "warning"
+    | "close"
+    | "check"
+    | "plus"
+    | "user"
+    | "library"
+    | "refresh";
 
   let { name, size = 16 }: { name: Name; size?: number } = $props();
 
@@ -15,6 +30,11 @@
     grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
     warning: "M12 9v4m0 4h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z",
     close: "M6 6l12 12M18 6 6 18",
+    check: "M5 12.5 10 17.5 19 7",
+    plus: "M12 5v14M5 12h14",
+    user: "M19 20v-1a5 5 0 0 0-5-5h-4a5 5 0 0 0-5 5v1M12 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z",
+    library: "M5 4h3v16H5zM10 4h3v16h-3zM15.5 4.8l2.9-.8 3.6 15.3-2.9.7z",
+    refresh: "M20 11a8 8 0 0 0-14.7-4.3L4 8m0-4v4h4M4 13a8 8 0 0 0 14.7 4.3L20 16m0 4v-4h-4",
   };
 </script>
 

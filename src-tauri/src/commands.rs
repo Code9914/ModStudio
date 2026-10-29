@@ -5,8 +5,10 @@ use std::sync::RwLock;
 
 use tauri::State;
 
+use crate::account::AuthState;
 use crate::api::models::{Dependency, Game, Mod, Modfile, Page};
 use crate::api::{ApiConfig, ModioClient};
+use crate::auth::SecretStore;
 use crate::error::{AppError, AppResult};
 use crate::settings::{self, Settings, SettingsView};
 
@@ -14,14 +16,27 @@ pub struct AppState {
     pub client: ModioClient,
     pub settings: RwLock<Settings>,
     pub settings_path: PathBuf,
+    /// Où le jeton de connexion est conservé (trousseau du système).
+    pub secrets: Box<dyn SecretStore>,
+    pub auth: RwLock<AuthState>,
 }
 
 impl AppState {
-    fn snapshot(&self) -> Settings {
+    pub fn new(settings: Settings, settings_path: PathBuf, secrets: Box<dyn SecretStore>) -> Self {
+        Self {
+            client: ModioClient::new(),
+            settings: RwLock::new(settings),
+            settings_path,
+            secrets,
+            auth: RwLock::new(AuthState::default()),
+        }
+    }
+
+    pub(crate) fn snapshot(&self) -> Settings {
         self.settings.read().expect("réglages").clone()
     }
 
-    fn api_config(&self) -> ApiConfig {
+    pub(crate) fn api_config(&self) -> ApiConfig {
         let s = self.snapshot();
         ApiConfig {
             api_key: s.api_key,

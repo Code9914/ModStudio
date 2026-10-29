@@ -334,9 +334,21 @@ pub struct Dependency {
     pub logo: Option<Logo>,
 }
 
+// ---------------------------------------------------------------- Connexion
+
+/// Réponse de `/oauth/emailexchange`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AccessToken {
+    #[serde(default, deserialize_with = "lenient")]
+    pub access_token: String,
+    /// Horodatage Unix d'expiration (un an par défaut).
+    #[serde(default, deserialize_with = "lenient")]
+    pub date_expires: Option<i64>,
+}
+
 // ---------------------------------------------------------------- Erreurs API
 
-/// Corps d'erreur mod.io : `{ "error": { "code": 401, "message": "…" } }`.
+/// Corps d'erreur mod.io : `{ "error": { "code": 401, "error_ref": 11005, "message": "…" } }`.
 #[derive(Debug, Default, Deserialize)]
 pub struct ApiErrorBody {
     #[serde(default, deserialize_with = "lenient")]
@@ -345,6 +357,8 @@ pub struct ApiErrorBody {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ApiErrorDetail {
+    #[serde(default, deserialize_with = "lenient")]
+    pub error_ref: Option<i64>,
     #[serde(default, deserialize_with = "lenient")]
     pub message: Option<String>,
 }

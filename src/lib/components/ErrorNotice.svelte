@@ -27,6 +27,12 @@
   const needsSettings = $derived(
     error.kind === "missing_api_key" || error.kind === "unauthorized" || error.kind === "invalid_api_path",
   );
+  const needsLogin = $derived(error.kind === "not_logged_in" || error.kind === "session_expired");
+
+  // Une session expirée change l'état de connexion affiché partout.
+  $effect(() => {
+    if (error.kind === "session_expired") nav.refreshAuth();
+  });
 </script>
 
 <div class="notice" role="alert">
@@ -40,6 +46,9 @@
   <div class="actions">
     {#if needsSettings}
       <button class="btn btn-primary" onclick={() => nav.openSettings()}>Ouvrir les réglages</button>
+    {/if}
+    {#if needsLogin}
+      <button class="btn btn-primary" onclick={() => nav.openAccount(nav.view)}>Se connecter</button>
     {/if}
     {#if onretry}
       <button class="btn" onclick={onretry} disabled={remaining > 0}>Réessayer</button>

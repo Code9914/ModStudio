@@ -103,6 +103,70 @@
 
   const latest = $derived(mod?.modfile && mod.modfile.id ? mod.modfile : null);
 
+  // ------------------------------------------------------------ Abonnement
+
+  let subBusy = $state(false);
+  let subError = $state<AppError | null>(null);
+  let subNote = $state<string | null>(null);
+  let withDeps = $state(true);
+
+  const subscribed = $derived(mod ? nav.subs.has(mod.id) : false);
+  const missingDeps = $derived((deps ?? []).filter((d) => !nav.subs.has(d.mod_id)));
+
+  // Ouvert depuis « Mes mods » : on charge les abonnements de ce jeu.
+  $effect(() => {
+    if (nav.subsGameId !== game.id) nav.loadSubs(game.id);
+  });
+
+  // Le message de confirmation concerne le mod affiché seulement.
+  $effect(() => {
+    modId;
+    subNote = null;
+    subError = null;
+  });
+
+  async function toggleSubscription() {
+    if (!mod) return;
+    if (!nav.loggedIn) {
+      nav.openAccount(nav.view);
+      return;
+    }
+    const target = mod;
+    subBusy = true;
+    subError = null;
+    subNote = null;
+    try {
+      if (nav.subs.has(target.id)) {
+        await api.unsubscribe(game.id, target.id);
+        nav.subs.delete(target.id);
+        subNote = "Désabonné.";
+      } else {
+        const deps = withDeps ? missingDeps : [];
+        await api.subscribe(game.id, target.id);
+        nav.subs.add(target.id);
+        let added = 0;
+        let failed = 0;
+        for (const d of deps) {
+          try {
+            await api.subscribe(game.id, d.mod_id);
+            nav.subs.add(d.mod_id);
+            added++;
+          } catch {
+            failed++;
+          }
+        }
+        const parts = ["Abonné. Le jeu téléchargera ce mod à son prochain lancement s'il gère mod.io."];
+        if (added) parts.push(added > 1 ? `Les ${added} mods nécessaires ont aussi été ajoutés.` : "Le mod nécessaire a aussi été ajouté.");
+        if (failed) parts.push(failed > 1 ? `${failed} mods nécessaires n'ont pas pu être ajoutés.` : "Un mod nécessaire n'a pas pu être ajouté.");
+        subNote = parts.join(" ");
+      }
+    } catch (e) {
+      subError = asAppError(e);
+    } finally {
+      subBusy = false;
+    }
+  }
+
   // ------------------------------------------------------------ Actions
 
   function open(url: string | null | undefined) {
@@ -128,7 +192,11 @@
 <div class="view">
   <div class="top">
     <button class="btn btn-ghost crumb" onclick={() => nav.back()}>
-      <Icon name="back" />{nav.modStack.length > 1 ? "Retour" : `Retour à ${game.name}`}
+      <Icon name="back" />{nav.modStack.length > 1
+        ? "Retour"
+        : nav.modOrigin === "library"
+          ? "Retour à Mes mods"
+          : `Retour à ${game.name}`}
     </button>
   </div>
 
@@ -147,22 +215,54 @@
         <p class="byline">
           {#if author}<span>par <strong>{author}</strong></span>{/if}
           <span class="muted">mis à jour {ago(mod.date_updated)}</span>
+          {#if subscribed}<span class="chip chip-ok">Abonné</span>{/if}
           {#if mod.maturity_option > 0}<span class="chip chip-warn">Contenu adulte</span>{/if}
         </p>
       </div>
-      <div class="actions">
-        {#if mod.homepage_url}
-          <button class="btn" onclick={() => open(mod?.homepage_url)}>
-            Site de l'auteur <Icon name="external" size={14} />
-          </button>
-        {/if}
-        {#if mod.profile_url}
-          <button class="btn btn-primary" onclick={() => open(mod?.profile_url)}>
-            Ouvrir sur mod.io <Icon name="external" size={14} />
-          </button>
+      <div class="head-side">
+        <div class="actions">
+          {#if mod.homepage_url}
+            <button class="btn" onclick={() => open(mod?.homepage_url)}>
+              Site de l'auteur <Icon name="external" size={14} />
+            </button>
+          {/if}
+          {#if mod.profile_url}
+            <button class="btn" onclick={() => open(mod?.profile_url)}>
+              Ouvrir sur mod.io <Icon name="external" size={14} />
+            </button>
+          {/if}
+          {#if !nav.loggedIn}
+            <button class="btn btn-primary" onclick={toggleSubscription}>Se connecter pour s'abonner</button>
+          {:else if subscribed}
+            <button class="btn" onclick={toggleSubscription} disabled={subBusy}>
+              {subBusy ? "Désabonnement…" : "Se désabonner"}
+            </button>
+          {:else}
+            <button class="btn btn-primary" onclick={toggleSubscription} disabled={subBusy}>
+              <Icon name="plus" size={15} />{subBusy ? "Abonnement…" : "S'abonner"}
+            </button>
+          {/if}
+        </div>
+        {#if nav.loggedIn && !subscribed && missingDeps.length > 0}
+          <label class="with-deps">
+            <input type="checkbox" bind:checked={withDeps} />
+            {missingDeps.length > 1
+              ? `M'abonner aussi aux ${missingDeps.length} mods nécessaires`
+              : "M'abonner aussi au mod nécessaire"}
+          </label>
         {/if}
       </div>
     </header>
+
+    {#if subNote || subError}
+      <div class="sub-feedback">
+        {#if subError}
+          <ErrorNotice error={subError} onretry={toggleSubscription} />
+        {:else}
+          <p class="sub-note" role="status"><Icon name="check" size={16} />{subNote}</p>
+        {/if}
+      </div>
+    {/if}
 
     <div class="layout">
       <main class="main">
@@ -321,7 +421,10 @@
                   <li>
                     <button class="dep" onclick={() => nav.openMod(d.mod_id)}>
                       <span class="dep-thumb"><Thumb src={d.logo?.thumb_320x180} label={d.name ?? ""} /></span>
-                      <span class="dep-name">{d.name ?? `Mod ${d.mod_id}`}</span>
+                      <span class="dep-text">
+                        <span class="dep-name">{d.name ?? `Mod ${d.mod_id}`}</span>
+                        {#if nav.subs.has(d.mod_id)}<span class="dep-sub">Abonné</span>{/if}
+                      </span>
                     </button>
                   </li>
                 {/each}
@@ -366,6 +469,56 @@
     display: grid;
     gap: 0.6rem;
     max-width: 46rem;
+  }
+
+  .head-side {
+    display: grid;
+    justify-items: end;
+    gap: 0.6rem;
+  }
+
+  .with-deps {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: var(--t-sm);
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .with-deps input {
+    accent-color: var(--accent-fill);
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+  }
+
+  .sub-feedback {
+    padding: 0 2.5rem 1.5rem;
+  }
+
+  .sub-note {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: fit-content;
+    padding: 0.6rem 0.9rem;
+    border-radius: var(--r-md);
+    background: var(--ok-bg);
+    color: var(--ok);
+    font-size: var(--t-md);
+    font-weight: 500;
+  }
+
+  .dep-text {
+    display: grid;
+    gap: 0.1rem;
+  }
+
+  .dep-sub {
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--ok);
   }
 
   h1 {
