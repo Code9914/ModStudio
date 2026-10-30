@@ -8,6 +8,13 @@ echo == Recuperation des dernieres modifications...
 git checkout dev
 git pull --ff-only
 if errorlevel 1 (
+  rem npm install peut modifier package-lock.json : on le remet comme sur GitHub, puis nouvel essai.
+  echo.
+  echo == Nouvel essai apres avoir remis package-lock.json comme sur GitHub...
+  git checkout -- package-lock.json
+  git pull --ff-only
+)
+if errorlevel 1 (
   echo.
   echo Impossible de mettre le code a jour. Copie ce message a Claude.
   pause
@@ -23,6 +30,8 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+rem Garde package-lock.json identique a GitHub pour les prochaines mises a jour.
+git checkout -- package-lock.json 2>nul
 
 echo.
 echo == Lancement de ModStudio (la fenetre s'ouvre une fois la compilation terminee)...
