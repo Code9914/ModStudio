@@ -61,7 +61,7 @@
   async function run(file: NexusFile) {
     const updating = record !== null;
     try {
-      const r = await nexusStore.request(game.id, game.domainName, mod.modId, file.fileId);
+      const r = await nexusStore.request(game.id, game.domainName, mod.modId, file.fileId, file.name);
       note = [updating ? "Mis à jour." : "Installé.", r.notice].filter(Boolean).join(" ");
     } catch (e) {
       const err = asAppError(e);
@@ -80,7 +80,7 @@
   }
 
   function reopen() {
-    if (waiting) nexus.openDownload(waiting.domain, mod.modId, waiting.fileId).catch((e) => (error = asAppError(e)));
+    if (waiting) nexusStore.reopen(game.id, waiting.domain, mod.modId, waitingFile?.name ?? null);
   }
 
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
@@ -138,9 +138,8 @@
   {:else if waiting}
     <div class="waiting" role="status">
       <p class="small">
-        <span class="strong">Clique sur « Slow download » dans la fenêtre Nexus Mods qui vient de s'ouvrir.</span>
-        L'installation{waitingFile ? ` de « ${waitingFile.name} »` : ""} démarrera toute seule. Connecte-toi à Nexus
-        Mods dans cette fenêtre la première fois.
+        <span class="strong">Clique sur « Slow download » sur la page Nexus Mods.</span>
+        L'installation{waitingFile ? ` de « ${waitingFile.name} »` : ""} démarrera toute seule.
       </p>
       <div class="row">
         <button class="btn" onclick={reopen}>Rouvrir la page</button>

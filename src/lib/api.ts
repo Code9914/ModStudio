@@ -488,6 +488,17 @@ export interface NxmLink {
   expires: number;
 }
 
+/** Zone de la fenêtre principale où afficher une page Nexus (pixels CSS). */
+export interface SiteBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** `embedded` : page intégrée à ModStudio ; `window` : fenêtre séparée (repli). */
+export type SitePlacement = "embedded" | "window";
+
 export type NexusGameSort = "downloads" | "mods" | "name";
 export type NexusModSort = "endorsements" | "downloads" | "updated" | "created" | "name";
 
@@ -518,10 +529,13 @@ export const nexus = {
   },
   getMod: async (gameId: number, modId: number) => withId(await call<NexusModDetail>("nexus_get_mod", { gameId, modId })),
   listFiles: (gameId: number, modId: number) => call<NexusFile[]>("nexus_list_files", { gameId, modId }),
-  openDownload: (domain: string, modId: number, fileId: number) =>
-    call<null>("nexus_open_download", { domain, modId, fileId }),
-  /** Fenêtre Nexus sur la page de connexion / clés API. */
-  openLogin: () => call<null>("nexus_open_login"),
+  /** Page d'un fichier dans ModStudio (`bounds` : zone où l'intégrer). */
+  openDownload: (domain: string, modId: number, fileId: number, bounds: SiteBounds | null = null) =>
+    call<SitePlacement>("nexus_open_download", { domain, modId, fileId, bounds }),
+  /** Page de connexion / clés API dans ModStudio. */
+  openLogin: (bounds: SiteBounds | null = null) => call<SitePlacement>("nexus_open_login", { bounds }),
+  siteBounds: (bounds: SiteBounds) => call<null>("nexus_site_bounds", { bounds }),
+  siteClose: () => call<null>("nexus_site_close"),
 
   overview: () => call<GameInstall[]>("nexus_overview"),
   gameSetup: (gameId: number) => call<NexusGameSetup>("nexus_game_setup", { gameId }),

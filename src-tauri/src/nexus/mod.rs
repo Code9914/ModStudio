@@ -118,20 +118,41 @@ pub async fn nexus_list_files(state: State<'_, AppState>, game_id: i64, mod_id: 
     state.nexus.list_files(game_id, mod_id).await
 }
 
-/// Page d'un fichier sur le site, dans une fenêtre de ModStudio.
+/// Page d'un fichier sur le site, dans ModStudio. Renvoie `embedded` si la
+/// page s'affiche dans la fenêtre principale (aux coordonnées `bounds`),
+/// `window` si elle s'est ouverte dans une fenêtre séparée.
 ///
-/// Doit rester `async` : sous Windows, une fenêtre créée depuis une commande
+/// Doit rester `async` : sous Windows, une vue web créée depuis une commande
 /// synchrone (exécutée sur le fil principal) reste blanche (wry#583).
 #[tauri::command]
-pub async fn nexus_open_download(app: AppHandle, domain: String, mod_id: i64, file_id: i64) -> AppResult<()> {
-    window::open(&app, &domain, mod_id, file_id)
+pub async fn nexus_open_download(
+    app: AppHandle,
+    domain: String,
+    mod_id: i64,
+    file_id: i64,
+    bounds: Option<window::Bounds>,
+) -> AppResult<window::Placement> {
+    let url = window::file_page(&domain, mod_id, file_id)?;
+    window::show(&app, &url, "Télécharger sur Nexus Mods", bounds)
 }
 
-/// Première connexion au site, dans la fenêtre Nexus : la session y reste
-/// ouverte pour les téléchargements suivants, et la clé API s'y copie.
+/// Première connexion au site, dans ModStudio : la session y reste ouverte
+/// pour les téléchargements suivants, et la clé API s'y copie.
 #[tauri::command]
-pub async fn nexus_open_login(app: AppHandle) -> AppResult<()> {
-    window::open_page(&app, window::LOGIN_PAGE, "Connexion à Nexus Mods")
+pub async fn nexus_open_login(app: AppHandle, bounds: Option<window::Bounds>) -> AppResult<window::Placement> {
+    window::show(&app, window::LOGIN_PAGE, "Connexion à Nexus Mods", bounds)
+}
+
+/// La zone d'affichage de la page Nexus a changé (fenêtre redimensionnée).
+#[tauri::command]
+pub async fn nexus_site_bounds(app: AppHandle, bounds: window::Bounds) -> AppResult<()> {
+    window::set_bounds(&app, bounds)
+}
+
+/// Ferme la page Nexus (bouton « Annuler » ou « Fermer »).
+#[tauri::command]
+pub async fn nexus_site_close(app: AppHandle) {
+    window::close_all(&app)
 }
 
 // ---------------------------------------------------------------- Installation

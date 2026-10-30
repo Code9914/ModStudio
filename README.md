@@ -151,16 +151,18 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
   fiche complète (description BBCode, fichiers par catégorie, mods nécessaires).
   Aucun compte n'est nécessaire pour parcourir.
 - **Premier lancement** : ModStudio propose de se connecter à Nexus Mods dans sa
-  fenêtre intégrée (la session y reste ouverte pour les téléchargements) puis
+  page intégrée (la session y reste ouverte pour les téléchargements) puis
   de coller la clé API (bouton « Plus tard » pour passer).
 - **Clé API personnelle** (page « Compte Nexus ») pour installer : elle se crée
   sur <https://www.nexusmods.com/settings/api-keys>. Elle est vérifiée puis
   rangée dans le trousseau du système, et n'est envoyée qu'à `api.nexusmods.com`.
 - **Compte Premium** : téléchargement direct depuis ModStudio.
-- **Compte gratuit** : Nexus Mods impose de passer par son site. ModStudio ouvre
-  la page du fichier dans une fenêtre (sans aucun accès aux commandes de
-  l'appli) ; quand tu cliques sur « Slow download », le lien `nxm://` produit
-  par la page est capté par ModStudio, qui installe le fichier. Aucun autre
+- **Compte gratuit** : Nexus Mods impose de passer par son site. ModStudio
+  affiche la page du fichier directement dans sa fenêtre, à la place du
+  contenu (vue web intégrée, sans aucun accès aux commandes de l'appli ; une
+  fenêtre séparée sert de repli) ; quand tu cliques sur « Slow download », le
+  lien `nxm://` produit par la page est capté par ModStudio, qui ferme la page
+  et installe le fichier. Aucun autre
   gestionnaire de mods n'est lancé et le protocole `nxm://` n'est pas
   réquisitionné sur le système.
 - Archives **zip** et **7z** (RAR : pas encore).
@@ -201,7 +203,7 @@ src-tauri/src/
     client.rs     requêtes GraphQL v2 et REST v1, en-têtes Application-Name
     browse.rs     jeux, mods, fiches, fichiers
     account.rs    clé API (vérification, trousseau)
-    window.rs     fenêtre de téléchargement et capture des liens nxm://
+    window.rs     page Nexus intégrée (ou fenêtre de repli), capture des liens nxm://
     install.rs    installation, désinstallation, mises à jour
     rules.rs      règles de Bonelab (pallets, MelonLoader, versions Quest)
   auth.rs         jeton de connexion et trousseau du système

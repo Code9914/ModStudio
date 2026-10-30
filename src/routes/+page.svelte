@@ -15,6 +15,7 @@
   import NexusGamesView from "$lib/components/NexusGamesView.svelte";
   import NexusModsView from "$lib/components/NexusModsView.svelte";
   import NexusModView from "$lib/components/NexusModView.svelte";
+  import NexusSite from "$lib/components/NexusSite.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
   import { nexusGameImage } from "$lib/api";
   import { nexusStore, welcomeDone } from "$lib/nexus.svelte";
@@ -291,6 +292,11 @@
       {#if nav.view.name === "settings"}
         <div class="pane"><SettingsView /></div>
       {/if}
+    {/if}
+    {#if nexusStore.site}
+      {#key nexusStore.site}
+        <NexusSite request={nexusStore.site} />
+      {/key}
     {/if}
   </main>
 </div>

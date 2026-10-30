@@ -13,6 +13,11 @@ import {
 } from "./api";
 import { describe, type Progress } from "./installs.svelte";
 
+/** Page Nexus à afficher dans ModStudio. */
+export type SiteRequest =
+  | { kind: "download"; gameId: number; domain: string; modId: number; fileId: number; fileName: string | null }
+  | { kind: "login" };
+
 interface Pending {
   gameId: number;
   fileId: number;
@@ -37,6 +42,8 @@ class NexusStore {
   waiting = $state<Record<string, { fileId: number; domain: string }>>({});
   /** Fichiers installés remplacés sur Nexus (clé `jeu:mod`). */
   updates = $state<Record<string, NexusUpdate>>({});
+  /** Page Nexus affichée par-dessus le contenu (téléchargement ou connexion). */
+  site = $state<SiteRequest | null>(null);
 
   #pending = new Map<string, Pending>();
   #listening = false;
@@ -95,6 +102,10 @@ class NexusStore {
     this.#listening = true;
     try {
       await listen<NxmLink>("nexus-nxm", (event) => this.#onNxm(event.payload));
+      // La page s'est fermée d'elle-même (lien capté) : on retire le cadre.
+      await listen("nexus-site-closed", () => {
+        this.site = null;
+      });
     } catch {
       this.#listening = false;
     }
@@ -105,7 +116,13 @@ class NexusStore {
    * s'ouvre et l'installation démarre quand l'utilisateur y clique sur
    * « Slow download ».
    */
-  async request(gameId: number, domain: string, modId: number, fileId: number): Promise<NexusInstalled> {
+  async request(
+    gameId: number,
+    domain: string,
+    modId: number,
+    fileId: number,
+    fileName: string | null = null,
+  ): Promise<NexusInstalled> {
     if (this.premium) {
       try {
         return await this.#install(gameId, domain, modId, fileId);
@@ -113,21 +130,48 @@ class NexusStore {
         if (asAppError(e).kind !== "nexus_premium_required") throw e;
       }
     }
-    return this.#viaWebsite(gameId, domain, modId, fileId);
+    return this.#viaWebsite(gameId, domain, modId, fileId, fileName);
   }
 
-  #viaWebsite(gameId: number, domain: string, modId: number, fileId: number): Promise<NexusInstalled> {
+  #viaWebsite(gameId: number, domain: string, modId: number, fileId: number, fileName: string | null): Promise<NexusInstalled> {
     const k = `${domain}:${modId}`;
     this.#pending.get(k)?.reject(cancelled());
     return new Promise((resolve, reject) => {
       this.#pending.set(k, { gameId, fileId, resolve, reject });
       this.waiting[keyOf(gameId, modId)] = { fileId, domain };
-      api.openDownload(domain, modId, fileId).catch((e) => {
-        this.#pending.delete(k);
-        delete this.waiting[keyOf(gameId, modId)];
-        reject(asAppError(e));
-      });
+      // La page s'ouvre dès que le cadre qui l'accueille est en place.
+      this.site = { kind: "download", gameId, domain, modId, fileId, fileName };
     });
+  }
+
+  /** La page n'a pas pu s'ouvrir : le téléchargement en attente échoue. */
+  siteFailed(request: SiteRequest, error: AppError) {
+    if (this.site === request) this.site = null;
+    if (request.kind !== "download") return;
+    const k = `${request.domain}:${request.modId}`;
+    const p = this.#pending.get(k);
+    this.#pending.delete(k);
+    delete this.waiting[keyOf(request.gameId, request.modId)];
+    p?.reject(error);
+  }
+
+  /** Rouvre la page d'un téléchargement en attente. */
+  reopen(gameId: number, domain: string, modId: number, fileName: string | null = null) {
+    const w = this.waiting[keyOf(gameId, modId)];
+    if (w) this.site = { kind: "download", gameId, domain, modId, fileId: w.fileId, fileName };
+  }
+
+  /** Page de connexion à Nexus Mods (et de copie de la clé API). */
+  openLogin() {
+    this.site = { kind: "login" };
+  }
+
+  /** Ferme la page Nexus ; un téléchargement qui l'attendait est annulé. */
+  closeSite() {
+    const s = this.site;
+    this.site = null;
+    api.siteClose().catch(() => {});
+    if (s?.kind === "download") this.stopWaiting(s.gameId, s.domain, s.modId);
   }
 
   /** Abandonne un téléchargement qui attendait la page du site. */
@@ -146,6 +190,7 @@ class NexusStore {
     if (!p) return;
     this.#pending.delete(k);
     delete this.waiting[keyOf(p.gameId, link.modId)];
+    if (this.site?.kind === "download" && this.site.modId === link.modId) this.site = null;
     this.#install(p.gameId, link.domain, link.modId, link.fileId, link).then(p.resolve, p.reject);
   }
 

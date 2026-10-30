@@ -1,6 +1,6 @@
 <script lang="ts">
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { asAppError, nexus, type AppError } from "$lib/api";
+  import { asAppError, type AppError } from "$lib/api";
   import { nav } from "$lib/nav.svelte";
   import { markWelcomeDone, nexusStore } from "$lib/nexus.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
@@ -16,16 +16,19 @@
 
   const welcome = $derived(nav.nexusWelcome);
 
-  async function openLogin() {
+  function openLogin() {
     error = null;
-    try {
-      await nexus.openLogin();
-      windowOpened = true;
-      keyField?.focus();
-    } catch (e) {
-      error = asAppError(e);
-    }
+    windowOpened = true;
+    nexusStore.openLogin();
   }
+
+  // Retour de la page de connexion : le champ de la clé attend le collage.
+  let wasOpen = false;
+  $effect(() => {
+    const open = nexusStore.site?.kind === "login";
+    if (wasOpen && !open) keyField?.focus();
+    wasOpen = open;
+  });
 
   function later() {
     markWelcomeDone();
@@ -138,11 +141,11 @@
           <li>
             <span class="step-title">Connecte-toi à Nexus Mods.</span>
             <span class="muted">
-              La fenêtre garde ta connexion : tu n'auras plus à te connecter pour télécharger.
+              ModStudio garde ta connexion : tu n'auras plus à te connecter pour télécharger.
             </span>
             <span class="step-actions">
               <button class="btn btn-primary" type="button" onclick={openLogin}>
-                {windowOpened ? "Rouvrir la fenêtre Nexus Mods" : "Se connecter à Nexus Mods"}
+                {windowOpened ? "Rouvrir la page Nexus Mods" : "Se connecter à Nexus Mods"}
               </button>
               <button class="link" type="button" onclick={() => openUrl(KEYS_PAGE)}>
                 ou dans mon navigateur <Icon name="external" size={13} />
@@ -153,7 +156,7 @@
             <span class="step-title">Copie ta clé personnelle.</span>
             <span class="muted">
               Une fois connecté, tu arrives sur la page des clés API : copie la « Personal API Key » (crée-la si tu n'en
-              as pas encore), puis ferme la fenêtre.
+              as pas encore), puis clique sur « J'ai copié ma clé ».
             </span>
           </li>
           <li>
