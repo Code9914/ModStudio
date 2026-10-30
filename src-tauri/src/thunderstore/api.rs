@@ -19,6 +19,12 @@ pub struct Community {
     /// Identifiant stable du jeu dans ModStudio (voir `stable_id`).
     #[serde(default, skip_deserializing)]
     pub id: i64,
+    /// Chargeur de mods du jeu (`BepInEx`, `MelonLoader`, `Shimloader (UE4SS)`…).
+    #[serde(default, skip_deserializing)]
+    pub loader: Option<String>,
+    /// ModStudio sait installer ses mods.
+    #[serde(default, skip_deserializing)]
+    pub supported: bool,
     pub identifier: String,
     pub name: String,
     #[serde(default)]
@@ -317,6 +323,22 @@ impl TsClient {
         }
         let bytes = response.bytes().await.map_err(|e| AppError::ThunderstoreNetwork(e.without_url().to_string()))?;
         serde_json::from_slice(&bytes).map_err(|e| AppError::ThunderstoreApi { status: 200, message: format!("réponse inattendue ({e})") })
+    }
+
+    /// Ce que chaque jeu demande pour charger ses mods (schéma de l'écosystème).
+    pub async fn ecosystem_raw(&self) -> AppResult<Vec<u8>> {
+        let response = self
+            .http
+            .get(format!("{}/api/experimental/schema/dev/latest/", self.base))
+            .timeout(Duration::from_secs(60))
+            .send()
+            .await
+            .map_err(|e| AppError::ThunderstoreNetwork(e.without_url().to_string()))?;
+        if !response.status().is_success() {
+            return Err(AppError::ThunderstoreApi { status: response.status().as_u16(), message: "schéma de l'écosystème".into() });
+        }
+        let bytes = response.bytes().await.map_err(|e| AppError::ThunderstoreNetwork(e.without_url().to_string()))?;
+        Ok(bytes.to_vec())
     }
 
     /// Tous les jeux listés sur Thunderstore.

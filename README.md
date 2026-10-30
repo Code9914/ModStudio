@@ -299,38 +299,56 @@ Ce qui change sous Linux :
 
 ## Thunderstore (v0.10)
 
-Thunderstore rassemble les mods de nombreux jeux Unity (Lethal Company,
-R.E.P.O., Valheim, Risk of Rain 2…). Son API est publique : pas de compte ni de
-clé à ajouter.
+Thunderstore rassemble les mods de plus de 350 jeux (Lethal Company, R.E.P.O.,
+Valheim, Risk of Rain 2, Schedule I…). Son API est publique : pas de compte ni
+de clé à ajouter.
 
-- **Jeux** : les 350 jeux de Thunderstore, avec recherche et tri ; ceux installés
-  sur ce PC (Steam, Epic, Heroic) en premier, reconnus par leur nom.
+- **Jeux** : tous les jeux de Thunderstore, avec recherche et tri ; ceux
+  installés sur ce PC (Steam, Epic, Heroic) en premier, reconnus par leur nom.
+  Chaque jeu indique son chargeur de mods.
 - **Mods** : liste paginée (recherche, tris « plus téléchargés », « mieux
   notés », « récemment mis à jour », « nouveautés »), fiche avec le README
   (Markdown), les versions, les mods nécessaires.
 - **Dossier du jeu** : celui qui contient l'exécutable, trouvé dans Steam ou
   Epic quand c'est possible.
-- **Installation comme un gestionnaire de mods** : les mods nécessaires d'abord
-  (dernière version de chacun, ceux déjà installés sont gardés), puis le mod.
-  BepInExPack va dans le dossier du jeu s'il manque (gardé tel quel si BepInEx
-  est déjà là et convient au jeu). Jeu Unity IL2CPP : BepInEx 6 IL2CPP, même si
-  le mod demande BepInEx 5 (erreur fréquente des auteurs) ; un BepInEx qui ne
-  convient pas est signalé, et remplacé s'il vient de ModStudio ; chaque mod est rangé dans `BepInEx/plugins/<Équipe-Nom>`
-  (`patchers`, `core`, `monomod` de même). Les réglages par défaut
-  (`BepInEx/config`) ne remplacent jamais ceux qui existent, et restent en
-  place à la désinstallation. Jeux à MelonLoader : `Mods`, `Plugins`,
-  `UserLibs`, `UserData`.
+
+### Ce que chaque jeu demande
+
+ModStudio suit les données que Thunderstore publie pour les gestionnaires de
+mods (le « schéma de l'écosystème », utilisé par r2modman) : pour chaque jeu,
+son chargeur et ses règles d'installation (où va chaque fichier d'un mod).
+Elles sont téléchargées une fois par jour, avec une copie livrée dans
+l'appli pour le hors-ligne (`scripts/trim-thunderstore-ecosystem.py`).
+
+| Chargeur | Jeux | Pris en charge |
+|---|---|---|
+| BepInEx | environ 270 | oui, avec les règles propres à chaque jeu (Valheim, Subnautica, GTFO, H3VR, Timberborn…) |
+| MelonLoader 0.7+ (chaque mod dans son dossier) | environ 36 | oui |
+| MelonLoader | 6 (BONELAB, BONEWORKS…) | oui |
+| Northstar (Titanfall 2) | 1 | oui |
+| Shimloader (UE4SS), Godot Mod Loader, Return of Modding, Unity Mod Manager, GDWeave, Lovely, Rivet… | une vingtaine | pas encore : la page du jeu le dit, et conseille r2modman ou Gale |
+| Pas de règles publiées (jeux N64 « recompiled », Phasmophobia…) | une quarantaine | non |
+
+- **Le chargeur d'abord** : s'il manque, il est installé avec le premier mod
+  (même si le mod ne le demande pas), ou tout de suite depuis la page du jeu.
+  Le bon paquet pour le jeu : celui que sa communauté met en avant, BepInEx 6
+  IL2CPP pour un jeu Unity IL2CPP même si le mod demande BepInEx 5 (erreur
+  fréquente des auteurs), et le dossier propre à chaque paquet
+  (`BepInExPack_Valheim`…). Un BepInEx qui ne convient pas est signalé, et
+  remplacé s'il vient de ModStudio.
+- **Chaque fichier à sa place**, comme r2modman : par extension (`.dll` dans
+  `BepInEx/plugins`, `.mm.dll` dans `BepInEx/monomod`, `.lib.dll` dans
+  `UserLibs`…) et par nom de dossier (`plugins`, `patchers`, `config`,
+  `CustomMaps`…) ; dans le dossier du mod (`<Équipe-Nom>`) ou tel quel selon la
+  règle. Les réglages par défaut (`BepInEx/config`) ne remplacent jamais ceux
+  qui existent, et restent en place à la désinstallation.
 - **Suivi** : mises à jour (une par une ou toutes), activer / désactiver,
   désinstaller (les mods nécessaires devenus inutiles sont proposés à la
   désinstallation), version précise au choix, progression mod par mod.
 - Rien n'écrase les fichiers des mods installés depuis mod.io ou Nexus Mods
   (ni l'inverse).
-- Sous Linux, l'option de lancement Steam pour BepInEx sous Proton est affichée
-  sur la page du jeu.
-
-Quelques jeux de Thunderstore n'utilisent pas BepInEx (Northstar pour
-Titanfall 2, par exemple) : leurs mods ne s'installent pas encore au bon
-endroit.
+- Sous Linux, l'option de lancement Steam pour Proton (BepInEx, MelonLoader)
+  est affichée sur la page du jeu.
 
 ## Obtenir ta clé API
 
@@ -366,7 +384,8 @@ src-tauri/src/
     local.rs      jeux installés reconnus, moteur, outil conseillé
   thunderstore/   source Thunderstore :
     api.rs        jeux, mods, fiches, versions, README (API publique)
-    install.rs    dépendances, rangement BepInEx, mises à jour, désinstallation
+    ecosystem.rs  chargeur et règles d'installation de chaque jeu (+ copie embarquée)
+    install.rs    dépendances, chargeur, rangement selon les règles, mises à jour
   games/          jeux installés sur ce PC :
     steam.rs      bibliothèques et jeux Steam
     epic.rs       jeux Epic Games
@@ -425,11 +444,13 @@ Unreal / Unity / Bethesda, `plugins.txt` activé puis restauré, et installation
 d'UE4SS contre un faux GitHub (empreinte, fichiers du jeu jamais touchés).
 
 Pour Thunderstore : noms et versions vérifiés avant toute requête,
-téléchargements limités à `thunderstore.io` et son CDN, dépendances installées
-d'abord (BepInExPack sauté si BepInEx est là), rangement BepInEx (plugins,
-patchers, config jamais écrasée), mise à jour qui garde les réglages,
-conflits refusés sans rien toucher, et refus d'installer BepInExPack par-dessus
-un BepInEx installé à la main.
+téléchargements limités à `thunderstore.io` et son CDN, règles des jeux (BepInEx,
+MelonLoader et MelonLoader 0.7+, règles propres à Timberborn, BONELAB…, dossier
+propre au paquet de Valheim, règle « package-zip »), chargeur installé quand il
+manque et sauté quand il est là, BepInEx 6 IL2CPP pour les jeux IL2CPP,
+remplacement d'un mauvais BepInEx installé par ModStudio (jamais d'un installé à
+la main), jeux non pris en charge refusés avant tout téléchargement, mise à jour
+qui garde les réglages, conflits refusés sans rien toucher.
 
 ## Sécurité
 

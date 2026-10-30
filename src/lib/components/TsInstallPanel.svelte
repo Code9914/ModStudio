@@ -23,10 +23,19 @@
   const latest = $derived(record ? tsStore.latest(game.id, mod.id) : null);
   const loader = $derived(tsStore.loaders[game.id] ?? null);
 
-  /** Mods nécessaires qui seront installés avec celui-ci. */
-  const missing = $derived(
-    mod.dependencies.filter((d) => !tsStore.installed(game.id, d.id) && !(isLoaderName(d.name) && loader?.suitable)),
-  );
+  /** Mods nécessaires qui seront installés avec celui-ci (le chargeur du jeu sous son vrai nom). */
+  const missing = $derived.by(() => {
+    const ready = !!loader?.suitable;
+    const names = mod.dependencies
+      .filter((d) => !tsStore.installed(game.id, d.id) && !(isLoaderName(d.name) && ready))
+      .map((d) => (isLoaderName(d.name) && loader?.requiredLabel ? loader.requiredLabel : d.name.replaceAll("_", " ")));
+    // Aucun mod ne le demande, mais le jeu en a besoin : installé d'abord.
+    if (loader?.needed && !ready && !mod.dependencies.some((d) => isLoaderName(d.name)) && !isLoaderName(mod.name)) {
+      names.unshift(loader.requiredLabel ?? loader.needed.name);
+    }
+    return [...new Set(names)];
+  });
+  const unsupported = $derived(loader ? !loader.supported : !game.supported);
 
   /** Installé, et dont d'autres mods installés ont besoin. */
   const neededBy = $derived(
@@ -106,7 +115,7 @@
 
 <section class="panel" aria-label="Installation">
   {#if !config}
-    <p class="small">Pour installer ce mod, indique d'abord où se trouve {game.name}.</p>
+    {#if !unsupported}<p class="small">Pour installer ce mod, indique d'abord où se trouve {game.name}.</p>{/if}
     <TsGameSetup {game} />
   {:else if mine && job}
     <ProgressBar progress={job} oncancel={() => tsStore.cancel(game)} />
@@ -134,6 +143,11 @@
         {confirmRemove ? "Confirmer" : "Désinstaller"}
       </button>
     </div>
+  {:else if unsupported}
+    <p class="small">
+      {game.name} charge ses mods avec {loader?.requiredLabel ?? game.loader ?? "un chargeur inconnu"} : ModStudio ne
+      sait pas encore les installer. Pour ce jeu, utilise un gestionnaire comme r2modman ou Gale.
+    </p>
   {:else}
     <button class="btn btn-primary big" onclick={() => install()} disabled={!!job}>
       <Icon name="download" size={16} />Installer
@@ -142,8 +156,7 @@
       <p class="small muted">Une autre installation est en cours pour ce jeu.</p>
     {:else if missing.length}
       <p class="small muted">
-        Avec {missing.length > 1 ? `les ${missing.length} mods nécessaires` : "le mod nécessaire"} :
-        {missing.map((d) => d.name.replaceAll("_", " ")).join(", ")}.
+        Avec {missing.length > 1 ? `les ${missing.length} mods nécessaires` : "le mod nécessaire"} : {missing.join(", ")}.
       </p>
     {/if}
   {/if}

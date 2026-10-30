@@ -78,6 +78,9 @@ class TsStore {
         communityIconUrl: g.icon,
         totalDownloadCount: 0,
         totalPackageCount: 0,
+        loader: null,
+        // Des mods y sont installés : ModStudio les a pris en charge.
+        supported: true,
       }
     );
   }

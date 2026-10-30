@@ -20,11 +20,16 @@
   const hasMods = $derived(config ? tsStore.count(config) > 0 : false);
   const loader = $derived(tsStore.loaders[game.id] ?? null);
   const job = $derived(tsStore.progress[game.id] ?? null);
-  const fixing = $derived(!!job && !!loader?.fix && job.modId === loader.fix.id);
+  const installingLoader = $derived(!!job && !!loader?.needed && job.modId === loader.needed.id);
+  /** Thunderstore indique un chargeur que ModStudio ne sait pas installer (ou rien). */
+  const unsupported = $derived(loader ? !loader.supported : !game.supported);
+  const requiredLabel = $derived(loader?.requiredLabel ?? game.loader);
+  /** Un mauvais BepInEx installé à la main n'est jamais retiré par ModStudio. */
+  const canInstallLoader = $derived(!!loader?.needed && (!loader.name || loader.managed || loader.required !== "bepinex"));
 
-  /** Remplace le BepInEx qui ne convient pas par le bon. */
-  async function fixLoader() {
-    const fix = loader?.fix;
+  /** Installe le chargeur du jeu (ou remplace celui qui ne convient pas). */
+  async function installLoader() {
+    const fix = loader?.needed;
     if (!fix) return;
     error = null;
     try {
@@ -80,6 +85,20 @@
 </script>
 
 <section class="setup" aria-label="{game.name} sur ce PC">
+  {#if unsupported}
+    <p class="small unsupported">
+      <Icon name="warning" size={15} />
+      <span>
+        {#if requiredLabel}
+          {game.name} charge ses mods avec <span class="strong">{requiredLabel}</span> : ModStudio ne sait pas encore
+          les installer. Pour ce jeu, utilise un gestionnaire comme r2modman ou Gale.
+        {:else}
+          Thunderstore ne publie pas de règles d'installation pour {game.name} : ModStudio ne peut pas encore installer
+          ses mods. Chacun explique son installation sur sa page.
+        {/if}
+      </span>
+    </p>
+  {:else}
   <div class="where">
     <div class="where-text">
       {#if config}
@@ -92,7 +111,7 @@
         <p class="label">Dossier du jeu</p>
         <p class="small">
           Choisis le dossier où {game.name} est installé (celui qui contient son exécutable) : les mods y sont rangés
-          dans BepInEx, comme le ferait un gestionnaire de mods.
+          comme le ferait un gestionnaire de mods{requiredLabel ? `, avec ${requiredLabel}` : ""}.
         </p>
       {/if}
     </div>
@@ -115,20 +134,21 @@
         <p class="small bad">
           <Icon name="warning" size={15} />
           <span>
-            <span class="strong">{loader.name}</span> est installé, mais {game.name} est un jeu Unity
-            {loader.engine === "il2cpp" ? "IL2CPP" : "Mono"} : il lui faut
-            {loader.engine === "il2cpp" ? "BepInEx 6 (IL2CPP)" : "BepInEx pour Mono"}. Les mods ne se chargent pas.
+            <span class="strong">{loader.name}</span> est installé, mais {game.name} a besoin de
+            <span class="strong">{loader.requiredLabel}</span>{loader.engine === "il2cpp" && loader.required === "bepinex"
+              ? " (c'est un jeu Unity IL2CPP)"
+              : ""}. Les mods ne se chargent pas.
           </span>
         </p>
-        {#if fixing && job}
+        {#if installingLoader && job}
           <ProgressBar progress={job} oncancel={() => tsStore.cancel(game)} />
-        {:else if loader.fix && loader.managed}
+        {:else if canInstallLoader}
           <div>
-            <button class="btn btn-primary" onclick={fixLoader} disabled={!!job}>
-              Installer {loader.engine === "il2cpp" ? "BepInEx 6 (IL2CPP)" : "le bon BepInEx"} à la place
+            <button class="btn btn-primary" onclick={installLoader} disabled={!!job}>
+              Installer {loader.requiredLabel}{loader.required === "bepinex" ? " à la place" : ""}
             </button>
           </div>
-        {:else if !loader.managed}
+        {:else}
           <p class="small muted">
             Il a été installé sans ModStudio : retire-le (dossier BepInEx\core, winhttp.dll, doorstop_config.ini), puis
             réinstalle un mod.
@@ -147,8 +167,16 @@
         {/if}
       {:else}
         <p class="small">
-          BepInEx n'est pas encore installé : il le sera avec le premier mod qui en a besoin (presque tous).
+          {game.name} charge ses mods avec <span class="strong">{loader.requiredLabel ?? "BepInEx"}</span>. Il n'est pas
+          encore installé : ModStudio l'installera avec le premier mod.
         </p>
+        {#if installingLoader && job}
+          <ProgressBar progress={job} oncancel={() => tsStore.cancel(game)} />
+        {:else if loader.needed}
+          <div>
+            <button class="btn" onclick={installLoader} disabled={!!job}>Installer {loader.requiredLabel} maintenant</button>
+          </div>
+        {/if}
       {/if}
       {#if loader.launchOption && (!detected || detected.launcher === "steam")}
         <div class="proton">
@@ -163,6 +191,8 @@
         </div>
       {/if}
     </div>
+  {/if}
+
   {/if}
 
   {#if error}<ErrorNotice {error} />{/if}
@@ -229,6 +259,18 @@
     border-radius: var(--r-md);
     background: var(--raise);
     border-left: 3px solid var(--accent-fill);
+  }
+
+  .unsupported {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+  }
+
+  .unsupported :global(svg) {
+    flex: none;
+    color: var(--accent);
+    margin-top: 0.15rem;
   }
 
   .loader.wrong {

@@ -1,6 +1,7 @@
-//! Installation des mods Thunderstore : dépendances d'abord, BepInExPack dans
-//! le dossier du jeu, chaque mod rangé dans `BepInEx/plugins/<Équipe-Nom>`
-//! (comme les gestionnaires de mods de Thunderstore).
+//! Installation des mods Thunderstore : dépendances d'abord, le chargeur du
+//! jeu (BepInEx, MelonLoader…) s'il manque, puis chaque fichier rangé selon les
+//! règles publiées pour le jeu (comme r2modman, directement dans le dossier du
+//! jeu).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -12,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use super::api::{check_community, check_part, check_version, parse_dependency, stable_id, Latest};
+use super::ecosystem::{loader_label, Ecosystem, GameRules, LoaderKind, LoaderPackage, Rule, Tracking};
 use super::ThunderstoreState;
 use crate::archive;
 use crate::error::{AppError, AppResult};
@@ -44,7 +46,14 @@ pub struct TsInstalled {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TsLoader {
-    /// `BepInEx 5`, `BepInEx 6 (IL2CPP)`, `MelonLoader`, ou rien.
+    /// Chargeur que le jeu demande (`bepinex`, `melonloader`, `shimloader`…) ;
+    /// `None` : Thunderstore ne publie pas de règles pour ce jeu.
+    pub required: Option<String>,
+    /// Son nom affiché (`BepInEx 6 (IL2CPP)`, `MelonLoader`…).
+    pub required_label: Option<String>,
+    /// ModStudio sait installer les mods de ce jeu.
+    pub supported: bool,
+    /// Chargeur présent : `BepInEx 5`, `BepInEx 6 (IL2CPP)`, `MelonLoader`…
     pub name: Option<&'static str>,
     /// Le chargeur présent peut-il charger les mods de ce jeu ?
     pub suitable: bool,
@@ -52,8 +61,8 @@ pub struct TsLoader {
     pub engine: Option<&'static str>,
     /// Installé par ModStudio (depuis Thunderstore) : remplaçable sans risque.
     pub managed: bool,
-    /// Paquet qui remplace un BepInEx qui ne convient pas.
-    pub fix: Option<TsRef>,
+    /// Paquet à installer : chargeur absent, ou qui ne convient pas.
+    pub needed: Option<TsRef>,
     /// Option de lancement Steam pour Proton (Linux seulement).
     pub launch_option: Option<String>,
 }
@@ -123,11 +132,6 @@ pub fn bepinex_flavor(folder: &Path) -> Option<Flavor> {
     }
 }
 
-/// BepInEx est-il déjà dans le dossier du jeu ?
-pub fn bepinex_present(folder: &Path) -> bool {
-    bepinex_flavor(folder).is_some()
-}
-
 /// Dossiers `<Jeu>_Data` du dossier du jeu.
 fn data_dirs(folder: &Path) -> Vec<PathBuf> {
     fs::read_dir(folder)
@@ -157,38 +161,103 @@ pub fn bepinex_suits(folder: &Path) -> Option<bool> {
     bepinex_flavor(folder).map(|f| f.il2cpp() == game_is_il2cpp(folder))
 }
 
+fn melon_present(folder: &Path) -> bool {
+    folder.join("MelonLoader").is_dir() && folder.join("version.dll").is_file()
+}
+
+fn northstar_present(folder: &Path) -> bool {
+    folder.join("R2Northstar").is_dir()
+}
+
+/// Le chargeur que le jeu demande est-il en place (et le bon) ?
+fn loader_ok(kind: LoaderKind, folder: &Path) -> bool {
+    match kind {
+        LoaderKind::BepInEx => bepinex_suits(folder) == Some(true),
+        LoaderKind::MelonLoader | LoaderKind::RecursiveMelonLoader => melon_present(folder),
+        LoaderKind::Northstar => northstar_present(folder),
+        LoaderKind::Other => false,
+    }
+}
+
+/// `Équipe-Nom` → (équipe, nom).
+fn split_full(full: &str) -> (String, String) {
+    match full.split_once('-') {
+        Some((ns, name)) => (ns.to_string(), name.to_string()),
+        None => (String::new(), full.to_string()),
+    }
+}
+
+/// Le paquet est-il un chargeur ? D'après Thunderstore, sinon d'après son nom.
+fn loader_of(eco: &Ecosystem, full: &str) -> Option<LoaderPackage> {
+    if let Some(l) = eco.loader_package(full) {
+        return Some(l.clone());
+    }
+    let (_, name) = split_full(full);
+    let loader = if is_loader_pack(&name) {
+        "bepinex"
+    } else if is_melon_pack(&name) {
+        "melonloader"
+    } else {
+        return None;
+    };
+    Some(LoaderPackage { package_id: full.to_string(), loader: loader.into(), root_folder: String::new() })
+}
+
+/// Mod installé qui est un chargeur (BepInExPack…).
+fn is_loader_record(m: &InstalledMod, eco: &Ecosystem) -> bool {
+    m.file_name.as_deref().is_some_and(|f| loader_of(eco, f).is_some())
+}
+
+/// Le paquet BepInEx qui convient au jeu : celui que la communauté met en
+/// avant s'il correspond au jeu (IL2CPP ou Mono), sinon le paquet générique.
+fn preferred_bepinex(game: &GameRules, eco: &Ecosystem, folder: &Path) -> String {
+    let il2cpp = game_is_il2cpp(folder);
+    let known = il2cpp || game_is_mono(folder);
+    game.autolist
+        .iter()
+        .filter_map(|id| eco.loader_package(id))
+        .find(|l| l.loader == "bepinex" && (!known || l.package_id.to_ascii_lowercase().contains("il2cpp") == il2cpp))
+        .map(|l| l.package_id.clone())
+        .unwrap_or_else(|| if il2cpp { "BepInEx-BepInExPack_IL2CPP".into() } else { "BepInEx-BepInExPack".into() })
+}
+
+/// Chargeur à installer pour que le jeu charge ses mods (`None` : déjà là).
+fn needed_loader(game: &GameRules, eco: &Ecosystem, folder: &Path) -> Option<String> {
+    if loader_ok(game.kind, folder) {
+        return None;
+    }
+    let listed = |pred: &dyn Fn(&str) -> bool| {
+        game.autolist.iter().filter_map(|id| eco.loader_package(id)).find(|l| pred(&l.loader)).map(|l| l.package_id.clone())
+    };
+    match game.kind {
+        LoaderKind::BepInEx => Some(preferred_bepinex(game, eco, folder)),
+        LoaderKind::MelonLoader | LoaderKind::RecursiveMelonLoader => {
+            Some(listed(&|l| l.contains("melonloader")).unwrap_or_else(|| "LavaGang-MelonLoader".into()))
+        }
+        LoaderKind::Northstar => Some(listed(&|l| l == "northstar").unwrap_or_else(|| "northstar-Northstar".into())),
+        LoaderKind::Other => None,
+    }
+}
+
 /// Le bon BepInEx pour ce jeu, quand un mod en demande un qui ne peut pas
 /// marcher (BepInEx 5 pour un jeu IL2CPP : erreur fréquente des auteurs).
-fn right_loader(namespace: &str, name: &str, folder: &Path) -> (String, String) {
+fn right_loader(namespace: &str, name: &str, folder: &Path, game: &GameRules, eco: &Ecosystem) -> (String, String) {
+    if game.kind != LoaderKind::BepInEx {
+        return (namespace.into(), name.into());
+    }
     match name.to_ascii_lowercase().as_str() {
-        "bepinexpack" | "bepinexpack_x86" if game_is_il2cpp(folder) => ("BepInEx".into(), "BepInExPack_IL2CPP".into()),
+        "bepinexpack" | "bepinexpack_x86" if game_is_il2cpp(folder) => split_full(&preferred_bepinex(game, eco, folder)),
         "bepinexpack_il2cpp" if game_is_mono(folder) => ("BepInEx".into(), "BepInExPack".into()),
         _ => (namespace.into(), name.into()),
     }
 }
 
-/// BepInEx à installer à la place de celui qui ne convient pas.
-fn fix_for(folder: &Path) -> Option<TsRef> {
-    let name = if game_is_il2cpp(folder) {
-        "BepInExPack_IL2CPP"
-    } else if game_is_mono(folder) {
-        "BepInExPack"
-    } else {
-        return None;
-    };
-    Some(TsRef { id: stable_id(&format!("BepInEx-{name}")), namespace: "BepInEx".into(), name: name.into() })
-}
-
-/// Mod installé qui est un chargeur (BepInExPack…).
-fn is_loader_record(m: &InstalledMod) -> bool {
-    m.file_name
-        .as_deref()
-        .and_then(|f| f.split_once('-'))
-        .is_some_and(|(_, name)| is_loader_pack(name) || is_melon_pack(name))
-}
-
-fn melon_present(folder: &Path) -> bool {
-    folder.join("MelonLoader").is_dir() && folder.join("version.dll").is_file()
+/// Nom affiché du chargeur qu'un jeu demande.
+fn required_label(game: &GameRules, folder: &Path) -> String {
+    match game.kind {
+        LoaderKind::BepInEx if game_is_il2cpp(folder) => "BepInEx 6 (IL2CPP)".into(),
+        _ => loader_label(&game.loader_id).into(),
+    }
 }
 
 /// Nom affiché d'un mod (`Lethal_Things` → `Lethal Things`).
@@ -231,90 +300,229 @@ pub fn is_user_config(rel: &str) -> bool {
     lower.starts_with("bepinex/config/") || lower.starts_with("userdata/")
 }
 
-/// Où va chaque fichier de l'archive extraite (`root`) d'un paquet
-/// `Équipe-Nom`, relativement au dossier du jeu.
-pub fn ts_plan(root: &Path, full_name: &str, game_folder: &Path) -> Vec<(PathBuf, String)> {
-    let name = full_name.split('-').nth(1).unwrap_or(full_name);
-    let mut moves = Vec::new();
-
-    // Le chargeur : le contenu de son dossier (`BepInExPack/`) va dans le dossier du jeu.
-    if is_loader_pack(name) || is_melon_pack(name) {
-        let inner = fs::read_dir(root).ok().and_then(|it| {
-            it.flatten()
-                .find(|e| e.path().is_dir() && e.file_name().to_string_lossy().to_ascii_lowercase().starts_with("bepinexpack"))
-                .map(|e| e.path())
-        });
-        let src = inner.clone().unwrap_or_else(|| root.to_path_buf());
-        for (abs, rel) in files_under(&src) {
-            if inner.is_none() && is_package_meta(&rel) {
-                continue;
-            }
-            if is_user_config(&rel) && game_folder.join(&rel).exists() {
-                continue;
-            }
-            moves.push((abs, rel));
-        }
-        return moves;
-    }
-
-    // Jeu à MelonLoader : Mods, Plugins, UserLibs, UserData tels quels ; le reste dans Mods.
-    if melon_present(game_folder) && !bepinex_present(game_folder) {
-        for (abs, rel) in files_under(root) {
-            let first = rel.split('/').next().unwrap_or("").to_ascii_lowercase();
-            let dest = match first.as_str() {
-                "userdata" if game_folder.join(&rel).exists() => continue,
-                "mods" | "plugins" | "userlibs" | "userdata" => rel.clone(),
-                _ if is_package_meta(&rel) => continue,
-                _ => format!("Mods/{rel}"),
-            };
-            moves.push((abs, dest));
-        }
-        return moves;
-    }
-
-    let mut entries: Vec<_> = fs::read_dir(root).map(|it| it.flatten().collect()).unwrap_or_default();
-    entries.sort_by_key(|e: &fs::DirEntry| e.file_name());
-    for e in entries {
-        route(&e.path(), full_name, game_folder, false, &mut moves);
-    }
-    moves
+/// Fichiers d'un paquet à placer dans le dossier du jeu.
+#[derive(Debug, Default)]
+pub struct Placement {
+    /// Source absolue → destination relative au dossier du jeu.
+    pub moves: Vec<(PathBuf, String)>,
+    /// Destinations non suivies (réglages) : laissées en place à la désinstallation.
+    pub untracked: HashSet<String>,
 }
 
-/// Range une entrée de l'archive selon les dossiers de BepInEx.
-fn route(path: &Path, full: &str, game_folder: &Path, in_bepinex: bool, moves: &mut Vec<(PathBuf, String)>) {
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    if !path.is_dir() {
-        moves.push((path.to_path_buf(), format!("BepInEx/plugins/{full}/{name}")));
-        return;
+impl Placement {
+    fn push(&mut self, src: PathBuf, dest: String, untracked: bool, game_folder: &Path) {
+        // Réglages déjà là : ceux de l'utilisateur, jamais remplacés.
+        if untracked && game_folder.join(&dest).exists() {
+            return;
+        }
+        // Deux fichiers pour la même destination : le dernier l'emporte (comme r2modman).
+        let key = dest.to_ascii_lowercase();
+        self.moves.retain(|(_, d)| d.to_ascii_lowercase() != key);
+        if untracked {
+            self.untracked.insert(dest.clone());
+        }
+        self.moves.push((src, dest));
     }
-    match name.to_ascii_lowercase().as_str() {
-        "bepinex" if !in_bepinex => {
-            let mut children: Vec<_> = fs::read_dir(path).map(|it| it.flatten().collect()).unwrap_or_default();
-            children.sort_by_key(|e: &fs::DirEntry| e.file_name());
-            for c in children {
-                route(&c.path(), full, game_folder, true, moves);
+}
+
+/// Dossier de l'archive d'un chargeur dont le contenu va dans le dossier du jeu.
+fn loader_root(root: &Path, loader: &LoaderPackage) -> PathBuf {
+    let wanted = loader.root_folder.trim();
+    let entries: Vec<fs::DirEntry> = fs::read_dir(root).map(|it| it.flatten().filter(|e| e.path().is_dir()).collect()).unwrap_or_default();
+    if !wanted.is_empty()
+        && let Some(e) = entries.iter().find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(wanted))
+    {
+        return e.path();
+    }
+    // Données inconnues : le dossier `BepInExPack…` habituel, sinon la racine.
+    if loader.loader == "bepinex"
+        && let Some(e) = entries.iter().find(|e| e.file_name().to_string_lossy().to_ascii_lowercase().starts_with("bepinexpack"))
+    {
+        return e.path();
+    }
+    root.to_path_buf()
+}
+
+/// Où va chaque fichier de l'archive extraite (`root`) du paquet `full`,
+/// selon les règles publiées pour le jeu (comme r2modman, mais dans le
+/// dossier du jeu au lieu d'un profil).
+pub fn ts_plan(root: &Path, full: &str, game_folder: &Path, game: &GameRules, loader: Option<&LoaderPackage>) -> AppResult<Placement> {
+    let mut out = Placement::default();
+    if let Some(loader) = loader {
+        if game.kind == LoaderKind::RecursiveMelonLoader && loader.loader.contains("melonloader") {
+            // MelonLoader 0.7+ : seulement le chargeur, pas ses exemples.
+            for item in ["MelonLoader", "version.dll", "winhttp.dll"] {
+                let path = root.join(item);
+                if path.is_dir() {
+                    for (abs, rel) in files_under(&path) {
+                        let dest = format!("{item}/{rel}");
+                        let user = is_user_config(&dest);
+                        out.push(abs, dest, user, game_folder);
+                    }
+                } else if path.is_file() {
+                    out.push(path, item.to_string(), false, game_folder);
+                }
+            }
+        } else {
+            let src = loader_root(root, loader);
+            for (abs, rel) in files_under(&src) {
+                if !rel.contains('/') && matches!(rel.to_ascii_lowercase().as_str(), "manifest.json" | "readme.md" | "icon.png") {
+                    continue;
+                }
+                let user = is_user_config(&rel);
+                out.push(abs, rel, user, game_folder);
             }
         }
-        sub @ ("plugins" | "patchers" | "monomod" | "core") => {
-            for (abs, rel) in files_under(path) {
-                moves.push((abs, format!("BepInEx/{sub}/{full}/{rel}")));
-            }
-        }
-        // Réglages par défaut : jamais à la place de ceux de l'utilisateur.
-        "config" => {
-            for (abs, rel) in files_under(path) {
-                let dest = format!("BepInEx/config/{rel}");
-                if !game_folder.join(&dest).exists() {
-                    moves.push((abs, dest));
+        return Ok(out);
+    }
+
+    match game.kind {
+        LoaderKind::RecursiveMelonLoader => {
+            // `UserData` dans `UserData/<Équipe-Nom>`, tout le reste dans `Mods/<Équipe-Nom>`.
+            let mut entries: Vec<fs::DirEntry> = fs::read_dir(root).map(|it| it.flatten().collect()).unwrap_or_default();
+            entries.sort_by_key(|e| e.file_name());
+            for e in entries {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let path = e.path();
+                if path.is_dir() {
+                    let user = name.eq_ignore_ascii_case("UserData");
+                    for (abs, rel) in files_under(&path) {
+                        let dest = if user { format!("UserData/{full}/{rel}") } else { format!("Mods/{full}/{name}/{rel}") };
+                        out.push(abs, dest, user, game_folder);
+                    }
+                } else if path.is_file() {
+                    out.push(path, format!("Mods/{full}/{name}"), false, game_folder);
                 }
             }
         }
-        _ => {
-            for (abs, rel) in files_under(path) {
-                moves.push((abs, format!("BepInEx/plugins/{full}/{name}/{rel}")));
+        LoaderKind::Other => {
+            return Err(AppError::ThunderstoreUnsupported(loader_label(&game.loader_id).to_string()));
+        }
+        _ => plan_rules(root, full, game_folder, game, &mut out)?,
+    }
+    Ok(out)
+}
+
+/// Règle qui prend un fichier : extension la plus longue qui correspond,
+/// sinon la destination par défaut.
+fn rule_for_file<'a>(name: &str, rules: &'a [Rule]) -> Option<&'a Rule> {
+    let lower = name.to_ascii_lowercase();
+    rules
+        .iter()
+        .filter_map(|r| r.extensions.iter().filter(|e| lower.ends_with(e.as_str())).map(|e| e.len()).max().map(|n| (n, r)))
+        .fold(None::<(usize, &Rule)>, |best, (n, r)| match best {
+            Some((b, _)) if b > n => best,
+            _ => Some((n, r)),
+        })
+        .map(|(_, r)| r)
+        .or_else(|| rules.iter().find(|r| r.default))
+}
+
+/// Règle qui prend un dossier entier : son nom est celui du dernier dossier
+/// de la règle (`plugins` pour `BepInEx/plugins`) ; à égalité, celle dont le
+/// chemin correspond le mieux.
+fn rule_for_dir<'a>(rel: &str, rules: &'a [Rule]) -> Option<&'a Rule> {
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    let parts: Vec<&str> = rel.split('/').rev().collect();
+    rules
+        .iter()
+        .filter(|r| r.route.rsplit('/').next().is_some_and(|last| last.eq_ignore_ascii_case(name)))
+        .map(|r| {
+            let score = r.route.split('/').rev().zip(parts.iter()).filter(|(a, b)| a.eq_ignore_ascii_case(b)).count();
+            (score, r)
+        })
+        .fold(None::<(usize, &Rule)>, |best, (n, r)| match best {
+            Some((b, _)) if b >= n => best,
+            _ => Some((n, r)),
+        })
+        .map(|(_, r)| r)
+}
+
+/// Ce que chaque règle reçoit : fichiers et dossiers entiers de l'archive.
+fn collect<'a>(dir: &Path, rel: &str, rules: &'a [Rule], out: &mut Vec<(&'a Rule, PathBuf, String)>) {
+    let mut entries: Vec<fs::DirEntry> = fs::read_dir(dir).map(|it| it.flatten().collect()).unwrap_or_default();
+    entries.sort_by_key(|e| e.file_name());
+    let join = |name: &str| if rel.is_empty() { name.to_string() } else { format!("{rel}/{name}") };
+    // Les fichiers d'abord, puis les dossiers (même ordre que r2modman).
+    for e in entries.iter().filter(|e| e.path().is_file()) {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if let Some(rule) = rule_for_file(&name, rules) {
+            out.push((rule, e.path(), join(&name)));
+        }
+    }
+    for e in entries.iter().filter(|e| e.path().is_dir()) {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let sub = join(&name);
+        match rule_for_dir(&sub, rules) {
+            Some(rule) => out.push((rule, e.path(), sub)),
+            None => collect(&e.path(), &sub, rules, out),
+        }
+    }
+}
+
+fn plan_rules(root: &Path, full: &str, game_folder: &Path, game: &GameRules, out: &mut Placement) -> AppResult<()> {
+    let mut intents = Vec::new();
+    collect(root, "", &game.rules, &mut intents);
+    let excluded = |rel: &str| {
+        let lower = rel.to_ascii_lowercase();
+        let base = lower.rsplit('/').next().unwrap_or(&lower).to_string();
+        game.exclusions.iter().any(|x| *x == lower || *x == base)
+    };
+    let mut zipped = HashSet::new();
+    for (rule, src, rel) in intents {
+        let route = rule.route.trim_end_matches('/');
+        let base = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let is_file = src.is_file();
+        match rule.tracking {
+            Tracking::PackageZip => {
+                // Tout le paquet, zippé tel quel, une seule fois.
+                if zipped.insert(route.to_string()) {
+                    let zip = root.with_extension("ts.zip");
+                    zip_dir(root, &zip)?;
+                    out.push(zip, format!("{route}/{full}.ts.zip"), false, game_folder);
+                }
+            }
+            Tracking::Subdir if is_file => out.push(src, format!("{route}/{full}/{base}"), false, game_folder),
+            Tracking::SubdirNoFlatten if is_file => out.push(src, format!("{route}/{full}/{rel}"), false, game_folder),
+            Tracking::Subdir | Tracking::SubdirNoFlatten => {
+                for (abs, sub) in files_under(&src) {
+                    out.push(abs, format!("{route}/{full}/{sub}"), false, game_folder);
+                }
+            }
+            Tracking::None | Tracking::State => {
+                let untracked = rule.tracking == Tracking::None;
+                if is_file {
+                    // Les fichiers de présentation de chaque paquet se marcheraient dessus.
+                    if (!rel.contains('/') && is_package_meta(&rel)) || excluded(&base) {
+                        continue;
+                    }
+                    out.push(src, format!("{route}/{base}"), untracked, game_folder);
+                } else {
+                    for (abs, sub) in files_under(&src) {
+                        if !excluded(&sub) {
+                            out.push(abs, format!("{route}/{sub}"), untracked, game_folder);
+                        }
+                    }
+                }
             }
         }
     }
+    Ok(())
+}
+
+/// Zippe un dossier (règle « package-zip » : mods Godot).
+fn zip_dir(dir: &Path, dest: &Path) -> AppResult<()> {
+    use std::io::Write;
+    let file = fs::File::create(dest).map_err(installer::io_err)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    for (abs, rel) in files_under(dir) {
+        zip.start_file(rel, options).map_err(|e| AppError::Io(e.to_string()))?;
+        let data = fs::read(&abs).map_err(installer::io_err)?;
+        zip.write_all(&data).map_err(installer::io_err)?;
+    }
+    zip.finish().map_err(|e| AppError::Io(e.to_string()))?;
+    Ok(())
 }
 
 /// Un mod à installer.
@@ -371,12 +579,14 @@ impl ThunderstoreState {
     }
 
     /// Chargeur de mods présent dans le dossier du jeu.
-    pub fn loader(&self, game_id: i64) -> AppResult<TsLoader> {
-        let (folder, managed) = {
+    pub async fn loader(&self, game_id: i64) -> AppResult<TsLoader> {
+        let eco = self.ecosystem().await;
+        let (folder, managed, community) = {
             let lib = self.library.lock().expect("library");
             let game = lib.games.get(&game_id).ok_or(AppError::NotFound)?;
-            (game.folder.clone(), game.mods.values().any(is_loader_record))
+            (game.folder.clone(), game.mods.values().any(|m| is_loader_record(m, &eco)), game.domain.clone().unwrap_or_default())
         };
+        let rules = eco.game(&community);
         let engine = if game_is_il2cpp(&folder) {
             Some("il2cpp")
         } else if game_is_mono(&folder) {
@@ -384,22 +594,45 @@ impl ThunderstoreState {
         } else {
             None
         };
-        let (name, tool, suitable) = match bepinex_flavor(&folder) {
-            Some(f) => (Some(f.label()), "bepinex", bepinex_suits(&folder) == Some(true)),
-            None if melon_present(&folder) => (Some("MelonLoader"), "melonloader", true),
-            None => (None, "", false),
+        let (name, tool) = match bepinex_flavor(&folder) {
+            Some(f) => (Some(f.label()), "bepinex"),
+            None if melon_present(&folder) => (Some("MelonLoader"), "melonloader"),
+            None if northstar_present(&folder) => (Some("Northstar"), "northstar"),
+            None => (None, ""),
         };
-        let fix = (name.is_some() && tool == "bepinex" && !suitable).then(|| fix_for(&folder)).flatten();
-        Ok(TsLoader { name, suitable, engine, managed, fix, launch_option: crate::games::proton::launch_option(tool) })
+        let suitable = match &rules {
+            Some(g) => loader_ok(g.kind, &folder),
+            None => bepinex_suits(&folder) == Some(true) || melon_present(&folder),
+        };
+        let needed = rules
+            .as_ref()
+            .filter(|g| g.kind.supported())
+            .and_then(|g| needed_loader(g, &eco, &folder))
+            .map(|full| {
+                let (namespace, name) = split_full(&full);
+                TsRef { id: stable_id(&full), namespace, name }
+            });
+        Ok(TsLoader {
+            required: rules.as_ref().map(|g| g.loader_id.clone()),
+            required_label: rules.as_ref().map(|g| required_label(g, &folder)),
+            supported: rules.as_ref().is_some_and(|g| g.kind.supported()),
+            name,
+            suitable,
+            engine,
+            managed,
+            needed,
+            launch_option: crate::games::proton::launch_option(tool),
+        })
     }
 
     /// Retire le BepInEx installé par ModStudio qui ne convient pas au jeu ;
     /// renvoie son statut (nécessaire ou non, et à quels mods) pour le nouveau.
-    fn drop_wrong_loader(&self, game_id: i64) -> AppResult<(bool, Vec<i64>)> {
+    fn drop_wrong_loader(&self, game_id: i64, eco: &Ecosystem) -> AppResult<(bool, Vec<i64>)> {
         let root = self.disabled_root();
         let mut lib = self.library.lock().expect("library");
         let game = lib.games.get_mut(&game_id).ok_or(AppError::NotFound)?;
-        let wrong: Vec<InstalledMod> = game.mods.values().filter(|m| is_loader_record(m)).cloned().collect();
+        let is_bepinex = |m: &InstalledMod| m.file_name.as_deref().and_then(|f| loader_of(eco, f)).is_some_and(|l| l.loader == "bepinex");
+        let wrong: Vec<InstalledMod> = game.mods.values().filter(|m| is_bepinex(m)).cloned().collect();
         if wrong.is_empty() {
             let flavor = bepinex_flavor(&game.folder).map(Flavor::label).unwrap_or("BepInEx");
             let kind = if game_is_il2cpp(&game.folder) { "IL2CPP" } else { "Mono" };
@@ -484,8 +717,10 @@ impl ThunderstoreState {
 
     /// Ce qu'il faut installer pour `target` : ses dépendances manquantes
     /// (dernière version), puis lui-même.
-    async fn plan(&self, target: Planned, deps: Vec<String>, config: &GameInstall, bepinex_ok: bool, melon_ok: bool) -> AppResult<Plan> {
+    async fn plan(&self, target: Planned, deps: Vec<String>, config: &GameInstall, game: &GameRules, eco: &Ecosystem) -> AppResult<Plan> {
         let installed = &config.mods;
+        let ready = loader_ok(game.kind, &config.folder);
+        let target_id = target.id();
         let mut plan = Plan::default();
         let mut visited: HashSet<i64> = HashSet::new();
         visited.insert(target.id());
@@ -500,13 +735,13 @@ impl ThunderstoreState {
             let mut children = Vec::new();
             for dep in &deps {
                 let Some((ns, name, _)) = parse_dependency(dep) else { continue };
-                let (ns, name) = right_loader(&ns, &name, &config.folder);
+                let (ns, name) = right_loader(&ns, &name, &config.folder, game, eco);
                 let id = stable_id(&format!("{ns}-{name}"));
                 plan.parents.entry(id).or_default().push(parent);
                 if installed.contains_key(&id) || visited.contains(&id) {
                     continue;
                 }
-                if (is_loader_pack(&name) && bepinex_ok) || (is_melon_pack(&name) && melon_ok) {
+                if ready && loader_of(eco, &format!("{ns}-{name}")).is_some() {
                     plan.kept_loader = true;
                     visited.insert(id);
                     continue;
@@ -531,6 +766,18 @@ impl ThunderstoreState {
                 stack.push((child, child_deps, false));
             }
         }
+        // Aucun mod n'a demandé le chargeur du jeu, absent : installé d'abord.
+        if !plan.order.iter().any(|p| loader_of(eco, &p.full()).is_some())
+            && let Some(full) = needed_loader(game, eco, &config.folder)
+        {
+            let (ns, name) = split_full(&full);
+            let id = stable_id(&full);
+            if !installed.contains_key(&id) {
+                let latest = self.client.latest(&ns, &name).await?;
+                plan.parents.entry(id).or_default().push(target_id);
+                plan.order.insert(0, Planned { namespace: ns, name, version: latest.version_number, icon: latest.icon });
+            }
+        }
         Ok(plan)
     }
 
@@ -552,6 +799,11 @@ impl ThunderstoreState {
         if !config.folder.is_dir() {
             return Err(AppError::Io(format!("le dossier du jeu n'existe plus : {}", config.folder.display())));
         }
+        let eco = self.ecosystem().await;
+        let game = eco.game(community).ok_or_else(|| AppError::ThunderstoreUnsupported(loader_label("").into()))?;
+        if !game.kind.supported() {
+            return Err(AppError::ThunderstoreUnsupported(loader_label(&game.loader_id).into()));
+        }
         let cancel = Arc::new(AtomicBool::new(false));
         {
             let mut jobs = self.jobs.lock().expect("jobs");
@@ -571,17 +823,16 @@ impl ThunderstoreState {
             icon: info.icon.clone(),
         };
         let target_id = target.id();
-        let suits = bepinex_suits(&config.folder);
-        let (bepinex_ok, melon_ok) = (suits == Some(true), melon_present(&config.folder));
         // Le chargeur lui-même, déjà là sans ModStudio : rien à faire.
-        let already = (is_loader_pack(name) && bepinex_ok) || (is_melon_pack(name) && melon_ok);
-        if already && !config.mods.contains_key(&target_id) {
-            return Err(AppError::ToolPresent(if is_melon_pack(name) { "MelonLoader".into() } else { "BepInEx".into() }));
+        let target_loader = loader_of(&eco, &target.full());
+        if target_loader.is_some() && loader_ok(game.kind, &config.folder) && !config.mods.contains_key(&target_id) {
+            return Err(AppError::ToolPresent(required_label(&game, &config.folder)));
         }
-        let plan = self.plan(target, info.dependencies.clone(), &config, bepinex_ok, melon_ok).await?;
+        let plan = self.plan(target, info.dependencies.clone(), &config, &game, &eco).await?;
         // Un BepInEx qui ne convient pas au jeu est en place : remplacé par le bon.
-        let inherited = if suits == Some(false) && plan.order.iter().any(|p| is_loader_pack(&p.name)) {
-            Some(self.drop_wrong_loader(game_id)?)
+        let is_bepinex = |p: &Planned| loader_of(&eco, &p.full()).is_some_and(|l| l.loader == "bepinex");
+        let inherited = if game.kind == LoaderKind::BepInEx && bepinex_suits(&config.folder) == Some(false) && plan.order.iter().any(is_bepinex) {
+            Some(self.drop_wrong_loader(game_id, &eco)?)
         } else {
             None
         };
@@ -601,8 +852,10 @@ impl ThunderstoreState {
                 return Err(AppError::Cancelled);
             }
             emit(InstallEvent::Step { name: display_name(&pkg.name), index: i as u32 + 1, total: total as u32 });
-            let inherit = inherited.as_ref().filter(|_| is_loader_pack(&pkg.name));
-            if let Err(e) = self.install_one(&config, pkg, pkg.id() == target_id, &plan, inherit, &job_dir, other_libraries, &cancel, &emit).await {
+            let inherit = inherited.as_ref().filter(|_| is_bepinex(pkg));
+            let loader = loader_of(&eco, &pkg.full());
+            let place = (&game, loader);
+            if let Err(e) = self.install_one(&config, pkg, pkg.id() == target_id, &plan, inherit, place, &job_dir, other_libraries, &cancel, &emit).await {
                 cleanup();
                 return Err(e);
             }
@@ -637,6 +890,7 @@ impl ThunderstoreState {
         is_target: bool,
         plan: &Plan,
         inherited: Option<&(bool, Vec<i64>)>,
+        (game, loader): (&GameRules, Option<LoaderPackage>),
         job_dir: &Path,
         other_libraries: &[Library],
         cancel: &Arc<AtomicBool>,
@@ -667,16 +921,17 @@ impl ThunderstoreState {
             return Err(AppError::InvalidArgument(format!("réactive « {} » avant de le mettre à jour.", display_name(&pkg.name))));
         }
         let (config_b, full_b, cancel_b, emit_b, old_b, zip_b) = (config.clone(), full.clone(), cancel.clone(), emit.clone(), old.clone(), zip.clone());
+        let (game_b, loader_b) = (game.clone(), loader.clone());
         let extracted = job_dir.join(&full);
-        let placed = tokio::task::spawn_blocking(move || -> AppResult<Vec<installer::PlacedBatch>> {
+        let (placed, untracked) = tokio::task::spawn_blocking(move || -> AppResult<(Vec<installer::PlacedBatch>, HashSet<String>)> {
             let size = fs::metadata(&zip_b).map(|m| m.len()).unwrap_or(0);
             let progress = |done: u64, total: u64| emit_b(InstallEvent::Extracting { done, total });
             archive::extract(&zip_b, &extracted, installer::extraction_limit(size, 0), &cancel_b, &progress)?;
             emit_b(InstallEvent::Finishing);
-            let moves = ts_plan(&extracted, &full_b, &config_b.folder);
+            let placement = ts_plan(&extracted, &full_b, &config_b.folder, &game_b, loader_b.as_ref())?;
             let mut batches = BTreeMap::new();
-            batches.insert(String::new(), moves);
-            place_plan(&config_b, old_b.as_ref(), &others, batches, None)
+            batches.insert(String::new(), placement.moves);
+            Ok((place_plan(&config_b, old_b.as_ref(), &others, batches, None)?, placement.untracked))
         })
         .await
         .map_err(|e| AppError::Io(e.to_string()))??;
@@ -722,10 +977,10 @@ impl ThunderstoreState {
             file_name: Some(full),
             ..Default::default()
         };
-        let loader = is_loader_pack(&pkg.name) || is_melon_pack(&pkg.name);
+        let loader = loader.is_some();
         for batch in placed.into_iter().filter(|b| b.key.is_empty()) {
             // Les réglages restent à l'utilisateur.
-            record.files = batch.files.into_iter().filter(|f| !is_user_config(f)).collect();
+            record.files = batch.files.into_iter().filter(|f| !untracked.contains(f)).collect();
             // Dossiers partagés (`BepInEx/plugins`…) : jamais retirés avec un mod.
             let own = format!("/{}", record.file_name.as_deref().unwrap_or_default());
             record.dirs = batch
@@ -848,14 +1103,18 @@ pub(crate) mod tests {
         archive::extract(&path, dir, 1 << 24, &AtomicBool::new(false), &|_, _| {}).unwrap();
     }
 
-    fn dests(moves: &[(PathBuf, String)]) -> Vec<String> {
-        let mut v: Vec<String> = moves.iter().map(|(_, d)| d.clone()).collect();
+
+    fn plan(root: &Path, full: &str, game: &Path, community: &str) -> Vec<String> {
+        let eco = Ecosystem::bundled();
+        let rules = eco.game(community).unwrap();
+        let loader = loader_of(&eco, full);
+        let mut v: Vec<String> = ts_plan(root, full, game, &rules, loader.as_ref()).unwrap().moves.into_iter().map(|(_, d)| d).collect();
         v.sort();
         v
     }
 
     #[test]
-    fn plans_follow_the_bepinex_folders() {
+    fn plans_follow_the_bepinex_rules() {
         let game = tempdir("ts-game");
         fs::create_dir_all(game.join("BepInEx/config")).unwrap();
         fs::write(game.join("BepInEx/config/existing.cfg"), b"user").unwrap();
@@ -864,7 +1123,7 @@ pub(crate) mod tests {
         let a = tempdir("ts-a");
         unzip_to(&make_zip(&[("MoreCompany.dll", b"dll"), ("manifest.json", b"{}"), ("icon.png", b"png")]), &a);
         assert_eq!(
-            dests(&ts_plan(&a, "notnotnotswipez-MoreCompany", &game)),
+            plan(&a, "notnotnotswipez-MoreCompany", &game, "lethal-company"),
             [
                 "BepInEx/plugins/notnotnotswipez-MoreCompany/MoreCompany.dll",
                 "BepInEx/plugins/notnotnotswipez-MoreCompany/icon.png",
@@ -872,7 +1131,8 @@ pub(crate) mod tests {
             ]
         );
 
-        // Dossiers BepInEx : plugins, patchers, config (jamais par-dessus les réglages existants).
+        // Dossiers des règles (plugins, patchers, config jamais par-dessus les réglages
+        // existants, `.mm.dll` dans monomod) ; les autres dossiers sont aplatis, comme r2modman.
         let b = tempdir("ts-b");
         unzip_to(
             &make_zip(&[
@@ -881,18 +1141,25 @@ pub(crate) mod tests {
                 ("config/existing.cfg", b"defaut"),
                 ("config/new.cfg", b"defaut"),
                 ("Assets/bundle", b"x"),
+                ("Hooks.mm.dll", b"mm"),
             ]),
             &b,
         );
         assert_eq!(
-            dests(&ts_plan(&b, "Team-Lib", &game)),
+            plan(&b, "Team-Lib", &game, "lethal-company"),
             [
                 "BepInEx/config/new.cfg",
+                "BepInEx/monomod/Team-Lib/Hooks.mm.dll",
                 "BepInEx/patchers/Team-Lib/Patch.dll",
-                "BepInEx/plugins/Team-Lib/Assets/bundle",
                 "BepInEx/plugins/Team-Lib/Lib/Lib.dll",
+                "BepInEx/plugins/Team-Lib/bundle",
             ]
         );
+
+        // Règles propres à un jeu : cartes de Timberborn.
+        let m = tempdir("ts-maps");
+        unzip_to(&make_zip(&[("Maps/Island.timber", b"map")]), &m);
+        assert_eq!(plan(&m, "Team-Island", &game, "timberborn"), ["BepInEx/Maps/Team-Island/Island.timber"]);
 
         // BepInExPack : le contenu de son dossier va dans le dossier du jeu.
         let c = tempdir("ts-c");
@@ -905,7 +1172,70 @@ pub(crate) mod tests {
             ]),
             &c,
         );
-        assert_eq!(dests(&ts_plan(&c, "BepInEx-BepInExPack", &game)), ["BepInEx/core/BepInEx.dll", "doorstop_config.ini", "winhttp.dll"]);
+        assert_eq!(
+            plan(&c, "BepInEx-BepInExPack", &game, "lethal-company"),
+            ["BepInEx/core/BepInEx.dll", "doorstop_config.ini", "winhttp.dll"]
+        );
+        // Paquet de Valheim : son dossier porte un autre nom.
+        let v = tempdir("ts-v");
+        unzip_to(&make_zip(&[("BepInExPack_Valheim/winhttp.dll", b"proxy"), ("BepInExPack_Valheim/unstripped_corlib/x.dll", b"x")]), &v);
+        assert_eq!(plan(&v, "denikson-BepInExPack_Valheim", &game, "valheim"), ["unstripped_corlib/x.dll", "winhttp.dll"]);
+    }
+
+    #[test]
+    fn plans_follow_the_melonloader_rules() {
+        let game = tempdir("ts-melon-game");
+        // BONELAB : DLL dans Mods, `.lib.dll` dans UserLibs, cartes dans UserData/CustomMaps ;
+        // les fichiers de présentation ne sont pas copiés (ils se marcheraient dessus).
+        let a = tempdir("ts-bonelab");
+        unzip_to(
+            &make_zip(&[
+                ("Fusion.dll", b"dll"),
+                ("Helper.lib.dll", b"lib"),
+                ("UserData/CustomMaps/Town.bcm", b"map"),
+                ("manifest.json", b"{}"),
+                ("icon.png", b"png"),
+            ]),
+            &a,
+        );
+        assert_eq!(
+            plan(&a, "Lakatrazz-Fusion", &game, "bonelab"),
+            ["Mods/Fusion.dll", "UserData/CustomMaps/Town.bcm", "UserLibs/Helper.lib.dll"]
+        );
+
+        // MelonLoader 0.7+ (Schedule I) : chaque mod dans son dossier.
+        let b = tempdir("ts-schedule");
+        unzip_to(&make_zip(&[("Mods/Cool.dll", b"dll"), ("UserData/cool.cfg", b"cfg"), ("manifest.json", b"{}")]), &b);
+        assert_eq!(
+            plan(&b, "Team-Cool", &game, "schedule-i"),
+            ["Mods/Team-Cool/Mods/Cool.dll", "Mods/Team-Cool/manifest.json", "UserData/Team-Cool/cool.cfg"]
+        );
+        // Son chargeur : MelonLoader et version.dll seulement.
+        let c = tempdir("ts-ml");
+        unzip_to(
+            &make_zip(&[("MelonLoader/net6/MelonLoader.dll", b"ml"), ("version.dll", b"proxy"), ("NOTICE.txt", b"n"), ("manifest.json", b"{}")]),
+            &c,
+        );
+        assert_eq!(plan(&c, "LavaGang-MelonLoader", &game, "schedule-i"), ["MelonLoader/net6/MelonLoader.dll", "version.dll"]);
+    }
+
+    #[test]
+    fn package_zip_rule_zips_the_whole_package() {
+        let game = tempdir("ts-zip-game");
+        let rules = GameRules {
+            loader_id: "bepinex".into(),
+            kind: LoaderKind::BepInEx,
+            rules: vec![Rule { route: "mods".into(), tracking: Tracking::PackageZip, extensions: vec![], default: true }],
+            exclusions: vec![],
+            autolist: vec![],
+        };
+        let root = tempdir("ts-zip").join("Team-Godot");
+        unzip_to(&make_zip(&[("mod.pck", b"pck"), ("manifest.json", b"{}")]), &root);
+        let placement = ts_plan(&root, "Team-Godot", &game, &rules, None).unwrap();
+        assert_eq!(placement.moves.len(), 1);
+        assert_eq!(placement.moves[0].1, "mods/Team-Godot.ts.zip");
+        let mut z = zip::ZipArchive::new(fs::File::open(&placement.moves[0].0).unwrap()).unwrap();
+        assert!(z.by_name("mod.pck").is_ok());
     }
 
     fn zip_response(body: &[u8]) -> String {
@@ -927,7 +1257,10 @@ pub(crate) mod tests {
     }
 
     fn state_for(base: &str, tag: &str) -> ThunderstoreState {
-        ThunderstoreState::new(base.trim_end_matches("/v1"), tempdir(tag).join("installed-thunderstore.json"))
+        let s = ThunderstoreState::new(base.trim_end_matches("/v1"), tempdir(tag).join("installed-thunderstore.json"));
+        // Les règles des jeux livrées avec ModStudio (le faux serveur ne les sert pas).
+        *s.ecosystem.try_lock().unwrap() = Some(Arc::new(Ecosystem::bundled()));
+        s
     }
 
     /// Jeu avec BepInEx déjà installé (sans ModStudio).
@@ -1054,7 +1387,7 @@ pub(crate) mod tests {
         let out = s.install("lethal-company", "Team", "Cool", None, &[], quiet()).await.unwrap();
         assert_eq!(out.installed, ["BepInExPack", "Cool"]);
         assert!(game.join("winhttp.dll").is_file());
-        assert!(bepinex_present(&game));
+        assert!(bepinex_flavor(&game).is_some());
         assert!(game.join("BepInEx/plugins/Team-Cool/Cool.dll").is_file());
 
         // BepInEx installé à la main dans un autre jeu : pas d'installation par-dessus.
@@ -1114,8 +1447,8 @@ pub(crate) mod tests {
         assert!(game.join("BepInEx/plugins/Deja-HighJump/HighJump.dll").is_file());
         let pack = &out.game.mods[&stable_id("BepInEx-BepInExPack_IL2CPP")];
         assert_eq!(pack.required_by, [stable_id("Deja-HighJump")]);
-        let l = s.loader(out.game.game_id).unwrap();
-        assert!(l.suitable && l.fix.is_none());
+        let l = s.loader(out.game.game_id).await.unwrap();
+        assert!(l.suitable && l.needed.is_none());
         assert_eq!(l.engine, Some("il2cpp"));
     }
 
@@ -1127,8 +1460,6 @@ pub(crate) mod tests {
                 // Ancienne version de ModStudio : BepInEx 5 installé tel quel.
                 latest("5.4.2305", &[]),
                 zip_response(&mono_pack()),
-                latest("1.0.0", &[]),
-                zip_response(&make_zip(&[("HighJump.dll", b"jump")])),
                 // Réparation.
                 latest("6.0.788", &[]),
                 zip_response(&il2cpp_pack()),
@@ -1137,18 +1468,32 @@ pub(crate) mod tests {
         let s = state_for(&server.base, "ts-wrong-state");
         let g = s.configure("roadside-research", "Roadside Research".into(), None, game.to_str().unwrap()).unwrap();
         s.install("roadside-research", "BepInEx", "BepInExPack", None, &[], quiet()).await.unwrap();
-        s.install("roadside-research", "Deja", "HighJump", None, &[], quiet()).await.unwrap();
         {
-            // Comme avant la correction : le mod comptait sur BepInEx 5.
+            // Comme avant la correction : HighJump comptait sur BepInEx 5.
             let mut lib = s.library.lock().unwrap();
-            let m = lib.games.get_mut(&g.game_id).unwrap().mods.get_mut(&stable_id("BepInEx-BepInExPack")).unwrap();
+            let gm = lib.games.get_mut(&g.game_id).unwrap();
+            let m = gm.mods.get_mut(&stable_id("BepInEx-BepInExPack")).unwrap();
             m.auto = true;
             m.required_by = vec![stable_id("Deja-HighJump")];
+            let dir = game.join("BepInEx/plugins/Deja-HighJump");
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("HighJump.dll"), b"jump").unwrap();
+            gm.mods.insert(
+                stable_id("Deja-HighJump"),
+                InstalledMod {
+                    mod_id: stable_id("Deja-HighJump"),
+                    name: "HighJump".into(),
+                    files: vec!["BepInEx/plugins/Deja-HighJump/HighJump.dll".into()],
+                    file_name: Some("Deja-HighJump".into()),
+                    ..Default::default()
+                },
+            );
         }
-        let l = s.loader(g.game_id).unwrap();
+        let l = s.loader(g.game_id).await.unwrap();
         assert_eq!(l.name, Some("BepInEx 5"));
-        assert!(!l.suitable && l.managed);
-        let fix = l.fix.unwrap();
+        assert_eq!(l.required_label.as_deref(), Some("BepInEx 6 (IL2CPP)"));
+        assert!(!l.suitable && l.managed && l.supported);
+        let fix = l.needed.unwrap();
         assert_eq!((fix.namespace.as_str(), fix.name.as_str()), ("BepInEx", "BepInExPack_IL2CPP"));
 
         let out = s.install("roadside-research", &fix.namespace, &fix.name, None, &[], quiet()).await.unwrap();
@@ -1161,7 +1506,44 @@ pub(crate) mod tests {
         let pack = &out.game.mods[&stable_id("BepInEx-BepInExPack_IL2CPP")];
         assert!(pack.auto, "toujours un mod nécessaire");
         assert_eq!(pack.required_by, [stable_id("Deja-HighJump")]);
-        assert!(s.loader(g.game_id).unwrap().suitable);
+        assert!(s.loader(g.game_id).await.unwrap().suitable);
+    }
+
+    #[tokio::test]
+    async fn installing_any_mod_brings_the_loader_the_game_needs() {
+        // Lethal Company sans BepInEx, mod qui ne déclare rien : BepInEx d'abord.
+        let game = tempdir("ts-auto");
+        let server = fake_server_with(|_| {
+            vec![
+                latest("1.0.0", &[]),
+                latest("5.4.2305", &[]),
+                zip_response(&mono_pack()),
+                zip_response(&make_zip(&[("Cool.dll", b"cool")])),
+            ]
+        });
+        let s = state_for(&server.base, "ts-auto-state");
+        s.configure("lethal-company", "Lethal Company".into(), None, game.to_str().unwrap()).unwrap();
+        let out = s.install("lethal-company", "Team", "Cool", None, &[], quiet()).await.unwrap();
+        assert_eq!(out.installed, ["BepInExPack", "Cool"]);
+        assert_eq!(server.request(1).line, "GET /api/experimental/package/BepInEx/BepInExPack/ HTTP/1.1");
+        let pack = &out.game.mods[&stable_id("BepInEx-BepInExPack")];
+        assert!(pack.auto);
+        assert_eq!(pack.required_by, [stable_id("Team-Cool")]);
+        assert!(game.join("BepInEx/plugins/Team-Cool/Cool.dll").is_file());
+    }
+
+    #[tokio::test]
+    async fn games_with_other_loaders_are_refused_before_any_download() {
+        let game = tempdir("ts-palworld");
+        let server = fake_server_with(|_| vec![]);
+        let s = state_for(&server.base, "ts-palworld-state");
+        let g = s.configure("palworld", "Palworld".into(), None, game.to_str().unwrap()).unwrap();
+        let err = s.install("palworld", "Team", "Mod", None, &[], quiet()).await.unwrap_err();
+        assert!(matches!(err, AppError::ThunderstoreUnsupported(ref l) if l.contains("Shimloader")), "{err:?}");
+        assert_eq!(server.count(), 0);
+        let l = s.loader(g.game_id).await.unwrap();
+        assert!(!l.supported && l.needed.is_none());
+        assert_eq!(l.required.as_deref(), Some("shimloader"));
     }
 
     #[tokio::test]
@@ -1172,7 +1554,7 @@ pub(crate) mod tests {
         let server = fake_server_with(|_| vec![latest("1.0.0", &["BepInEx-BepInExPack-5.4.2100"]), latest("6.0.788", &[])]);
         let s = state_for(&server.base, "ts-hand-state");
         let g = s.configure("roadside-research", "Roadside Research".into(), None, game.to_str().unwrap()).unwrap();
-        let l = s.loader(g.game_id).unwrap();
+        let l = s.loader(g.game_id).await.unwrap();
         assert!(!l.suitable && !l.managed);
         let err = s.install("roadside-research", "Deja", "HighJump", None, &[], quiet()).await.unwrap_err();
         assert!(matches!(err, AppError::InvalidArgument(ref m) if m.contains("BepInEx 5")), "{err:?}");

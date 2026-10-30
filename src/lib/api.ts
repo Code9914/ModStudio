@@ -823,6 +823,10 @@ export interface TsCommunity {
   communityIconUrl: string | null;
   totalDownloadCount: number;
   totalPackageCount: number;
+  /** Chargeur de mods du jeu (« BepInEx », « MelonLoader », « Shimloader (UE4SS) »…). */
+  loader: string | null;
+  /** ModStudio sait installer ses mods. */
+  supported: boolean;
 }
 
 export interface TsCategory {
@@ -910,15 +914,21 @@ export interface TsUpdate {
 }
 
 export interface TsLoader {
-  /** « BepInEx 5 », « BepInEx 6 (IL2CPP) », « MelonLoader »… */
+  /** Chargeur que le jeu demande (« bepinex », « melonloader », « shimloader »…), null : inconnu. */
+  required: string | null;
+  /** Son nom affiché (« BepInEx 6 (IL2CPP) », « MelonLoader »…). */
+  requiredLabel: string | null;
+  /** ModStudio sait installer les mods de ce jeu. */
+  supported: boolean;
+  /** Chargeur présent : « BepInEx 5 », « BepInEx 6 (IL2CPP) », « MelonLoader »… */
   name: string | null;
   /** Le chargeur présent peut charger les mods de ce jeu. */
   suitable: boolean;
   engine: "il2cpp" | "mono" | null;
   /** Installé par ModStudio : remplaçable sans risque. */
   managed: boolean;
-  /** Paquet qui remplace un BepInEx qui ne convient pas. */
-  fix: { id: number; namespace: string; name: string } | null;
+  /** Paquet à installer : chargeur absent, ou qui ne convient pas. */
+  needed: { id: number; namespace: string; name: string } | null;
   launchOption: string | null;
 }
 

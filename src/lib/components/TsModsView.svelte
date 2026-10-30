@@ -79,6 +79,7 @@
       </div>
       <div class="banner-stats">
         <span class="chip">Thunderstore</span>
+        {#if info.loader}<span class="chip" title="Chargeur de mods du jeu">{info.loader}</span>{/if}
         {#if info.totalPackageCount > 0}
           <span><strong>{exact(info.totalPackageCount)}</strong> mods</span>
           <span><strong>{count(info.totalDownloadCount)}</strong> téléchargements</span>

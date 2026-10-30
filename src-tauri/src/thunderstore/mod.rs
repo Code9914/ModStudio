@@ -2,10 +2,13 @@
 //! leurs dépendances. Pas de compte ni de clé : l'API est publique.
 
 pub mod api;
+pub mod ecosystem;
 pub mod install;
 
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
@@ -19,6 +22,7 @@ use crate::error::{AppError, AppResult};
 use crate::install_commands::UninstallResult;
 use crate::installer::{self, GameInstall, InstallEvent, Library};
 use api::{Community, Package, PackageView, TsClient};
+use ecosystem::{loader_label, Ecosystem};
 use install::{TsInstalled, TsLoader, TsUpdate};
 
 pub struct ThunderstoreState {
@@ -30,6 +34,9 @@ pub struct ThunderstoreState {
     pub jobs: Mutex<HashMap<i64, Arc<AtomicBool>>>,
     /// Liste des jeux, gardée le temps de la session.
     pub communities: Mutex<Option<Vec<Community>>>,
+    /// Ce que chaque jeu demande pour charger ses mods (et sa copie sur le disque).
+    pub ecosystem: tokio::sync::Mutex<Option<Arc<Ecosystem>>>,
+    pub ecosystem_path: PathBuf,
 }
 
 impl ThunderstoreState {
@@ -37,10 +44,44 @@ impl ThunderstoreState {
         Self {
             client: TsClient::new(base),
             library: Mutex::new(Library::load(&library_path)),
-            library_path,
             jobs: Mutex::new(HashMap::new()),
             communities: Mutex::new(None),
+            ecosystem: tokio::sync::Mutex::new(None),
+            ecosystem_path: library_path.with_file_name("thunderstore-ecosystem.json"),
+            library_path,
         }
+    }
+
+    /// Règles de tous les jeux : copie du jour sur le disque, sinon téléchargées,
+    /// sinon la dernière copie (ou celle livrée avec ModStudio) hors ligne.
+    pub async fn ecosystem(&self) -> Arc<Ecosystem> {
+        let mut slot = self.ecosystem.lock().await;
+        if let Some(e) = slot.as_ref() {
+            return e.clone();
+        }
+        let from_disk = || fs::read(&self.ecosystem_path).ok().and_then(|b| Ecosystem::parse(&b));
+        let fresh = fs::metadata(&self.ecosystem_path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age < Duration::from_secs(24 * 3600));
+        let cached = if fresh { from_disk() } else { None };
+        let e = match cached {
+            Some(e) => e,
+            None => match self.client.ecosystem_raw().await.ok().and_then(|b| Ecosystem::parse(&b)) {
+                Some(e) => {
+                    let tmp = self.ecosystem_path.with_extension("json.tmp");
+                    if fs::write(&tmp, e.to_compact_json()).is_ok() {
+                        let _ = fs::rename(&tmp, &self.ecosystem_path);
+                    }
+                    e
+                }
+                None => from_disk().unwrap_or_else(Ecosystem::bundled),
+            },
+        };
+        let e = Arc::new(e);
+        *slot = Some(e.clone());
+        e
     }
 
     pub async fn communities(&self, refresh: bool) -> AppResult<Vec<Community>> {
@@ -49,6 +90,12 @@ impl ThunderstoreState {
         }
         let mut list = self.client.communities().await?;
         list.sort_by_key(|c| std::cmp::Reverse(c.total_download_count));
+        let eco = self.ecosystem().await;
+        for c in &mut list {
+            let game = eco.game(&c.identifier);
+            c.loader = game.as_ref().map(|g| loader_label(&g.loader_id).to_string());
+            c.supported = game.is_some_and(|g| g.kind.supported());
+        }
         *self.communities.lock().expect("communities") = Some(list.clone());
         Ok(list)
     }
@@ -186,8 +233,8 @@ pub async fn ts_updates(state: State<'_, AppState>, game_id: i64) -> AppResult<V
 }
 
 #[tauri::command]
-pub fn ts_loader(state: State<'_, AppState>, game_id: i64) -> AppResult<TsLoader> {
-    state.thunderstore.loader(game_id)
+pub async fn ts_loader(state: State<'_, AppState>, game_id: i64) -> AppResult<TsLoader> {
+    state.thunderstore.loader(game_id).await
 }
 
 #[tauri::command]

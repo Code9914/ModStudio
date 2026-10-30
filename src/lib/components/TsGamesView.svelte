@@ -81,8 +81,9 @@
   </header>
 
   <p class="intro muted">
-    Thunderstore rassemble les mods de nombreux jeux Unity (Lethal Company, Valheim, R.E.P.O.…). ModStudio installe
-    chaque mod avec ceux dont il a besoin, et BepInEx s'il manque. Pas besoin de compte.
+    Thunderstore rassemble les mods de nombreux jeux (Lethal Company, Valheim, R.E.P.O.…). ModStudio sait ce que chaque
+    jeu utilise pour charger ses mods (BepInEx, MelonLoader…) : il l'installe s'il manque, puis chaque mod avec ceux dont
+    il a besoin, rangé comme le ferait un gestionnaire de mods. Pas besoin de compte.
   </p>
 
   {#if mine.length > 0 && !search}
@@ -118,6 +119,7 @@
                 badges={[
                   { text: launcherNames[launcher] ?? launcher, tone: "neutral" as const },
                   ...(n > 0 ? [{ text: `${n} ${n > 1 ? "mods" : "mod"}`, tone: "ok" as const }] : []),
+                  ...(!c.supported ? [{ text: "Pas encore pris en charge", tone: "neutral" as const }] : []),
                 ]}
               />
               <span class="card-title">{c.name}</span>
@@ -153,13 +155,17 @@
             <Thumb
               src={c.coverImageUrl}
               label={c.name}
-              badges={n > 0 ? [{ text: `${n} ${n > 1 ? "mods" : "mod"}`, tone: "ok" as const }] : []}
+              badges={[
+                ...(n > 0 ? [{ text: `${n} ${n > 1 ? "mods" : "mod"}`, tone: "ok" as const }] : []),
+                ...(!c.supported ? [{ text: "Pas encore pris en charge", tone: "neutral" as const }] : []),
+              ]}
             />
             <span class="card-title">{c.name}</span>
             <span class="card-meta">
               <span>{exact(c.totalPackageCount)} mods</span>
               <span title="Téléchargements"><Icon name="download" size={14} />{count(c.totalDownloadCount)}</span>
             </span>
+            {#if c.loader}<span class="card-meta"><span>{c.loader}</span></span>{/if}
           </button>
         </li>
       {/each}

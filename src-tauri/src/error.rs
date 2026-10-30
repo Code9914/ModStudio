@@ -164,6 +164,10 @@ pub enum AppError {
 
     #[error("Impossible de joindre Thunderstore. Vérifie ta connexion internet. ({0})")]
     ThunderstoreNetwork(String),
+
+    /// Jeu dont le chargeur de mods n'est pas encore pris en charge.
+    #[error("Ce jeu charge ses mods avec {0} : ModStudio ne sait pas encore les installer. Utilise r2modman ou Gale pour ce jeu.")]
+    ThunderstoreUnsupported(String),
 }
 
 impl AppError {
@@ -218,6 +222,7 @@ impl AppError {
             AppError::ThunderstoreRateLimited(_) => "rate_limited",
             AppError::ThunderstoreApi { .. } => "thunderstore_api",
             AppError::ThunderstoreNetwork(_) => "network",
+            AppError::ThunderstoreUnsupported(_) => "thunderstore_unsupported",
         }
     }
 
