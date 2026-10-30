@@ -930,6 +930,8 @@ export interface TsLoader {
   /** Paquet à installer : chargeur absent, ou qui ne convient pas. */
   needed: { id: number; namespace: string; name: string } | null;
   launchOption: string | null;
+  /** Option de lancement que le chargeur demande sur tous les systèmes (jeux Godot). */
+  launchArgs: string | null;
 }
 
 export const ts = {

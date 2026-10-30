@@ -15,11 +15,29 @@ const BUNDLED: &str = include_str!("ecosystem.json");
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoaderKind {
     BepInEx,
+    /// BepInEx pour .NET de Resonite (`hookfxr`).
+    BepisLoader,
     MelonLoader,
     /// MelonLoader 0.7+ : chaque mod dans son dossier, `Mods/<Équipe-Nom>`.
     RecursiveMelonLoader,
     Northstar,
-    /// Chargeurs que ModStudio ne sait pas encore installer.
+    /// UE4SS des jeux Unreal (Thunderstore le livre avec « shimloader »).
+    Shimloader,
+    /// Balatro : mods dans `%AppData%/Balatro/Mods`.
+    Lovely,
+    /// WEBFISHING.
+    GdWeave,
+    /// Hades II, Risk of Rain Returns.
+    ReturnOfModding,
+    /// Jeux Godot : mods zippés dans `mods`.
+    GodotMl,
+    /// Unity Mod Manager.
+    Umm,
+    /// Scrap Mechanic.
+    Rivet,
+    /// Mods copiés tels quels (chargeur fourni par le jeu ou par un mod).
+    None,
+    /// Chargeurs que ModStudio ne sait pas installer (MIO : chargeur absent de Thunderstore).
     Other,
 }
 
@@ -27,9 +45,18 @@ impl LoaderKind {
     fn parse(s: &str) -> LoaderKind {
         match s {
             "bepinex" => LoaderKind::BepInEx,
+            "bepisloader" => LoaderKind::BepisLoader,
             "melonloader" => LoaderKind::MelonLoader,
             "recursive-melonloader" => LoaderKind::RecursiveMelonLoader,
             "northstar" => LoaderKind::Northstar,
+            "shimloader" => LoaderKind::Shimloader,
+            "lovely" => LoaderKind::Lovely,
+            "gdweave" => LoaderKind::GdWeave,
+            "return-of-modding" => LoaderKind::ReturnOfModding,
+            "godotml" => LoaderKind::GodotMl,
+            "umm" => LoaderKind::Umm,
+            "rivet" => LoaderKind::Rivet,
+            "none" => LoaderKind::None,
             _ => LoaderKind::Other,
         }
     }
@@ -37,7 +64,6 @@ impl LoaderKind {
     pub fn supported(self) -> bool {
         self != LoaderKind::Other
     }
-
 }
 
 /// Nom affiché d'un chargeur (`packageLoader` de Thunderstore).
@@ -110,6 +136,10 @@ pub struct GameRules {
     pub exclusions: Vec<String>,
     /// Paquets mis en avant par la communauté (le bon chargeur, souvent).
     pub autolist: Vec<String>,
+    /// Exécutables du jeu (`Hades2.exe`…) : le chargeur va à côté.
+    pub exe_names: Vec<String>,
+    /// Dossier de données (`Pal` pour Palworld, `Balatro_Data`…).
+    pub data_folder: String,
 }
 
 /// Paquet qui est un chargeur de mods.
@@ -198,6 +228,8 @@ impl Ecosystem {
                                     "packageLoader": r.get("packageLoader"),
                                     "installRules": r.get("installRules"),
                                     "relativeFileExclusions": r.get("relativeFileExclusions"),
+                                    "exeNames": r.get("exeNames"),
+                                    "dataFolderName": r.get("dataFolderName"),
                                 })
                             })
                             .collect()
@@ -252,7 +284,13 @@ impl Ecosystem {
         if autolist.is_empty() {
             autolist = autolist_of(g.pointer("/thunderstore/autolistPackageIds"));
         }
-        Some(GameRules { kind: LoaderKind::parse(&loader_id), loader_id, rules, exclusions, autolist })
+        let exe_names = entry
+            .get("exeNames")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect())
+            .unwrap_or_default();
+        let data_folder = entry.get("dataFolderName").and_then(Value::as_str).unwrap_or_default().to_string();
+        Some(GameRules { kind: LoaderKind::parse(&loader_id), loader_id, rules, exclusions, autolist, exe_names, data_folder })
     }
 
     /// Le paquet `Équipe-Nom` est-il un chargeur ?
@@ -282,7 +320,11 @@ mod tests {
         assert_eq!(bonelab.kind, LoaderKind::MelonLoader);
         // Sous-règles aplaties.
         assert!(bonelab.rules.iter().any(|r| r.route == "UserData/CustomMaps" && r.extensions.contains(&".bcm".to_string())));
-        assert_eq!(e.game("palworld").unwrap().kind, LoaderKind::Other);
+        let pal = e.game("palworld").unwrap();
+        assert_eq!(pal.kind, LoaderKind::Shimloader);
+        assert_eq!(pal.data_folder, "Pal");
+        assert_eq!(e.game("hades-ii").unwrap().exe_names, ["Hades2.exe"]);
+        assert_eq!(e.game("mio-memories-in-orbit").unwrap().kind, LoaderKind::Other);
         // Le jeu, pas le serveur dédié.
         assert_eq!(e.game("valheim").unwrap().kind, LoaderKind::BepInEx);
         assert!(e.game("phasmophobia").is_none());
@@ -299,7 +341,7 @@ mod tests {
         let again = Ecosystem::parse(e.to_compact_json().as_bytes()).unwrap();
         for id in ["lethal-company", "bonelab", "subnautica", "roadside-research", "palworld"] {
             let (a, b) = (e.game(id).unwrap(), again.game(id).unwrap());
-            assert_eq!((a.kind, a.rules, a.autolist), (b.kind, b.rules, b.autolist), "{id}");
+            assert_eq!((a.kind, a.rules, a.autolist, a.exe_names, a.data_folder), (b.kind, b.rules, b.autolist, b.exe_names, b.data_folder), "{id}");
         }
         assert_eq!(e.loaders.len(), again.loaders.len());
     }

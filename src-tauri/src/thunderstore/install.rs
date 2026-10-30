@@ -18,7 +18,7 @@ use super::ThunderstoreState;
 use crate::archive;
 use crate::error::{AppError, AppResult};
 use crate::install_commands::{dependency_state, Orphan, UninstallResult};
-use crate::installer::{self, DownloadRequest, GameInstall, InstallEvent, InstalledMod, Layout, Library, STAGING_DIR};
+use crate::installer::{self, DownloadRequest, GameInstall, InstallEvent, InstalledMod, Layout, Library, ModPart, STAGING_DIR};
 use crate::nexus::install::{owned_by_others, place_plan};
 use crate::toggle;
 
@@ -65,6 +65,8 @@ pub struct TsLoader {
     pub needed: Option<TsRef>,
     /// Option de lancement Steam pour Proton (Linux seulement).
     pub launch_option: Option<String>,
+    /// Option de lancement que le chargeur demande sur tous les systèmes (Godot).
+    pub launch_args: Option<String>,
 }
 
 /// Un paquet Thunderstore (`Équipe-Nom`).
@@ -169,14 +171,127 @@ fn northstar_present(folder: &Path) -> bool {
     folder.join("R2Northstar").is_dir()
 }
 
+/// Dossier de l'exécutable du jeu, relatif au dossier du jeu, avec `/` final
+/// (`Ship/` pour Hades II, `Release/` pour Scrap Mechanic, `""` sinon).
+pub fn exe_rel(folder: &Path, game: &GameRules) -> String {
+    let wanted: Vec<String> = game.exe_names.iter().map(|n| n.to_ascii_lowercase()).collect();
+    if wanted.is_empty() {
+        return String::new();
+    }
+    let mut level = vec![(folder.to_path_buf(), String::new())];
+    for _ in 0..3 {
+        let mut next = Vec::new();
+        for (dir, rel) in level {
+            let Ok(entries) = fs::read_dir(&dir) else { continue };
+            let mut entries: Vec<_> = entries.flatten().collect();
+            entries.sort_by_key(|e| e.file_name());
+            for e in &entries {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if e.path().is_file() && wanted.contains(&name.to_ascii_lowercase()) {
+                    return rel;
+                }
+            }
+            for e in entries.into_iter().filter(|e| e.path().is_dir()) {
+                let name = e.file_name().to_string_lossy().into_owned();
+                next.push((e.path(), format!("{rel}{name}/")));
+            }
+        }
+        level = next;
+    }
+    String::new()
+}
+
+/// `Binaries/Win64` d'un jeu Unreal (là où va UE4SS), relatif au dossier du jeu.
+pub fn unreal_bin_rel(folder: &Path, game: &GameRules) -> String {
+    let data = game.data_folder.trim_matches('/');
+    if !data.is_empty() && folder.join(data).join("Binaries").join("Win64").is_dir() {
+        return format!("{data}/Binaries/Win64");
+    }
+    // Données inconnues : le premier dossier qui a un `Binaries/Win64` (hors moteur).
+    let found = fs::read_dir(folder).ok().and_then(|it| {
+        let mut dirs: Vec<_> = it.flatten().filter(|e| e.path().join("Binaries").join("Win64").is_dir()).collect();
+        dirs.sort_by_key(|e| e.file_name());
+        dirs.into_iter()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .find(|n| !n.eq_ignore_ascii_case("Engine"))
+    });
+    match found {
+        Some(name) => format!("{name}/Binaries/Win64"),
+        None if !data.is_empty() => format!("{data}/Binaries/Win64"),
+        None => "Binaries/Win64".into(),
+    }
+}
+
+/// Dossier des mods UE4SS (`ue4ss/Mods` pour UE4SS 3 installé à part).
+fn ue4ss_mods_rel(folder: &Path, bin: &str) -> String {
+    if folder.join(bin).join("ue4ss").join("UE4SS.dll").is_file() {
+        format!("{bin}/ue4ss/Mods")
+    } else {
+        format!("{bin}/Mods")
+    }
+}
+
+fn ue4ss_present(folder: &Path, bin: &str) -> bool {
+    let dir = folder.join(bin);
+    dir.join("dwmapi.dll").is_file() && (dir.join("UE4SS.dll").is_file() || dir.join("ue4ss").join("UE4SS.dll").is_file())
+}
+
 /// Le chargeur que le jeu demande est-il en place (et le bon) ?
-fn loader_ok(kind: LoaderKind, folder: &Path) -> bool {
-    match kind {
+fn loader_ok(game: &GameRules, folder: &Path) -> bool {
+    let exe = || folder.join(exe_rel(folder, game));
+    match game.kind {
         LoaderKind::BepInEx => bepinex_suits(folder) == Some(true),
-        LoaderKind::MelonLoader | LoaderKind::RecursiveMelonLoader => melon_present(folder),
+        LoaderKind::BepisLoader => folder.join("BepisLoader.dll").is_file() && folder.join("hostfxr.dll").is_file(),
+        LoaderKind::MelonLoader | LoaderKind::RecursiveMelonLoader | LoaderKind::None => melon_present(folder),
         LoaderKind::Northstar => northstar_present(folder),
+        LoaderKind::Shimloader => ue4ss_present(folder, &unreal_bin_rel(folder, game)),
+        LoaderKind::Lovely => ["winmm.dll", "version.dll"].iter().any(|d| exe().join(d).is_file()),
+        LoaderKind::GdWeave => folder.join("GDWeave").join("core").join("GDWeave.dll").is_file(),
+        LoaderKind::ReturnOfModding => ["version.dll", "d3d12.dll"].iter().any(|d| exe().join(d).is_file()),
+        LoaderKind::GodotMl => folder.join("addons").join("mod_loader").is_dir(),
+        LoaderKind::Umm => folder.join("UMM").join("Core").join("UnityModManager.dll").is_file(),
+        LoaderKind::Rivet => exe().join("version.dll").is_file() && exe().join("Rivet").join("Loader.dll").is_file(),
         LoaderKind::Other => false,
     }
+}
+
+/// DLL que Proton doit laisser au chargeur (options de lancement Steam).
+fn proxy_dll(game: &GameRules, folder: &Path) -> Option<&'static str> {
+    Some(match game.kind {
+        LoaderKind::BepInEx | LoaderKind::Umm => "winhttp",
+        LoaderKind::MelonLoader | LoaderKind::RecursiveMelonLoader | LoaderKind::Rivet => "version",
+        LoaderKind::None if melon_present(folder) => "version",
+        LoaderKind::Shimloader => "dwmapi",
+        LoaderKind::Lovely | LoaderKind::GdWeave => "winmm",
+        LoaderKind::ReturnOfModding if folder.join(exe_rel(folder, game)).join("d3d12.dll").is_file() => "d3d12",
+        LoaderKind::ReturnOfModding => "version",
+        LoaderKind::BepisLoader => "hostfxr",
+        _ => return None,
+    })
+}
+
+/// Options de lancement Steam pour Proton (`None` sous Windows).
+fn proton_option(dll: &str) -> Option<String> {
+    (!cfg!(windows)).then(|| format!("WINEDLLOVERRIDES=\"{dll}=n,b\" %command%"))
+}
+
+/// Paquet du chargeur par défaut quand la communauté n'en met aucun en avant.
+fn default_loader(game: &GameRules, community: &str) -> Option<&'static str> {
+    Some(match game.kind {
+        LoaderKind::MelonLoader | LoaderKind::RecursiveMelonLoader => "LavaGang-MelonLoader",
+        LoaderKind::Northstar => "northstar-Northstar",
+        LoaderKind::BepisLoader => "ResoniteModding-BepisLoader",
+        LoaderKind::Shimloader => "Thunderstore-unreal_shimloader",
+        LoaderKind::Lovely => "Thunderstore-lovely",
+        LoaderKind::GdWeave => "NotNet-GDWeave",
+        LoaderKind::ReturnOfModding if community == "hades-ii" => "Hell2Modding-Hell2Modding",
+        LoaderKind::ReturnOfModding => "ReturnOfModding-ReturnOfModding",
+        LoaderKind::GodotMl => "GodotModding-GodotModLoader",
+        LoaderKind::Umm if community == "a-dance-of-fire-and-ice" => "ADOFAI_Modding-UMM_ADOFAI",
+        LoaderKind::Umm => "UMM-UMM",
+        LoaderKind::Rivet => "ReDoIngMods-Rivet",
+        LoaderKind::BepInEx | LoaderKind::None | LoaderKind::Other => return None,
+    })
 }
 
 /// `Équipe-Nom` → (équipe, nom).
@@ -222,20 +337,23 @@ fn preferred_bepinex(game: &GameRules, eco: &Ecosystem, folder: &Path) -> String
 }
 
 /// Chargeur à installer pour que le jeu charge ses mods (`None` : déjà là).
-fn needed_loader(game: &GameRules, eco: &Ecosystem, folder: &Path) -> Option<String> {
-    if loader_ok(game.kind, folder) {
+fn needed_loader(game: &GameRules, eco: &Ecosystem, folder: &Path, community: &str) -> Option<String> {
+    if loader_ok(game, folder) {
         return None;
     }
-    let listed = |pred: &dyn Fn(&str) -> bool| {
-        game.autolist.iter().filter_map(|id| eco.loader_package(id)).find(|l| pred(&l.loader)).map(|l| l.package_id.clone())
-    };
     match game.kind {
         LoaderKind::BepInEx => Some(preferred_bepinex(game, eco, folder)),
-        LoaderKind::MelonLoader | LoaderKind::RecursiveMelonLoader => {
-            Some(listed(&|l| l.contains("melonloader")).unwrap_or_else(|| "LavaGang-MelonLoader".into()))
+        // Le chargeur n'est installé que si un mod le demande.
+        LoaderKind::None | LoaderKind::Other => None,
+        _ => {
+            let wanted = game.loader_id.trim_start_matches("recursive-");
+            game.autolist
+                .iter()
+                .filter_map(|id| eco.loader_package(id))
+                .find(|l| l.loader.trim_start_matches("recursive-") == wanted)
+                .map(|l| l.package_id.clone())
+                .or_else(|| default_loader(game, community).map(String::from))
         }
-        LoaderKind::Northstar => Some(listed(&|l| l == "northstar").unwrap_or_else(|| "northstar-Northstar".into())),
-        LoaderKind::Other => None,
     }
 }
 
@@ -256,6 +374,7 @@ fn right_loader(namespace: &str, name: &str, folder: &Path, game: &GameRules, ec
 fn required_label(game: &GameRules, folder: &Path) -> String {
     match game.kind {
         LoaderKind::BepInEx if game_is_il2cpp(folder) => "BepInEx 6 (IL2CPP)".into(),
+        LoaderKind::Shimloader => "UE4SS".into(),
         _ => loader_label(&game.loader_id).into(),
     }
 }
@@ -300,28 +419,68 @@ pub fn is_user_config(rel: &str) -> bool {
     lower.starts_with("bepinex/config/") || lower.starts_with("userdata/")
 }
 
-/// Fichiers d'un paquet à placer dans le dossier du jeu.
+/// Fichiers d'un paquet à placer.
 #[derive(Debug, Default)]
 pub struct Placement {
-    /// Source absolue → destination relative au dossier du jeu.
-    pub moves: Vec<(PathBuf, String)>,
-    /// Destinations non suivies (réglages) : laissées en place à la désinstallation.
-    pub untracked: HashSet<String>,
+    /// Par dossier (`""` : dossier du jeu ; `mods` : dossier des mods de
+    /// Lovely) : source absolue → destination relative à ce dossier.
+    pub batches: BTreeMap<String, Vec<(PathBuf, String)>>,
+    /// (dossier, destination) non suivies (réglages) : laissées en place à la désinstallation.
+    pub untracked: HashSet<(String, String)>,
+    /// Fichiers du jeu remplacés par le chargeur : gardés de côté, remis à sa désinstallation.
+    pub replaced: Vec<String>,
+}
+
+/// Fichiers placés, et ceux qui ne sont pas suivis (réglages).
+type Placed = (Vec<installer::PlacedBatch>, HashSet<(String, String)>);
+
+/// Suffixe des fichiers du jeu gardés de côté.
+pub const ORIGINAL_SUFFIX: &str = ".modstudio-orig";
+
+/// Ce qu'il faut savoir du jeu pour placer les fichiers d'un paquet.
+pub struct Target<'a> {
+    pub folder: &'a Path,
+    pub game: &'a GameRules,
+    /// Dossiers en dehors du dossier du jeu (`mods` de Lovely).
+    pub extra: &'a BTreeMap<String, PathBuf>,
+}
+
+impl Target<'_> {
+    fn base(&self, key: &str) -> PathBuf {
+        if key.is_empty() { self.folder.to_path_buf() } else { self.extra.get(key).cloned().unwrap_or_default() }
+    }
 }
 
 impl Placement {
-    fn push(&mut self, src: PathBuf, dest: String, untracked: bool, game_folder: &Path) {
+    fn push(&mut self, src: PathBuf, dest: String, untracked: bool, target: &Target) {
+        self.push_in("", src, dest, untracked, target);
+    }
+
+    fn push_in(&mut self, key: &str, src: PathBuf, dest: String, untracked: bool, target: &Target) {
         // Réglages déjà là : ceux de l'utilisateur, jamais remplacés.
-        if untracked && game_folder.join(&dest).exists() {
+        if untracked && target.base(key).join(&dest).exists() {
             return;
         }
         // Deux fichiers pour la même destination : le dernier l'emporte (comme r2modman).
-        let key = dest.to_ascii_lowercase();
-        self.moves.retain(|(_, d)| d.to_ascii_lowercase() != key);
+        let lower = dest.to_ascii_lowercase();
+        let list = self.batches.entry(key.to_string()).or_default();
+        list.retain(|(_, d)| d.to_ascii_lowercase() != lower);
         if untracked {
-            self.untracked.insert(dest.clone());
+            self.untracked.insert((key.to_string(), dest.clone()));
         }
-        self.moves.push((src, dest));
+        list.push((src, dest));
+    }
+
+    /// Destinations, pour les tests (`clé:chemin` hors du dossier du jeu).
+    #[cfg(test)]
+    pub fn dests(&self) -> Vec<String> {
+        let mut v: Vec<String> = self
+            .batches
+            .iter()
+            .flat_map(|(k, list)| list.iter().map(move |(_, d)| if k.is_empty() { d.clone() } else { format!("{k}:{d}") }))
+            .collect();
+        v.sort();
+        v
     }
 }
 
@@ -343,64 +502,246 @@ fn loader_root(root: &Path, loader: &LoaderPackage) -> PathBuf {
     root.to_path_buf()
 }
 
-/// Où va chaque fichier de l'archive extraite (`root`) du paquet `full`,
-/// selon les règles publiées pour le jeu (comme r2modman, mais dans le
-/// dossier du jeu au lieu d'un profil).
-pub fn ts_plan(root: &Path, full: &str, game_folder: &Path, game: &GameRules, loader: Option<&LoaderPackage>) -> AppResult<Placement> {
-    let mut out = Placement::default();
-    if let Some(loader) = loader {
-        if game.kind == LoaderKind::RecursiveMelonLoader && loader.loader.contains("melonloader") {
-            // MelonLoader 0.7+ : seulement le chargeur, pas ses exemples.
+/// Entrée de l'archive, insensible à la casse (`UE4SS`, `ue4ss`…).
+fn child(dir: &Path, name: &str) -> Option<PathBuf> {
+    fs::read_dir(dir).ok()?.flatten().find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(name)).map(|e| e.path())
+}
+
+/// Copie `src` (fichier ou dossier) vers `dest` (relatif), dans le dossier `key`.
+fn push_tree(out: &mut Placement, key: &str, src: &Path, dest: &str, untracked: &dyn Fn(&str) -> bool, target: &Target) {
+    if src.is_file() {
+        out.push_in(key, src.to_path_buf(), dest.to_string(), untracked(dest), target);
+    } else {
+        for (abs, rel) in files_under(src) {
+            let d = if dest.is_empty() { rel } else { format!("{dest}/{rel}") };
+            let u = untracked(&d);
+            out.push_in(key, abs, d, u, target);
+        }
+    }
+}
+
+/// Le chargeur : où va chacun de ses fichiers, selon le jeu.
+fn plan_loader(root: &Path, loader: &LoaderPackage, target: &Target, out: &mut Placement) {
+    let (folder, game) = (target.folder, target.game);
+    let none = |_: &str| false;
+    let base_file = |rel: &str| !rel.contains('/') && matches!(rel.to_ascii_lowercase().as_str(), "manifest.json" | "readme.md" | "icon.png");
+    match game.kind {
+        // MelonLoader 0.7+ : seulement le chargeur, pas ses exemples.
+        LoaderKind::RecursiveMelonLoader | LoaderKind::None if loader.loader.contains("melonloader") => {
             for item in ["MelonLoader", "version.dll", "winhttp.dll"] {
-                let path = root.join(item);
-                if path.is_dir() {
-                    for (abs, rel) in files_under(&path) {
-                        let dest = format!("{item}/{rel}");
-                        let user = is_user_config(&dest);
-                        out.push(abs, dest, user, game_folder);
-                    }
-                } else if path.is_file() {
-                    out.push(path, item.to_string(), false, game_folder);
+                if let Some(path) = child(root, item) {
+                    push_tree(out, "", &path, item, &|d: &str| is_user_config(d), target);
                 }
-            }
-        } else {
-            let src = loader_root(root, loader);
-            for (abs, rel) in files_under(&src) {
-                if !rel.contains('/') && matches!(rel.to_ascii_lowercase().as_str(), "manifest.json" | "readme.md" | "icon.png") {
-                    continue;
-                }
-                let user = is_user_config(&rel);
-                out.push(abs, rel, user, game_folder);
             }
         }
+        // UE4SS (livré dans le paquet du shimloader) dans `Binaries/Win64`.
+        LoaderKind::Shimloader => {
+            let bin = unreal_bin_rel(folder, game);
+            if let Some(ue4ss) = child(root, "UE4SS") {
+                push_tree(out, "", &ue4ss, &bin, &none, target);
+            }
+        }
+        // Lovely : sa DLL à côté du jeu, sa configuration dans le dossier des mods.
+        LoaderKind::Lovely => {
+            let exe = exe_rel(folder, game);
+            for dll in ["winmm.dll", "version.dll"] {
+                if let Some(path) = child(root, dll) {
+                    out.push(path, format!("{exe}{dll}"), false, target);
+                }
+            }
+            if let Some(dir) = child(root, "lovely") {
+                push_tree(out, "mods", &dir, "lovely", &|_: &str| true, target);
+            }
+        }
+        LoaderKind::GdWeave => {
+            let src = loader_root(root, loader);
+            for item in ["winmm.dll", "GDWeave"] {
+                if let Some(path) = child(&src, item) {
+                    push_tree(out, "", &path, item, &none, target);
+                }
+            }
+        }
+        // Return of Modding : sa DLL à côté de l'exécutable (`Ship/` pour Hades II).
+        LoaderKind::ReturnOfModding => {
+            let exe = exe_rel(folder, game);
+            for (abs, rel) in files_under(&loader_root(root, loader)) {
+                if !base_file(&rel) {
+                    out.push(abs, format!("{exe}{rel}"), false, target);
+                }
+            }
+        }
+        LoaderKind::GodotMl => {
+            for item in ["mod_loader", "JSON_Schema_Validator"] {
+                if let Some(path) = child(root, "addons").and_then(|a| child(&a, item)) {
+                    push_tree(out, "", &path, &format!("addons/{item}"), &none, target);
+                }
+            }
+        }
+        LoaderKind::Umm => {
+            for item in ["UMM/Core", "doorstop_config.ini", "winhttp.dll", ".doorstop_version", "doorstop_libs", "run_umm.sh"] {
+                let path = item.split('/').try_fold(root.to_path_buf(), |dir, part| child(&dir, part));
+                if let Some(path) = path {
+                    push_tree(out, "", &path, item, &none, target);
+                }
+            }
+        }
+        // Rivet : à côté de l'exécutable (`Release/`), réglages gardés.
+        LoaderKind::Rivet => {
+            let exe = exe_rel(folder, game);
+            let pack = child(root, "RivetPack").unwrap_or_else(|| root.to_path_buf());
+            for item in ["version.dll", "Rivet.ini", "Rivet"] {
+                if let Some(path) = child(&pack, item) {
+                    let ini = item == "Rivet.ini";
+                    push_tree(out, "", &path, &format!("{exe}{item}"), &move |_: &str| ini, target);
+                }
+            }
+        }
+        // BepInEx, BepisLoader, MelonLoader, Northstar : le contenu de son dossier dans le dossier du jeu.
+        _ => {
+            for (abs, rel) in files_under(&loader_root(root, loader)) {
+                if base_file(&rel) {
+                    continue;
+                }
+                // Resonite sous Linux : son lanceur est remplacé par celui de BepisLoader.
+                if game.kind == LoaderKind::BepisLoader && rel.eq_ignore_ascii_case("LinuxBootstrap.sh") && folder.join(&rel).is_file() {
+                    out.replaced.push(rel.clone());
+                }
+                let user = is_user_config(&rel);
+                out.push(abs, rel, user, target);
+            }
+        }
+    }
+}
+
+/// Où va chaque fichier de l'archive extraite (`root`) du paquet `full`,
+/// selon le chargeur du jeu et ses règles (comme r2modman, mais dans le
+/// dossier du jeu au lieu d'un profil).
+pub fn ts_plan(root: &Path, full: &str, target: &Target, loader: Option<&LoaderPackage>) -> AppResult<Placement> {
+    let (folder, game) = (target.folder, target.game);
+    let mut out = Placement::default();
+    if let Some(loader) = loader {
+        plan_loader(root, loader, target, &mut out);
         return Ok(out);
     }
 
     match game.kind {
-        LoaderKind::RecursiveMelonLoader => {
-            // `UserData` dans `UserData/<Équipe-Nom>`, tout le reste dans `Mods/<Équipe-Nom>`.
+        // `UserData` dans `UserData/<Équipe-Nom>`, tout le reste dans `Mods/<Équipe-Nom>`.
+        LoaderKind::RecursiveMelonLoader | LoaderKind::None => {
             let mut entries: Vec<fs::DirEntry> = fs::read_dir(root).map(|it| it.flatten().collect()).unwrap_or_default();
             entries.sort_by_key(|e| e.file_name());
             for e in entries {
                 let name = e.file_name().to_string_lossy().into_owned();
                 let path = e.path();
-                if path.is_dir() {
-                    let user = name.eq_ignore_ascii_case("UserData");
-                    for (abs, rel) in files_under(&path) {
-                        let dest = if user { format!("UserData/{full}/{rel}") } else { format!("Mods/{full}/{name}/{rel}") };
-                        out.push(abs, dest, user, game_folder);
-                    }
-                } else if path.is_file() {
-                    out.push(path, format!("Mods/{full}/{name}"), false, game_folder);
+                if path.is_dir() && name.eq_ignore_ascii_case("UserData") {
+                    push_tree(&mut out, "", &path, &format!("UserData/{full}"), &|_: &str| true, target);
+                } else {
+                    push_tree(&mut out, "", &path, &format!("Mods/{full}/{name}"), &|_: &str| false, target);
                 }
             }
         }
+        // Lovely : tout le paquet dans son dossier, dans le dossier des mods.
+        LoaderKind::Lovely => push_tree(&mut out, "mods", root, full, &|_: &str| false, target),
+        // GDWeave : le dossier qui a son propre `manifest.json`, dans `GDWeave/mods/<Équipe-Nom>`.
+        LoaderKind::GdWeave => {
+            let dir = find_dir_with(root, "manifest.json", true)
+                .ok_or_else(|| AppError::BadArchive("aucun dossier de mod GDWeave (avec son manifest.json) dans l'archive".into()))?;
+            push_tree(&mut out, "", &dir, &format!("GDWeave/mods/{full}"), &|_: &str| false, target);
+        }
+        // Rivet : tout le paquet dans `Rivet/Mods/<Équipe-Nom>`, à côté de l'exécutable.
+        LoaderKind::Rivet => {
+            let exe = exe_rel(folder, game);
+            push_tree(&mut out, "", root, &format!("{exe}Rivet/Mods/{full}"), &|_: &str| false, target);
+        }
+        // Return of Modding : `plugins`, `plugins_data`, `config`, chemins gardés.
+        LoaderKind::ReturnOfModding => {
+            let base = format!("{}ReturnOfModding", exe_rel(folder, game));
+            let rule = |name: &str, default| Rule {
+                route: format!("{base}/{name}"),
+                tracking: Tracking::SubdirNoFlatten,
+                extensions: Vec::new(),
+                default,
+            };
+            let rules = [rule("plugins", true), rule("plugins_data", false), rule("config", false)];
+            plan_rules(root, full, target, &rules, &[], &mut out)?;
+            // Les réglages restent à l'utilisateur.
+            let config = format!("{base}/config/").to_ascii_lowercase();
+            for (_, d) in out.batches.get("").into_iter().flatten() {
+                if d.to_ascii_lowercase().starts_with(&config) {
+                    out.untracked.insert((String::new(), d.clone()));
+                }
+            }
+        }
+        LoaderKind::Shimloader => plan_shimloader(root, full, target, &mut out)?,
         LoaderKind::Other => {
             return Err(AppError::ThunderstoreUnsupported(loader_label(&game.loader_id).to_string()));
         }
-        _ => plan_rules(root, full, game_folder, game, &mut out)?,
+        // BepInEx, BepisLoader, MelonLoader, Northstar, Unity Mod Manager, Godot : règles du jeu.
+        _ => plan_rules(root, full, target, &game.rules, &game.exclusions, &mut out)?,
     }
     Ok(out)
+}
+
+/// Premier dossier (en profondeur) qui contient `file` ; `skip_top` : pas la racine.
+fn find_dir_with(dir: &Path, file: &str, skip_top: bool) -> Option<PathBuf> {
+    if !skip_top && dir.join(file).is_file() {
+        return Some(dir.to_path_buf());
+    }
+    let mut subdirs: Vec<_> = fs::read_dir(dir).ok()?.flatten().filter(|e| e.path().is_dir()).collect();
+    subdirs.sort_by_key(|e| e.file_name());
+    subdirs.into_iter().find_map(|e| find_dir_with(&e.path(), file, false))
+}
+
+/// Jeux Unreal : les dossiers que le shimloader simule, à leur vraie place
+/// (`Binaries/Win64/Mods`, `Content/Paks/LogicMods`, `Config`).
+fn plan_shimloader(root: &Path, full: &str, target: &Target, out: &mut Placement) -> AppResult<()> {
+    let (folder, game) = (target.folder, target.game);
+    let bin = unreal_bin_rel(folder, game);
+    let data = bin.trim_end_matches("/Binaries/Win64").to_string();
+    // Paquet rangé comme le dossier du jeu (`Pal/Binaries/…`) : tel quel.
+    if !data.is_empty()
+        && let Some(dir) = child(root, &data)
+        && dir.is_dir()
+    {
+        push_tree(out, "", &dir, &data, &|_: &str| false, target);
+        return Ok(());
+    }
+    let mut virt = Placement::default();
+    plan_rules(root, full, target, &game.rules, &game.exclusions, &mut virt)?;
+    let mods = ue4ss_mods_rel(folder, &bin);
+    let mut enabled: BTreeMap<String, bool> = BTreeMap::new();
+    for (src, dest) in virt.batches.remove("").unwrap_or_default() {
+        let untracked = virt.untracked.contains(&(String::new(), dest.clone()));
+        let lower = dest.to_ascii_lowercase();
+        let rest = |prefix: &str| dest[prefix.len()..].to_string();
+        let real = if lower.starts_with("shimloader/mod/") {
+            let r = rest("shimloader/mod/");
+            if let Some((modname, file)) = r.split_once('/') {
+                let seen = enabled.entry(modname.to_string()).or_default();
+                *seen |= file.eq_ignore_ascii_case("enabled.txt");
+            }
+            format!("{mods}/{r}")
+        } else if lower.starts_with("shimloader/pak/") {
+            format!("{data}/Content/Paks/LogicMods/{}", rest("shimloader/pak/"))
+        } else if lower.starts_with("shimloader/cfg/") {
+            format!("{data}/Config/{}", rest("shimloader/cfg/"))
+        } else if lower.starts_with("shimloader/overlay/") {
+            // Chaque paquet superposé à `Binaries/Win64`.
+            let r = rest("shimloader/overlay/");
+            format!("{bin}/{}", r.split_once('/').map(|(_, f)| f).unwrap_or(&r))
+        } else {
+            dest.clone()
+        };
+        out.push(src, real, untracked, target);
+    }
+    // UE4SS ne charge un mod que s'il a un `enabled.txt` (le shimloader les active tous).
+    for (modname, has) in enabled {
+        if !has {
+            let marker = root.with_extension(format!("{modname}.enabled.txt"));
+            fs::write(&marker, b"").map_err(installer::io_err)?;
+            out.push(marker, format!("{mods}/{modname}/enabled.txt"), false, target);
+        }
+    }
+    Ok(())
 }
 
 /// Règle qui prend un fichier : extension la plus longue qui correspond,
@@ -460,13 +801,13 @@ fn collect<'a>(dir: &Path, rel: &str, rules: &'a [Rule], out: &mut Vec<(&'a Rule
     }
 }
 
-fn plan_rules(root: &Path, full: &str, game_folder: &Path, game: &GameRules, out: &mut Placement) -> AppResult<()> {
+fn plan_rules(root: &Path, full: &str, target: &Target, rules: &[Rule], exclusions: &[String], out: &mut Placement) -> AppResult<()> {
     let mut intents = Vec::new();
-    collect(root, "", &game.rules, &mut intents);
+    collect(root, "", rules, &mut intents);
     let excluded = |rel: &str| {
         let lower = rel.to_ascii_lowercase();
         let base = lower.rsplit('/').next().unwrap_or(&lower).to_string();
-        game.exclusions.iter().any(|x| *x == lower || *x == base)
+        exclusions.iter().any(|x| *x == lower || *x == base)
     };
     let mut zipped = HashSet::new();
     for (rule, src, rel) in intents {
@@ -479,14 +820,14 @@ fn plan_rules(root: &Path, full: &str, game_folder: &Path, game: &GameRules, out
                 if zipped.insert(route.to_string()) {
                     let zip = root.with_extension("ts.zip");
                     zip_dir(root, &zip)?;
-                    out.push(zip, format!("{route}/{full}.ts.zip"), false, game_folder);
+                    out.push(zip, format!("{route}/{full}.ts.zip"), false, target);
                 }
             }
-            Tracking::Subdir if is_file => out.push(src, format!("{route}/{full}/{base}"), false, game_folder),
-            Tracking::SubdirNoFlatten if is_file => out.push(src, format!("{route}/{full}/{rel}"), false, game_folder),
+            Tracking::Subdir if is_file => out.push(src, format!("{route}/{full}/{base}"), false, target),
+            Tracking::SubdirNoFlatten if is_file => out.push(src, format!("{route}/{full}/{rel}"), false, target),
             Tracking::Subdir | Tracking::SubdirNoFlatten => {
                 for (abs, sub) in files_under(&src) {
-                    out.push(abs, format!("{route}/{full}/{sub}"), false, game_folder);
+                    out.push(abs, format!("{route}/{full}/{sub}"), false, target);
                 }
             }
             Tracking::None | Tracking::State => {
@@ -496,11 +837,11 @@ fn plan_rules(root: &Path, full: &str, game_folder: &Path, game: &GameRules, out
                     if (!rel.contains('/') && is_package_meta(&rel)) || excluded(&base) {
                         continue;
                     }
-                    out.push(src, format!("{route}/{base}"), untracked, game_folder);
+                    out.push(src, format!("{route}/{base}"), untracked, target);
                 } else {
                     for (abs, sub) in files_under(&src) {
                         if !excluded(&sub) {
-                            out.push(abs, format!("{route}/{sub}"), untracked, game_folder);
+                            out.push(abs, format!("{route}/{sub}"), untracked, target);
                         }
                     }
                 }
@@ -523,6 +864,89 @@ fn zip_dir(dir: &Path, dest: &Path) -> AppResult<()> {
     }
     zip.finish().map_err(|e| AppError::Io(e.to_string()))?;
     Ok(())
+}
+
+/// Met de côté les fichiers du jeu que le chargeur remplace (`x` → `x.modstudio-orig`).
+fn keep_originals(folder: &Path, files: &[String]) -> Vec<String> {
+    let mut kept = Vec::new();
+    for rel in files {
+        let (path, orig) = (folder.join(rel), folder.join(format!("{rel}{ORIGINAL_SUFFIX}")));
+        if path.is_file() && !orig.exists() && fs::rename(&path, &orig).is_ok() {
+            kept.push(rel.clone());
+        }
+    }
+    kept
+}
+
+/// Remet les fichiers du jeu mis de côté (quand le fichier du chargeur n'est plus là).
+fn restore_originals(folder: &Path, files: &[String]) {
+    for rel in files {
+        let (path, orig) = (folder.join(rel), folder.join(format!("{rel}{ORIGINAL_SUFFIX}")));
+        if orig.is_file() && !path.exists() {
+            let _ = fs::rename(&orig, &path);
+        }
+    }
+}
+
+/// Remplace (ou ajoute) `clé=valeur` dans une section d'un fichier INI.
+fn set_ini(text: &str, section: &str, key: &str, value: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let (mut current, mut done, mut seen) = (String::new(), false, false);
+    for line in text.lines() {
+        let t = line.trim();
+        if t.starts_with('[') && t.ends_with(']') {
+            if current.eq_ignore_ascii_case(section) && !done {
+                out.push(format!("{key}={value}"));
+                done = true;
+            }
+            current = t[1..t.len() - 1].trim().to_string();
+            seen |= current.eq_ignore_ascii_case(section);
+        } else if current.eq_ignore_ascii_case(section)
+            && !t.starts_with(';')
+            && !t.starts_with('#')
+            && t.split_once('=').is_some_and(|(k, _)| k.trim().eq_ignore_ascii_case(key))
+        {
+            if !done {
+                out.push(format!("{key}={value}"));
+                done = true;
+            }
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    if !done {
+        if !seen {
+            if out.last().is_some_and(|l| !l.trim().is_empty()) {
+                out.push(String::new());
+            }
+            out.push(format!("[{section}]"));
+        }
+        out.push(format!("{key}={value}"));
+    }
+    out.join("\n") + "\n"
+}
+
+/// Active le chargeur qu'on vient d'installer, quand il est livré éteint.
+fn activate(target: &Target) -> AppResult<()> {
+    let edit = |path: PathBuf, changes: &[(&str, &str, &str)]| -> AppResult<()> {
+        let mut text = fs::read_to_string(&path).unwrap_or_default();
+        for (section, key, value) in changes {
+            text = set_ini(&text, section, key, value);
+        }
+        fs::write(&path, text).map_err(installer::io_err)
+    };
+    match target.game.kind {
+        // Resonite : hookfxr lance BepisLoader au lieu du jeu.
+        LoaderKind::BepisLoader if target.folder.join("hookfxr.ini").is_file() => {
+            edit(target.folder.join("hookfxr.ini"), &[("hookfxr", "enable", "true")])
+        }
+        // Scrap Mechanic : Rivet et ses mods dans le dossier `Rivet`.
+        LoaderKind::Rivet => {
+            let ini = target.folder.join(exe_rel(target.folder, target.game)).join("Rivet.ini");
+            edit(ini, &[("Doorstop", "enable", "true"), ("Doorstop", "target", "Rivet/Loader.dll"), ("Loader", "directory", "Rivet/Mods")])
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Un mod à installer.
@@ -594,20 +1018,34 @@ impl ThunderstoreState {
         } else {
             None
         };
-        let (name, tool) = match bepinex_flavor(&folder) {
-            Some(f) => (Some(f.label()), "bepinex"),
-            None if melon_present(&folder) => (Some("MelonLoader"), "melonloader"),
-            None if northstar_present(&folder) => (Some("Northstar"), "northstar"),
-            None => (None, ""),
-        };
         let suitable = match &rules {
-            Some(g) => loader_ok(g.kind, &folder),
+            Some(g) => loader_ok(g, &folder),
             None => bepinex_suits(&folder) == Some(true) || melon_present(&folder),
         };
+        // Chargeur présent : le bon (son nom), sinon un BepInEx ou un MelonLoader qui ne convient pas.
+        let name: Option<&'static str> = match (&rules, bepinex_flavor(&folder)) {
+            (Some(g), _) if suitable && g.kind != LoaderKind::BepInEx => Some(loader_label(&g.loader_id)).map(|l| match g.kind {
+                LoaderKind::Shimloader => "UE4SS",
+                _ => l,
+            }),
+            (_, Some(f)) => Some(f.label()),
+            _ if melon_present(&folder) => Some("MelonLoader"),
+            _ if northstar_present(&folder) => Some("Northstar"),
+            _ => None,
+        };
+        let launch_option = match (&rules, name) {
+            (Some(g), Some(_)) => proxy_dll(g, &folder).and_then(proton_option),
+            (None, Some(_)) => bepinex_flavor(&folder).map(|_| "winhttp").or(melon_present(&folder).then_some("version")).and_then(proton_option),
+            _ => None,
+        };
+        let launch_args = rules
+            .as_ref()
+            .filter(|g| g.kind == LoaderKind::GodotMl)
+            .map(|_| "--script res://addons/mod_loader/mod_loader_setup.gd".to_string());
         let needed = rules
             .as_ref()
             .filter(|g| g.kind.supported())
-            .and_then(|g| needed_loader(g, &eco, &folder))
+            .and_then(|g| needed_loader(g, &eco, &folder, &community))
             .map(|full| {
                 let (namespace, name) = split_full(&full);
                 TsRef { id: stable_id(&full), namespace, name }
@@ -621,7 +1059,8 @@ impl ThunderstoreState {
             engine,
             managed,
             needed,
-            launch_option: crate::games::proton::launch_option(tool),
+            launch_option,
+            launch_args,
         })
     }
 
@@ -719,7 +1158,8 @@ impl ThunderstoreState {
     /// (dernière version), puis lui-même.
     async fn plan(&self, target: Planned, deps: Vec<String>, config: &GameInstall, game: &GameRules, eco: &Ecosystem) -> AppResult<Plan> {
         let installed = &config.mods;
-        let ready = loader_ok(game.kind, &config.folder);
+        let ready = loader_ok(game, &config.folder);
+        let community = config.domain.clone().unwrap_or_default();
         let target_id = target.id();
         let mut plan = Plan::default();
         let mut visited: HashSet<i64> = HashSet::new();
@@ -768,7 +1208,7 @@ impl ThunderstoreState {
         }
         // Aucun mod n'a demandé le chargeur du jeu, absent : installé d'abord.
         if !plan.order.iter().any(|p| loader_of(eco, &p.full()).is_some())
-            && let Some(full) = needed_loader(game, eco, &config.folder)
+            && let Some(full) = needed_loader(game, eco, &config.folder, &community)
         {
             let (ns, name) = split_full(&full);
             let id = stable_id(&full);
@@ -795,7 +1235,7 @@ impl ThunderstoreState {
         check_part(namespace)?;
         check_part(name)?;
         let game_id = stable_id(community);
-        let config = self.library.lock().expect("library").games.get(&game_id).cloned().ok_or(AppError::NoGameFolder)?;
+        let mut config = self.library.lock().expect("library").games.get(&game_id).cloned().ok_or(AppError::NoGameFolder)?;
         if !config.folder.is_dir() {
             return Err(AppError::Io(format!("le dossier du jeu n'existe plus : {}", config.folder.display())));
         }
@@ -803,6 +1243,15 @@ impl ThunderstoreState {
         let game = eco.game(community).ok_or_else(|| AppError::ThunderstoreUnsupported(loader_label("").into()))?;
         if !game.kind.supported() {
             return Err(AppError::ThunderstoreUnsupported(loader_label(&game.loader_id).into()));
+        }
+        // Lovely : les mods vont dans le dossier des mods du jeu (`%AppData%/Balatro/Mods`).
+        if game.kind == LoaderKind::Lovely && !config.extra_folders.contains_key("mods") {
+            let dir = self.lovely_mods_dir(&config.folder, &game)?;
+            if let Some(g) = self.library.lock().expect("library").games.get_mut(&game_id) {
+                g.extra_folders.insert("mods".into(), dir.clone());
+            }
+            self.save_library(&self.library.lock().expect("library"))?;
+            config.extra_folders.insert("mods".into(), dir);
         }
         let cancel = Arc::new(AtomicBool::new(false));
         {
@@ -825,7 +1274,7 @@ impl ThunderstoreState {
         let target_id = target.id();
         // Le chargeur lui-même, déjà là sans ModStudio : rien à faire.
         let target_loader = loader_of(&eco, &target.full());
-        if target_loader.is_some() && loader_ok(game.kind, &config.folder) && !config.mods.contains_key(&target_id) {
+        if target_loader.is_some() && loader_ok(&game, &config.folder) && !config.mods.contains_key(&target_id) {
             return Err(AppError::ToolPresent(required_label(&game, &config.folder)));
         }
         let plan = self.plan(target, info.dependencies.clone(), &config, &game, &eco).await?;
@@ -923,15 +1372,27 @@ impl ThunderstoreState {
         let (config_b, full_b, cancel_b, emit_b, old_b, zip_b) = (config.clone(), full.clone(), cancel.clone(), emit.clone(), old.clone(), zip.clone());
         let (game_b, loader_b) = (game.clone(), loader.clone());
         let extracted = job_dir.join(&full);
-        let (placed, untracked) = tokio::task::spawn_blocking(move || -> AppResult<(Vec<installer::PlacedBatch>, HashSet<String>)> {
+        let (placed, untracked) = tokio::task::spawn_blocking(move || -> AppResult<Placed> {
             let size = fs::metadata(&zip_b).map(|m| m.len()).unwrap_or(0);
             let progress = |done: u64, total: u64| emit_b(InstallEvent::Extracting { done, total });
             archive::extract(&zip_b, &extracted, installer::extraction_limit(size, 0), &cancel_b, &progress)?;
             emit_b(InstallEvent::Finishing);
-            let placement = ts_plan(&extracted, &full_b, &config_b.folder, &game_b, loader_b.as_ref())?;
-            let mut batches = BTreeMap::new();
-            batches.insert(String::new(), placement.moves);
-            Ok((place_plan(&config_b, old_b.as_ref(), &others, batches, None)?, placement.untracked))
+            let target = Target { folder: &config_b.folder, game: &game_b, extra: &config_b.extra_folders };
+            let placement = ts_plan(&extracted, &full_b, &target, loader_b.as_ref())?;
+            // Fichiers du jeu remplacés par le chargeur : gardés de côté.
+            let kept = keep_originals(&config_b.folder, &placement.replaced);
+            match place_plan(&config_b, old_b.as_ref(), &others, placement.batches, None) {
+                Ok(placed) => {
+                    if loader_b.is_some() {
+                        activate(&target)?;
+                    }
+                    Ok((placed, placement.untracked))
+                }
+                Err(e) => {
+                    restore_originals(&config_b.folder, &kept);
+                    Err(e)
+                }
+            }
         })
         .await
         .map_err(|e| AppError::Io(e.to_string()))??;
@@ -978,21 +1439,42 @@ impl ThunderstoreState {
             ..Default::default()
         };
         let loader = loader.is_some();
-        for batch in placed.into_iter().filter(|b| b.key.is_empty()) {
+        let full = record.file_name.clone().unwrap_or_default();
+        // Dossiers partagés (`BepInEx/plugins`…) : jamais retirés avec un mod.
+        let own = |d: &String| {
+            loader || *d == full || d.starts_with(&format!("{full}/")) || d.contains(&format!("/{full}/")) || d.ends_with(&format!("/{full}"))
+        };
+        for batch in placed {
             // Les réglages restent à l'utilisateur.
-            record.files = batch.files.into_iter().filter(|f| !untracked.contains(f)).collect();
-            // Dossiers partagés (`BepInEx/plugins`…) : jamais retirés avec un mod.
-            let own = format!("/{}", record.file_name.as_deref().unwrap_or_default());
-            record.dirs = batch
-                .dirs
-                .into_iter()
-                .filter(|d| loader || d.contains(&format!("{own}/")) || d.ends_with(&own))
-                .collect();
+            let key = batch.key.clone();
+            let files: Vec<String> = batch.files.into_iter().filter(|f| !untracked.contains(&(key.clone(), f.clone()))).collect();
+            let dirs: Vec<String> = batch.dirs.into_iter().filter(own).collect();
+            if key.is_empty() {
+                record.files = files;
+                record.dirs = dirs;
+            } else if !files.is_empty() || !dirs.is_empty() {
+                record.parts.push(ModPart { key, files, dirs });
+            }
         }
         let mut lib = self.library.lock().expect("library");
         let game = lib.games.get_mut(&config.game_id).ok_or(AppError::NotFound)?;
         game.mods.insert(mod_id, record);
         self.save_library(&lib)
+    }
+
+    /// Dossier des mods de Lovely : `%AppData%/<jeu>/Mods` (dans le préfixe Proton sous Linux).
+    fn lovely_mods_dir(&self, folder: &Path, game: &GameRules) -> AppResult<PathBuf> {
+        let name = game
+            .exe_names
+            .first()
+            .and_then(|e| Path::new(e).file_stem().map(|s| s.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "Balatro".into());
+        let prefix = crate::games::proton::prefix_for_dir(folder);
+        let dir = crate::games::proton::expand(&format!("%APPDATA%\\{name}\\Mods"), prefix.as_deref())
+            .map(PathBuf::from)
+            .ok_or_else(|| AppError::InvalidArgument("dossier des mods introuvable : lance le jeu une fois (avec Proton sous Linux), puis réessaie.".into()))?;
+        fs::create_dir_all(&dir).map_err(installer::io_err)?;
+        Ok(dir)
     }
 
     /// Annule l'installation en cours pour ce jeu.
@@ -1028,6 +1510,8 @@ impl ThunderstoreState {
                 "{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie."
             )));
         }
+        // Fichiers du jeu que le chargeur avait remplacés : remis.
+        restore_originals(&game.folder, &record.files);
         game.mods.remove(&mod_id);
         toggle::forget_mod(game, mod_id);
         let mut orphans = Vec::new();
@@ -1104,13 +1588,22 @@ pub(crate) mod tests {
     }
 
 
-    fn plan(root: &Path, full: &str, game: &Path, community: &str) -> Vec<String> {
+    fn plan_in(root: &Path, full: &str, game: &Path, community: &str, extra: &BTreeMap<String, PathBuf>) -> Placement {
         let eco = Ecosystem::bundled();
         let rules = eco.game(community).unwrap();
         let loader = loader_of(&eco, full);
-        let mut v: Vec<String> = ts_plan(root, full, game, &rules, loader.as_ref()).unwrap().moves.into_iter().map(|(_, d)| d).collect();
-        v.sort();
-        v
+        ts_plan(root, full, &Target { folder: game, game: &rules, extra }, loader.as_ref()).unwrap()
+    }
+
+    fn plan(root: &Path, full: &str, game: &Path, community: &str) -> Vec<String> {
+        plan_in(root, full, game, community, &BTreeMap::new()).dests()
+    }
+
+    /// Archive extraite dans un dossier neuf.
+    fn package(tag: &str, entries: &[(&str, &[u8])]) -> PathBuf {
+        let dir = tempdir(tag).join("pkg");
+        unzip_to(&make_zip(entries), &dir);
+        dir
     }
 
     #[test]
@@ -1228,14 +1721,174 @@ pub(crate) mod tests {
             rules: vec![Rule { route: "mods".into(), tracking: Tracking::PackageZip, extensions: vec![], default: true }],
             exclusions: vec![],
             autolist: vec![],
+            exe_names: vec![],
+            data_folder: String::new(),
         };
         let root = tempdir("ts-zip").join("Team-Godot");
         unzip_to(&make_zip(&[("mod.pck", b"pck"), ("manifest.json", b"{}")]), &root);
-        let placement = ts_plan(&root, "Team-Godot", &game, &rules, None).unwrap();
-        assert_eq!(placement.moves.len(), 1);
-        assert_eq!(placement.moves[0].1, "mods/Team-Godot.ts.zip");
-        let mut z = zip::ZipArchive::new(fs::File::open(&placement.moves[0].0).unwrap()).unwrap();
+        let extra = BTreeMap::new();
+        let placement = ts_plan(&root, "Team-Godot", &Target { folder: &game, game: &rules, extra: &extra }, None).unwrap();
+        let moves = &placement.batches[""];
+        assert_eq!(moves.len(), 1);
+        assert_eq!(moves[0].1, "mods/Team-Godot.ts.zip");
+        let mut z = zip::ZipArchive::new(fs::File::open(&moves[0].0).unwrap()).unwrap();
         assert!(z.by_name("mod.pck").is_ok());
+    }
+
+    #[test]
+    fn unreal_games_get_ue4ss_and_mods_where_the_shimloader_points() {
+        let game = tempdir("ts-pal");
+        fs::create_dir_all(game.join("Pal/Binaries/Win64")).unwrap();
+        fs::write(game.join("Palworld.exe"), b"exe").unwrap();
+        let bin = "Pal/Binaries/Win64";
+        // Le paquet du shimloader : UE4SS dans Binaries/Win64 (pas la DLL du shim).
+        let loader = package(
+            "ts-shim",
+            &[
+                ("dwmapi.dll", b"shim"),
+                ("UE4SS/dwmapi.dll", b"proxy"),
+                ("UE4SS/UE4SS.dll", b"ue4ss"),
+                ("UE4SS/UE4SS-settings.ini", b"ini"),
+                ("UE4SS/Mods/mods.txt", b"list"),
+                ("manifest.json", b"{}"),
+            ],
+        );
+        assert_eq!(
+            plan(&loader, "Thunderstore-unreal_shimloader", &game, "palworld"),
+            [format!("{bin}/Mods/mods.txt"), format!("{bin}/UE4SS-settings.ini"), format!("{bin}/UE4SS.dll"), format!("{bin}/dwmapi.dll")]
+        );
+        // Mod Lua, mod DLL sans enabled.txt (ajouté), pak, réglages.
+        let m = package(
+            "ts-shim-mod",
+            &[
+                ("mod/enabled.txt", b""),
+                ("mod/scripts/main.lua", b"lua"),
+                ("pak/Big.pak", b"pak"),
+                ("cfg/Mod-config.ini", b"cfg"),
+            ],
+        );
+        let p = plan_in(&m, "Team-Mod", &game, "palworld", &BTreeMap::new());
+        assert_eq!(
+            p.dests(),
+            [
+                "Pal/Binaries/Win64/Mods/Team-Mod/enabled.txt",
+                "Pal/Binaries/Win64/Mods/Team-Mod/scripts/main.lua",
+                "Pal/Config/Mod-config.ini",
+                "Pal/Content/Paks/LogicMods/Team-Mod/Big.pak",
+            ]
+        );
+        assert!(p.untracked.contains(&(String::new(), "Pal/Config/Mod-config.ini".to_string())));
+        let d = package("ts-shim-dll", &[("mod/dlls/main.dll", b"dll")]);
+        assert_eq!(plan(&d, "Team-Dll", &game, "palworld"), [format!("{bin}/Mods/Team-Dll/dlls/main.dll"), format!("{bin}/Mods/Team-Dll/enabled.txt")]);
+        // Paquet rangé comme le dossier du jeu : tel quel.
+        let manual = package("ts-shim-manual", &[("Pal/Binaries/Win64/Mods/BasesPlus/Scripts/main.lua", b"lua"), ("manifest.json", b"{}")]);
+        assert_eq!(plan(&manual, "PalModders-BasesPlus", &game, "palworld"), ["Pal/Binaries/Win64/Mods/BasesPlus/Scripts/main.lua"]);
+        // UE4SS 3 déjà installé à part (dossier ue4ss) : ses mods y vont.
+        fs::create_dir_all(game.join(bin).join("ue4ss")).unwrap();
+        fs::write(game.join(bin).join("ue4ss/UE4SS.dll"), b"x").unwrap();
+        assert_eq!(plan(&d, "Team-Dll", &game, "palworld")[0], format!("{bin}/ue4ss/Mods/Team-Dll/dlls/main.dll"));
+    }
+
+    #[test]
+    fn other_loaders_put_each_file_where_the_game_reads_it() {
+        // Balatro (Lovely) : la DLL à côté du jeu, les mods dans %AppData%/Balatro/Mods.
+        let balatro = tempdir("ts-balatro");
+        fs::write(balatro.join("Balatro.exe"), b"exe").unwrap();
+        let extra = BTreeMap::from([("mods".to_string(), tempdir("ts-balatro-mods"))]);
+        let l = package("ts-lovely", &[("winmm.dll", b"dll"), ("lovely/config.toml", b"cfg"), ("manifest.json", b"{}")]);
+        assert_eq!(plan_in(&l, "Thunderstore-lovely", &balatro, "balatro", &extra).dests(), ["mods:lovely/config.toml", "winmm.dll"]);
+        let m = package("ts-smods", &[("src/core.lua", b"lua"), ("manifest.json", b"{}")]);
+        assert_eq!(
+            plan_in(&m, "Steamodded-Steamodded", &balatro, "balatro", &extra).dests(),
+            ["mods:Steamodded-Steamodded/manifest.json", "mods:Steamodded-Steamodded/src/core.lua"]
+        );
+
+        // WEBFISHING (GDWeave) : le dossier du mod (son manifest.json) dans GDWeave/mods.
+        let wf = tempdir("ts-webfishing");
+        let g = package("ts-gdweave", &[("winmm.dll", b"dll"), ("GDWeave/core/GDWeave.dll", b"core"), ("manifest.json", b"{}")]);
+        assert_eq!(plan(&g, "NotNet-GDWeave", &wf, "webfishing"), ["GDWeave/core/GDWeave.dll", "winmm.dll"]);
+        let t = package("ts-tackle", &[("GDWeave/mods/TackleBox/manifest.json", b"{}"), ("GDWeave/mods/TackleBox/TackleBox.dll", b"dll"), ("manifest.json", b"{}")]);
+        assert_eq!(
+            plan(&t, "PuppyGirl-TackleBox", &wf, "webfishing"),
+            ["GDWeave/mods/PuppyGirl-TackleBox/TackleBox.dll", "GDWeave/mods/PuppyGirl-TackleBox/manifest.json"]
+        );
+
+        // Hades II (Return of Modding) : à côté de Hades2.exe, dans Ship.
+        let hades = tempdir("ts-hades");
+        fs::create_dir_all(hades.join("Ship")).unwrap();
+        fs::write(hades.join("Ship/Hades2.exe"), b"exe").unwrap();
+        let h = package("ts-h2m", &[("ReturnOfModdingPack/d3d12.dll", b"dll"), ("manifest.json", b"{}")]);
+        assert_eq!(plan(&h, "Hell2Modding-Hell2Modding", &hades, "hades-ii"), ["Ship/d3d12.dll"]);
+        let u = package("ts-modutil", &[("main.lua", b"lua"), ("class/item.lua", b"lua"), ("config/ModUtil.cfg", b"cfg")]);
+        let p = plan_in(&u, "SGG_Modding-ModUtil", &hades, "hades-ii", &BTreeMap::new());
+        assert_eq!(
+            p.dests(),
+            [
+                "Ship/ReturnOfModding/config/SGG_Modding-ModUtil/ModUtil.cfg",
+                "Ship/ReturnOfModding/plugins/SGG_Modding-ModUtil/class/item.lua",
+                "Ship/ReturnOfModding/plugins/SGG_Modding-ModUtil/main.lua",
+            ]
+        );
+        assert!(p.untracked.iter().any(|(_, d)| d.ends_with("ModUtil.cfg")));
+
+        // Scrap Mechanic (Rivet) : dans Release, à côté de ScrapMechanic.exe.
+        let sm = tempdir("ts-scrap");
+        fs::create_dir_all(sm.join("Release")).unwrap();
+        fs::write(sm.join("Release/ScrapMechanic.exe"), b"exe").unwrap();
+        let r = package("ts-rivet", &[("RivetPack/version.dll", b"dll"), ("RivetPack/Rivet.ini", b""), ("RivetPack/Rivet/Loader.dll", b"loader")]);
+        assert_eq!(plan(&r, "ReDoIngMods-Rivet", &sm, "scrap-mechanic"), ["Release/Rivet.ini", "Release/Rivet/Loader.dll", "Release/version.dll"]);
+        let rm = package("ts-rivet-mod", &[("lua_hot_reload.dll", b"dll")]);
+        assert_eq!(plan(&rm, "BenMcAvoy-Lua_Hot_Reload", &sm, "scrap-mechanic"), ["Release/Rivet/Mods/BenMcAvoy-Lua_Hot_Reload/lua_hot_reload.dll"]);
+
+        // Broforce (Unity Mod Manager) : UMM et son doorstop, puis UMM/Mods.
+        let bro = tempdir("ts-bro");
+        let umm = package(
+            "ts-umm",
+            &[("UMM/Core/UnityModManager.dll", b"umm"), ("doorstop_config.ini", b"ini"), ("winhttp.dll", b"dll"), ("CHANGELOG.md", b"c"), ("manifest.json", b"{}")],
+        );
+        assert_eq!(plan(&umm, "UMM-UMM", &bro, "broforce"), ["UMM/Core/UnityModManager.dll", "doorstop_config.ini", "winhttp.dll"]);
+        let rl = package("ts-rocketlib", &[("UMM/Mods/RocketLib/RocketLib.dll", b"dll"), ("UMM/Mods/RocketLib/Info.json", b"{}")]);
+        assert_eq!(
+            plan(&rl, "RocketLib-RocketLib", &bro, "broforce"),
+            ["UMM/Mods/RocketLib-RocketLib/RocketLib/Info.json", "UMM/Mods/RocketLib-RocketLib/RocketLib/RocketLib.dll"]
+        );
+
+        // Brotato (Godot Mod Loader) : addons, puis chaque mod zippé dans mods.
+        let brotato = tempdir("ts-brotato");
+        let gml = package("ts-gml", &[("addons/mod_loader/mod_loader.gd", b"gd"), ("addons/JSON_Schema_Validator/v.gd", b"gd"), ("manifest.json", b"{}")]);
+        assert_eq!(
+            plan(&gml, "GodotModding-GodotModLoader", &brotato, "brotato"),
+            ["addons/JSON_Schema_Validator/v.gd", "addons/mod_loader/mod_loader.gd"]
+        );
+        let bm = package("ts-bml", &[("mods-unpacked/otDan-BetterModList/mod_main.gd", b"gd")]);
+        assert_eq!(plan(&bm, "otDan-BetterModList", &brotato, "brotato"), ["mods/otDan-BetterModList.ts.zip"]);
+
+        // Ancient Dungeon VR (pas de chargeur déclaré) : chaque mod dans Mods.
+        let advr = tempdir("ts-advr");
+        let a = package("ts-advr-mod", &[("Mods/ItemRarityColors.dll", b"dll")]);
+        assert_eq!(plan(&a, "GenericMods-ItemRarityColors", &advr, "ancient-dungeon-vr"), ["Mods/GenericMods-ItemRarityColors/Mods/ItemRarityColors.dll"]);
+
+        // Resonite (BepisLoader) : son lanceur Linux remplace celui du jeu, gardé de côté.
+        let reso = tempdir("ts-reso");
+        fs::write(reso.join("LinuxBootstrap.sh"), b"original").unwrap();
+        let b = package(
+            "ts-bepis",
+            &[("BepInExPack/hookfxr.ini", b"[hookfxr]\nenable=false\n"), ("BepInExPack/LinuxBootstrap.sh", b"bepis"), ("BepInExPack/BepisLoader.dll", b"dll")],
+        );
+        let p = plan_in(&b, "ResoniteModding-BepisLoader", &reso, "resonite", &BTreeMap::new());
+        assert_eq!(p.dests(), ["BepisLoader.dll", "LinuxBootstrap.sh", "hookfxr.ini"]);
+        assert_eq!(p.replaced, ["LinuxBootstrap.sh"]);
+    }
+
+    #[test]
+    fn ini_settings_are_set_without_losing_the_rest() {
+        let text = "[hookfxr]\n# commentaire\nenable=false\ntarget_assembly=BepisLoader.dll\n";
+        assert_eq!(
+            set_ini(text, "hookfxr", "enable", "true"),
+            "[hookfxr]\n# commentaire\nenable=true\ntarget_assembly=BepisLoader.dll\n"
+        );
+        let rivet = set_ini(&set_ini("", "Doorstop", "enable", "true"), "Loader", "directory", "Rivet/Mods");
+        assert_eq!(rivet, "[Doorstop]\nenable=true\n\n[Loader]\ndirectory=Rivet/Mods\n");
     }
 
     fn zip_response(body: &[u8]) -> String {
@@ -1533,17 +2186,78 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn games_with_other_loaders_are_refused_before_any_download() {
-        let game = tempdir("ts-palworld");
+    async fn games_with_unknown_loaders_are_refused_before_any_download() {
+        let game = tempdir("ts-mio");
         let server = fake_server_with(|_| vec![]);
-        let s = state_for(&server.base, "ts-palworld-state");
-        let g = s.configure("palworld", "Palworld".into(), None, game.to_str().unwrap()).unwrap();
-        let err = s.install("palworld", "Team", "Mod", None, &[], quiet()).await.unwrap_err();
-        assert!(matches!(err, AppError::ThunderstoreUnsupported(ref l) if l.contains("Shimloader")), "{err:?}");
+        let s = state_for(&server.base, "ts-mio-state");
+        let g = s.configure("mio-memories-in-orbit", "MIO".into(), None, game.to_str().unwrap()).unwrap();
+        let err = s.install("mio-memories-in-orbit", "Team", "Mod", None, &[], quiet()).await.unwrap_err();
+        assert!(matches!(err, AppError::ThunderstoreUnsupported(ref l) if l.contains("Mio")), "{err:?}");
         assert_eq!(server.count(), 0);
         let l = s.loader(g.game_id).await.unwrap();
         assert!(!l.supported && l.needed.is_none());
-        assert_eq!(l.required.as_deref(), Some("shimloader"));
+        assert_eq!(l.required.as_deref(), Some("mio"));
+    }
+
+    #[tokio::test]
+    async fn resonite_loader_is_turned_on_and_its_launcher_put_back_on_removal() {
+        let game = tempdir("ts-resonite");
+        fs::write(game.join("Resonite.exe"), b"exe").unwrap();
+        fs::write(game.join("LinuxBootstrap.sh"), b"original").unwrap();
+        let pack = make_zip(&[
+            ("BepInExPack/hookfxr.ini", b"[hookfxr]\nenable=false\ntarget_assembly=BepisLoader.dll\n"),
+            ("BepInExPack/hostfxr.dll", b"hook"),
+            ("BepInExPack/BepisLoader.dll", b"loader"),
+            ("BepInExPack/LinuxBootstrap.sh", b"bepis"),
+            ("BepInExPack/BepInEx/core/BepInEx.NET.CoreCLR.dll", b"core"),
+        ]);
+        let server = fake_server_with(|_| vec![latest("1.7.0", &[]), zip_response(&pack)]);
+        let s = state_for(&server.base, "ts-resonite-state");
+        let g = s.configure("resonite", "Resonite".into(), None, game.to_str().unwrap()).unwrap();
+        let l = s.loader(g.game_id).await.unwrap();
+        assert!(l.supported && !l.suitable);
+        assert_eq!(l.needed.as_ref().map(|n| n.name.as_str()), Some("BepisLoader"));
+
+        let out = s.install("resonite", "ResoniteModding", "BepisLoader", None, &[], quiet()).await.unwrap();
+        assert!(fs::read_to_string(game.join("hookfxr.ini")).unwrap().contains("enable=true"));
+        assert_eq!(fs::read(game.join("LinuxBootstrap.sh")).unwrap(), b"bepis");
+        assert_eq!(fs::read(game.join("LinuxBootstrap.sh.modstudio-orig")).unwrap(), b"original");
+        assert!(s.loader(g.game_id).await.unwrap().suitable);
+
+        s.remove(out.game.game_id, stable_id("ResoniteModding-BepisLoader")).unwrap();
+        assert_eq!(fs::read(game.join("LinuxBootstrap.sh")).unwrap(), b"original");
+        assert!(!game.join("LinuxBootstrap.sh.modstudio-orig").exists());
+        assert!(!game.join("hostfxr.dll").exists());
+    }
+
+    #[tokio::test]
+    async fn balatro_mods_go_to_its_mods_folder_with_lovely_first() {
+        let game = tempdir("ts-balatro-game");
+        fs::write(game.join("Balatro.exe"), b"exe").unwrap();
+        let mods = tempdir("ts-balatro-appdata");
+        let server = fake_server_with(|_| {
+            vec![
+                latest("1.0.0", &[]),
+                latest("0.10.0", &[]),
+                zip_response(&make_zip(&[("winmm.dll", b"lovely"), ("lovely/config.toml", b"cfg")])),
+                zip_response(&make_zip(&[("core.lua", b"lua"), ("manifest.json", b"{}")])),
+            ]
+        });
+        let s = state_for(&server.base, "ts-balatro-state");
+        let g = s.configure("balatro", "Balatro".into(), None, game.to_str().unwrap()).unwrap();
+        s.library.lock().unwrap().games.get_mut(&g.game_id).unwrap().extra_folders.insert("mods".into(), mods.clone());
+        let out = s.install("balatro", "Steamodded", "Steamodded", None, &[], quiet()).await.unwrap();
+        assert_eq!(out.installed, ["lovely", "Steamodded"]);
+        assert!(game.join("winmm.dll").is_file());
+        assert!(mods.join("lovely/config.toml").is_file());
+        assert!(mods.join("Steamodded-Steamodded/core.lua").is_file());
+        let m = &out.game.mods[&stable_id("Steamodded-Steamodded")];
+        assert!(m.files.is_empty());
+        assert_eq!(m.parts[0].key, "mods");
+        assert!(m.parts[0].files.contains(&"Steamodded-Steamodded/core.lua".to_string()));
+        s.remove(g.game_id, m.mod_id).unwrap();
+        assert!(!mods.join("Steamodded-Steamodded").exists());
+        assert!(mods.join("lovely/config.toml").is_file(), "réglages de Lovely gardés");
     }
 
     #[tokio::test]

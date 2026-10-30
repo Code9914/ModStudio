@@ -22,6 +22,8 @@ for key, game in sorted(src["games"].items()):
             "packageLoader": r.get("packageLoader"),
             "installRules": r.get("installRules") or [],
             "relativeFileExclusions": r.get("relativeFileExclusions"),
+            "exeNames": r.get("exeNames") or [],
+            "dataFolderName": r.get("dataFolderName") or "",
         })
     out = {"r2modman": entries}
     autolist = (game.get("thunderstore") or {}).get("autolistPackageIds")

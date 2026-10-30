@@ -320,14 +320,23 @@ son chargeur et ses règles d'installation (où va chaque fichier d'un mod).
 Elles sont téléchargées une fois par jour, avec une copie livrée dans
 l'appli pour le hors-ligne (`scripts/trim-thunderstore-ecosystem.py`).
 
-| Chargeur | Jeux | Pris en charge |
+| Chargeur | Jeux | Où vont les mods |
 |---|---|---|
-| BepInEx | environ 270 | oui, avec les règles propres à chaque jeu (Valheim, Subnautica, GTFO, H3VR, Timberborn…) |
-| MelonLoader 0.7+ (chaque mod dans son dossier) | environ 36 | oui |
-| MelonLoader | 6 (BONELAB, BONEWORKS…) | oui |
-| Northstar (Titanfall 2) | 1 | oui |
-| Shimloader (UE4SS), Godot Mod Loader, Return of Modding, Unity Mod Manager, GDWeave, Lovely, Rivet… | une vingtaine | pas encore : la page du jeu le dit, et conseille r2modman ou Gale |
-| Pas de règles publiées (jeux N64 « recompiled », Phasmophobia…) | une quarantaine | non |
+| BepInEx | environ 270 | `BepInEx/plugins`… selon les règles du jeu (Valheim, Subnautica, GTFO, H3VR, Timberborn…) |
+| MelonLoader 0.7+ | environ 36 (Schedule I…) | `Mods/<Équipe-Nom>`, `UserData/<Équipe-Nom>` |
+| MelonLoader | 6 (BONELAB, BONEWORKS…) | `Mods`, `UserLibs`, `UserData`… |
+| UE4SS (Shimloader) | 10 jeux Unreal (Voices of the Void, Palworld…) | UE4SS dans `Binaries/Win64`, mods dans `Binaries/Win64/Mods` (activés), paks dans `Content/Paks/LogicMods`, réglages dans `Config` |
+| GDWeave | WEBFISHING | `GDWeave/mods/<Équipe-Nom>` |
+| Return of Modding | Hades II, Risk of Rain Returns | à côté de l'exécutable : `ReturnOfModding/plugins` (et `config`) |
+| Lovely | Balatro | `%AppData%/Balatro/Mods` (dans le préfixe Proton sous Linux) |
+| BepisLoader | Resonite | `BepInEx/plugins` ; `hookfxr.ini` activé, `LinuxBootstrap.sh` remplacé (l'original gardé, remis à la désinstallation) |
+| Godot Mod Loader | Brotato, Dome Keeper… | chaque mod zippé dans `mods` ; option de lancement `--script res://addons/mod_loader/mod_loader_setup.gd` affichée |
+| Unity Mod Manager | Broforce, A Dance of Fire and Ice | `UMM/Mods` |
+| Rivet | Scrap Mechanic | `Release/Rivet/Mods`, `Rivet.ini` activé |
+| Northstar | Titanfall 2 | `R2Northstar/mods` |
+| Aucun (Ancient Dungeon VR) | 1 | `Mods/<Équipe-Nom>` |
+| MIO | 1 | non : son chargeur n'est pas publié sur Thunderstore |
+| Pas de règles publiées (ReSkate, jeux N64 « Recompiled »…) | 27 | non |
 
 - **Le chargeur d'abord** : s'il manque, il est installé avec le premier mod
   (même si le mod ne le demande pas), ou tout de suite depuis la page du jeu.
@@ -347,8 +356,9 @@ l'appli pour le hors-ligne (`scripts/trim-thunderstore-ecosystem.py`).
   désinstallation), version précise au choix, progression mod par mod.
 - Rien n'écrase les fichiers des mods installés depuis mod.io ou Nexus Mods
   (ni l'inverse).
-- Sous Linux, l'option de lancement Steam pour Proton (BepInEx, MelonLoader)
-  est affichée sur la page du jeu.
+- Sous Linux, l'option de lancement Steam pour Proton
+  (`WINEDLLOVERRIDES="winhttp=n,b" %command%`, ou `winmm`, `version`, `dwmapi`,
+  `d3d12`, `hostfxr` selon le chargeur) est affichée sur la page du jeu.
 
 ## Obtenir ta clé API
 

@@ -68,12 +68,13 @@
     if (typeof picked === "string") await use(picked);
   }
 
-  async function copyLaunchOption() {
-    if (!loader?.launchOption) return;
+  let copiedArgs = $state(false);
+  async function copy(text: string | null | undefined, done: (on: boolean) => void) {
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(loader.launchOption);
-      copied = true;
-      setTimeout(() => (copied = false), 2000);
+      await navigator.clipboard.writeText(text);
+      done(true);
+      setTimeout(() => done(false), 2000);
     } catch {
       /* presse-papiers indisponible : le texte reste sélectionnable */
     }
@@ -89,7 +90,10 @@
     <p class="small unsupported">
       <Icon name="warning" size={15} />
       <span>
-        {#if requiredLabel}
+        {#if loader?.required === "mio" || requiredLabel === "Mio"}
+          Le chargeur de mods de {game.name} n'est pas publié sur Thunderstore : ModStudio ne peut pas l'installer, ni
+          ses mods. Pour ce jeu, utilise un gestionnaire comme r2modman ou Gale.
+        {:else if requiredLabel}
           {game.name} charge ses mods avec <span class="strong">{requiredLabel}</span> : ModStudio ne sait pas encore
           les installer. Pour ce jeu, utilise un gestionnaire comme r2modman ou Gale.
         {:else}
@@ -186,7 +190,23 @@
           </p>
           <div class="proton-row">
             <code>{loader.launchOption}</code>
-            <button class="btn btn-ghost" onclick={copyLaunchOption}>{copied ? "Copié" : "Copier"}</button>
+            <button class="btn btn-ghost" onclick={() => copy(loader.launchOption, (on) => (copied = on))}>
+              {copied ? "Copié" : "Copier"}
+            </button>
+          </div>
+        </div>
+      {/if}
+      {#if loader.launchArgs && loader.suitable}
+        <div class="proton">
+          <p class="small">
+            Ajoute ceci aux options de lancement du jeu (dans Steam : Propriétés, Général) : c'est ce qui démarre
+            {loader.name} et charge les mods.
+          </p>
+          <div class="proton-row">
+            <code>{loader.launchArgs}</code>
+            <button class="btn btn-ghost" onclick={() => copy(loader.launchArgs, (on) => (copiedArgs = on))}>
+              {copiedArgs ? "Copié" : "Copier"}
+            </button>
           </div>
         </div>
       {/if}
