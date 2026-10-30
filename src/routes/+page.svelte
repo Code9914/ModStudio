@@ -82,6 +82,22 @@
 
   onMount(start);
 
+  // Retour sur ModStudio : jeux installés, outils ajoutés ou retirés entre-temps.
+  function onReturn() {
+    if (document.visibilityState === "visible") nexusStore.refreshLocal();
+  }
+  onMount(() => {
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
+    // Et régulièrement tant que la fenêtre est ouverte (un jeu installé pendant qu'on regarde).
+    const timer = setInterval(onReturn, 60_000);
+    return () => {
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
+      clearInterval(timer);
+    };
+  });
+
   function onKey(event: KeyboardEvent) {
     const typing = (event.target as HTMLElement)?.closest("input, textarea, select");
     if (typing) return;

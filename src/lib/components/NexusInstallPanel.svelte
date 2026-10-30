@@ -72,9 +72,18 @@
   let neededTool = $state<ToolOffer | null>(null);
   /** Outil proposé, gardé affiché jusqu'à la fin (même une fois installé). */
   let shownTool = $state<ToolOffer | null>(null);
+  /** L'outil a été installé depuis ce panneau : son message de réussite reste affiché. */
+  let toolInstalledHere = $state(false);
   $effect(() => {
     const t = neededTool ?? requiredTool;
     if (t && !shownTool) shownTool = t;
+  });
+  // Outil installé ailleurs entre-temps (script extender installé comme un mod…) : plus rien à proposer.
+  $effect(() => {
+    if (shownTool && !toolInstalledHere && gameTool?.id === shownTool.id && gameTool.present) {
+      shownTool = null;
+      neededTool = null;
+    }
   });
   $effect(() => {
     const id = game.id;
@@ -483,6 +492,7 @@
         {game}
         tool={shownTool}
         folder={toolFolder}
+        onstart={() => (toolInstalledHere = true)}
         reason={record ? `Ce mod ne se chargera pas sans ${shownTool.name}.` : `Ce mod a besoin de ${shownTool.name}.`}
       />
     </div>

@@ -245,6 +245,8 @@ class NexusStore {
     delete this.updates[keyOf(gameId, modId)];
     // Le dossier du jeu a pu être détecté pendant l'installation.
     this.load().catch(() => {});
+    // Le mod a pu installer un outil (script extender…).
+    this.refreshSetup(gameId);
   }
 
   /** Termine une installation FOMOD avec les options choisies. */
@@ -273,20 +275,53 @@ class NexusStore {
   }
 
   /** Cherche les jeux installés (Steam, Epic). */
-  async detectGames(refresh = false) {
-    if (this.detecting) return;
-    this.detecting = true;
+  /**
+   * Cherche les jeux installés (Steam, Epic). `quiet` : actualisation en
+   * arrière-plan, sans indicateur de recherche.
+   */
+  async detectGames(refresh = false, quiet = false) {
+    if (this.detecting || this.#detectingQuietly) return;
+    if (quiet) this.#detectingQuietly = true;
+    else this.detecting = true;
     this.detectError = null;
     try {
       this.detected = await api.detectGames(refresh);
-      // Les réglages en cache dépendent des jeux trouvés.
-      if (refresh) this.setups = {};
+      // Les réglages affichés dépendent des jeux trouvés.
+      if (refresh) this.refreshSetups();
     } catch (e) {
-      this.detectError = asAppError(e);
+      if (!quiet) this.detectError = asAppError(e);
       this.detected ??= [];
     } finally {
       this.detecting = false;
+      this.#detectingQuietly = false;
     }
+  }
+
+  #detectingQuietly = false;
+  #lastLocalRefresh = 0;
+  /** Domaine Nexus des jeux dont les réglages ont été chargés. */
+  #setupDomains = new Map<number, string>();
+
+  /**
+   * Relit ce qui a pu changer sur le PC pendant que ModStudio était en arrière-
+   * plan : jeux installés ou désinstallés, outils ajoutés à la main… Appelé
+   * quand la fenêtre revient au premier plan (au plus toutes les 15 s).
+   */
+  refreshLocal() {
+    const now = Date.now();
+    if (now - this.#lastLocalRefresh < 15_000) return;
+    this.#lastLocalRefresh = now;
+    this.detectGames(true, true);
+  }
+
+  /** Relit les réglages (moteur, outils présents) d'un jeu déjà affiché. */
+  refreshSetup(gameId: number) {
+    const domain = this.#setupDomains.get(gameId) ?? this.games[gameId]?.domain;
+    if (domain) this.loadSetup(gameId, domain).catch(() => {});
+  }
+
+  refreshSetups() {
+    for (const gameId of this.#setupDomains.keys()) this.refreshSetup(gameId);
   }
 
   /** Jeux installés qui ont une page sur Nexus Mods. */
@@ -305,6 +340,7 @@ class NexusStore {
   }
 
   async loadSetup(gameId: number, domain: string): Promise<NexusGameSetup> {
+    this.#setupDomains.set(gameId, domain);
     const s = await api.gameSetup(gameId, domain);
     this.setups[gameId] = s;
     return s;
@@ -353,11 +389,14 @@ class NexusStore {
   /** Active ou désactive un mod (ses fichiers sont mis de côté). */
   async setEnabled(gameId: number, modId: number, enabled: boolean) {
     this.games[gameId] = await api.setEnabled(gameId, modId, enabled);
+    // Un outil installé comme mod (script extender) a pu être activé ou désactivé.
+    this.refreshSetup(gameId);
   }
 
   async applyProfile(gameId: number, name: string) {
     const r = await api.applyProfile(gameId, name);
     this.games[gameId] = r.game;
+    this.refreshSetup(gameId);
     return r.issues;
   }
 
@@ -374,6 +413,7 @@ class NexusStore {
       for (const m of Object.values(game.mods)) m.requiredBy = m.requiredBy.filter((id) => id !== modId);
     }
     delete this.updates[keyOf(gameId, modId)];
+    this.refreshSetup(gameId);
     return result;
   }
 

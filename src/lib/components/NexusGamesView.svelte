@@ -37,6 +37,8 @@
   // Jeux installés sur ce PC (Steam, Epic) qui ont une page sur Nexus Mods.
   onMount(() => {
     if (nexusStore.detected === null) nexusStore.detectGames();
+    // Déjà cherchés : actualisés en arrière-plan à l'ouverture de la page.
+    else nexusStore.detectGames(true, true);
   });
   const onPc = $derived(
     [...nexusStore.installedGames].sort((a, b) => a.nexus.name.localeCompare(b.nexus.name, "fr")),

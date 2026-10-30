@@ -14,6 +14,7 @@
     tool,
     reason = null,
     folder = null,
+    onstart,
     oninstalled,
   }: {
     game: NexusGame;
@@ -22,6 +23,8 @@
     reason?: string | null;
     /** Dossier du jeu où l'outil sera copié. */
     folder?: string | null;
+    /** L'installation démarre depuis ce panneau. */
+    onstart?: () => void;
     oninstalled?: () => void;
   } = $props();
 
@@ -40,6 +43,7 @@
   async function install() {
     confirming = false;
     error = null;
+    onstart?.();
     try {
       await nexusStore.installTool(game.id, game.domainName, tool.id);
       done = true;
