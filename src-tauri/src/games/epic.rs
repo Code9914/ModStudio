@@ -108,14 +108,14 @@ mod tests {
         let game = dir.join("Games/Hogwarts");
         fs::create_dir_all(&game).unwrap();
         let file = dir.join("installed.json");
-        let json = format!(
-            r#"{{"fa4240e57a3c46b39f169041b7811293":{{"app_name":"fa4240e57a3c46b39f169041b7811293","title":"Hogwarts Legacy","install_path":"{}","is_dlc":false}},
-               "dlc1":{{"app_name":"dlc1","title":"Un DLC","install_path":"{}","is_dlc":true}},
-               "gone":{{"app_name":"gone","title":"Désinstallé","install_path":"/nulle/part","is_dlc":false}}}}"#,
-            game.display(),
-            game.display()
-        );
-        fs::write(&file, json).unwrap();
+        // Construit avec serde : les chemins Windows (`C:\…`) restent du JSON valide.
+        let path = game.to_string_lossy();
+        let json = serde_json::json!({
+            "fa4240e57a3c46b39f169041b7811293": { "app_name": "fa4240e57a3c46b39f169041b7811293", "title": "Hogwarts Legacy", "install_path": path, "is_dlc": false },
+            "dlc1": { "app_name": "dlc1", "title": "Un DLC", "install_path": path, "is_dlc": true },
+            "gone": { "app_name": "gone", "title": "Désinstallé", "install_path": "/nulle/part", "is_dlc": false },
+        });
+        fs::write(&file, json.to_string()).unwrap();
         let games = heroic_games(&file);
         assert_eq!(games.len(), 1);
         assert_eq!((games[0].name.as_str(), games[0].launcher), ("Hogwarts Legacy", Launcher::Epic));
