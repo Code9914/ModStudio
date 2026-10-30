@@ -90,6 +90,18 @@ L'installateur n'est pas signé : au premier lancement, Windows SmartScreen
 affiche un avertissement. Clique sur « Informations complémentaires » puis
 « Exécuter quand même ».
 
+### Mises à jour automatiques
+
+ModStudio installé cherche une nouvelle version à chaque lancement (fichier
+`latest.json` de la dernière release) et propose de l'installer ; la page
+Réglages permet aussi de chercher à la main. Les mises à jour sont signées : la
+clé publique est dans `tauri.conf.json`, la clé privée et son mot de passe dans
+les secrets du dépôt (`TAURI_SIGNING_PRIVATE_KEY`,
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Sans cette clé, aucune mise à jour ne
+peut être publiée pour les installations existantes : garde-en une copie. La
+version de développement (`dev.bat`) ne cherche pas de mise à jour : elle suit
+la branche `dev`.
+
 ## Compte et abonnements (v0.2)
 
 - Connexion au compte mod.io, au choix :

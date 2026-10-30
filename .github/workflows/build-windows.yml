@@ -44,6 +44,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signature des mises à jour (clé privée rangée dans les secrets du dépôt).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
           releaseName: "ModStudio v__VERSION__"
@@ -52,7 +55,11 @@ jobs:
             - `ModStudio_x.y.z_x64-setup.exe` : installateur classique (recommandé)
             - `ModStudio_x.y.z_x64_en-US.msi` : paquet MSI
           releaseDraft: false
-          prerelease: true
+          # Release normale : ModStudio cherche ses mises à jour dans la dernière release.
+          prerelease: false
+          # latest.json : fichier lu par ModStudio pour se mettre à jour (installateur NSIS).
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
 
       - name: Garder une copie des installateurs
         uses: actions/upload-artifact@v4

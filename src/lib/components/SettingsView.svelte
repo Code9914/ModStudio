@@ -2,6 +2,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api, type AppError } from "$lib/api";
   import { nav } from "$lib/nav.svelte";
+  import { updates } from "$lib/updates.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
 
@@ -116,6 +117,33 @@
 
     {#if !first}
       <section class="block">
+        <h2>Mises à jour de ModStudio</h2>
+        {#if !updates.enabled}
+          <p class="help muted">
+            Version de développement : elle se met à jour toute seule à chaque lancement de « ModStudio (dev) ».
+          </p>
+        {:else}
+          <p class="help muted">
+            Version installée : {updates.current ?? "…"}. ModStudio cherche une nouvelle version à chaque lancement et te
+            la propose ; la mise à jour est signée et garde tes réglages et tes mods.
+          </p>
+          <div class="update-row">
+            <button class="btn" type="button" onclick={() => updates.check(true)} disabled={updates.checking}>
+              <Icon name="refresh" size={15} />{updates.checking ? "Recherche…" : "Rechercher une mise à jour"}
+            </button>
+            {#if updates.available}
+              <button class="btn btn-primary" type="button" onclick={() => updates.install()} disabled={!!updates.progress}>
+                Installer la version {updates.available.version}
+              </button>
+            {:else if updates.checked && !updates.checking && !updates.error}
+              <span class="help muted">ModStudio est à jour.</span>
+            {/if}
+          </div>
+          {#if updates.error}<p class="help update-error">Recherche impossible : {updates.error}</p>{/if}
+        {/if}
+      </section>
+
+      <section class="block">
         <h2>Contenu</h2>
         <label class="toggle">
           <input type="checkbox" checked={nav.settings?.hideMature} onchange={toggleMature} />
@@ -204,6 +232,19 @@
   .key {
     display: flex;
     gap: 0.4rem;
+  }
+
+  .update-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .update-error {
+    color: var(--danger);
+    margin-top: 0.5rem;
   }
 
   .help {

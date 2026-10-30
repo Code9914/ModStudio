@@ -1,6 +1,6 @@
 [package]
 name = "modstudio"
-version = "0.5.1"
+version = "0.5.2"
 description = "Client de bureau non officiel pour mod.io et Nexus Mods"
 authors = []
 edition = "2024"
@@ -46,3 +46,7 @@ strip = true
 tokio = { version = "1.54.1", features = ["rt", "macros", "time"] }
 # Les tests fabriquent des archives 7z.
 sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"

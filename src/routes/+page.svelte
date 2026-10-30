@@ -17,6 +17,8 @@
   import NexusModView from "$lib/components/NexusModView.svelte";
   import NexusSite from "$lib/components/NexusSite.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
+  import UpdateBanner from "$lib/components/UpdateBanner.svelte";
+  import { updates as appUpdates } from "$lib/updates.svelte";
   import { nexusGameImage } from "$lib/api";
   import { nexusStore, welcomeDone } from "$lib/nexus.svelte";
 
@@ -24,6 +26,8 @@
 
   async function start() {
     startError = null;
+    // Nouvelle version de ModStudio ? (sans effet en mode développement)
+    appUpdates.check();
     // Nexus Mods fonctionne même sans clé mod.io.
     nexusStore.listenNxm();
     checkNexus();
@@ -298,6 +302,7 @@
         <NexusSite request={nexusStore.site} />
       {/key}
     {/if}
+    <UpdateBanner />
   </main>
 </div>
 
