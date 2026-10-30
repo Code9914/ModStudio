@@ -82,6 +82,19 @@ function image(url: string) {
   return src ? `<img src="${src}" alt="" loading="lazy">` : "";
 }
 
+/**
+ * Tableau : `[tr]` lignes, `[th]` / `[td]` cellules. Les retours à la ligne
+ * entre les balises (un par cellule dans beaucoup de descriptions) sont retirés.
+ */
+function table(body: string) {
+  const html = body
+    .replace(/\[(\/?)(tr|th|td)\]/gi, (_, close, tag) => `<${close}${tag.toLowerCase()}>`)
+    .replace(/(<\/?(?:tr|th|td)>)\s+(?=<\/?(?:tr|th|td)>)/g, "$1")
+    .replace(/<(th|td)>\s+|\s+<\/(th|td)>/g, (m) => m.trim())
+    .trim();
+  return `<table>${html}</table>`;
+}
+
 /** Liste : `[*]` ouvre un élément, `[/*]` (facultatif) le ferme. */
 function list(kind: string | undefined, body: string) {
   const tag = kind && /^[1aAiI]$/.test(kind) ? "ol" : "ul";
@@ -106,15 +119,16 @@ const RULES: [RegExp, string | ((...m: string[]) => string)][] = [
   // Listes imbriquées : la plus intérieure d'abord (corps sans autre [list]).
   [/\[list(?:=([^\]]*))?\]((?:(?!\[list[\]=])[\s\S])*?)\[\/list\]/gi, (_, kind, body) => list(kind, body)],
   [/\[quote(?:=[^\]]*)?\]([\s\S]*?)\[\/quote\]/gi, "<blockquote>$1</blockquote>"],
+  [/\[table\]((?:(?!\[table\])[\s\S])*?)\[\/table\]/gi, (_, body) => table(body)],
   [/\[spoiler(?:=[^\]]*)?\]([\s\S]*?)\[\/spoiler\]/gi, "<details><summary>Spoiler</summary>$1</details>"],
   [/\[heading\]([\s\S]*?)\[\/heading\]/gi, "<h3>$1</h3>"],
-  [/\[line\]/gi, "<hr>"],
+  [/\[(?:line|hr)\]/gi, "<hr>"],
 ];
 
 /** Balises de mise en forme abandonnées (taille, couleur, police, alignement). */
 const DROPPED = /\[\/?(?:size|color|colour|font|center|centre|left|right|justify|indent|align|style|h[1-6])(?:=[^\]]*)?\]/gi;
 
-const BLOCK = "(?:ul|ol|li|blockquote|pre|details|summary|h3|hr)";
+const BLOCK = "(?:ul|ol|li|blockquote|pre|details|summary|h3|hr|table|tr|th|td)";
 
 export function bbcodeToHtml(input: string): string {
   let s = input.replace(/\r\n?/g, "\n").replace(/\n?<br\s*\/?>\n?/gi, "\n");

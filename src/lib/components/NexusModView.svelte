@@ -403,6 +403,30 @@
     background: none;
   }
 
+  /* Tableaux : défilent seuls s'ils sont trop larges. */
+  .prose :global(table) {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 0.6em 0 1em;
+    border-collapse: collapse;
+    font-size: var(--t-sm);
+  }
+
+  .prose :global(th),
+  .prose :global(td) {
+    padding: 0.4rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .prose :global(th) {
+    font-weight: 600;
+    color: var(--muted);
+  }
+
   .prose :global(hr) {
     border: 0;
     border-top: 1px solid var(--line);
