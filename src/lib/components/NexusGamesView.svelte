@@ -100,7 +100,7 @@
   {#if list.error && list.items.length === 0}
     <ErrorNotice error={list.error} onretry={() => list.retry()} />
   {:else if !list.loaded}
-    <ul class="card-grid" aria-busy="true" aria-label="Chargement des jeux">
+    <ul class="card-grid posters" aria-busy="true" aria-label="Chargement des jeux">
       {#each Array(12) as _, i (i)}
         <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
       {/each}
@@ -111,11 +111,13 @@
       <button class="btn" onclick={() => (query = "")}>Effacer la recherche</button>
     </div>
   {:else}
-    <ul class="card-grid">
+    <!-- Affiches en portrait : l'image « hero » de Nexus est volontairement
+         floue pour beaucoup de jeux (fond de page), l'affiche est nette. -->
+    <ul class="card-grid posters">
       {#each list.items as game (game.id)}
         <li>
           <button class="card" onclick={() => nav.openNexusGame(game)}>
-            <Thumb src={nexusGameImage(game.id, "hero")} label={game.name} />
+            <Thumb src={nexusGameImage(game.id, "tile")} label={game.name} />
             <span class="card-title">{game.name}</span>
             <span class="card-meta">
               <span>{exact(game.modCount)} mods</span>
@@ -229,8 +231,21 @@
     border-radius: 3px;
   }
 
+  .posters {
+    grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+    gap: 1.5rem 1.1rem;
+  }
+
+  .posters :global(.thumb) {
+    aspect-ratio: 2 / 3;
+  }
+
+  .posters :global(.card-title) {
+    font-size: var(--t-md);
+  }
+
   .skeleton .thumb {
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 2 / 3;
     border-radius: var(--r-md);
     background: var(--raise);
   }

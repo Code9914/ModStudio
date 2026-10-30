@@ -17,6 +17,7 @@
   let search = $state("");
   let sort = $state<NexusModSort>("endorsements");
   let bannerFailed = $state(false);
+  let posterFailed = $state(false);
 
   const list = new PagedList<NexusMod>(
     (offset, limit) => nexus.listMods({ gameDomain: game.domainName, query: search, sort, offset, limit }),
@@ -75,7 +76,12 @@
       <button class="btn btn-ghost crumb" onclick={() => nav.openNexusGames()}>
         <Icon name="back" />Tous les jeux Nexus
       </button>
-      <h1>{game.name}</h1>
+      <div class="title-row">
+        {#if !posterFailed}
+          <img class="poster" src={nexusGameImage(game.id, "tile")} alt="" onerror={() => (posterFailed = true)} />
+        {/if}
+        <h1>{game.name}</h1>
+      </div>
       <div class="banner-stats">
         <span class="chip">Nexus Mods</span>
         {#if stats}
@@ -202,6 +208,21 @@
   .crumb {
     margin-left: -0.5rem;
     color: var(--text);
+  }
+
+  .title-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.25rem;
+  }
+
+  .poster {
+    width: 6.5rem;
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    border-radius: var(--r-md);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+    flex: none;
   }
 
   h1 {
