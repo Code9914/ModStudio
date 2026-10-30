@@ -1,4 +1,4 @@
-# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.6)
+# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.7)
 
 ModStudio parcourt et installe les mods de [mod.io](https://mod.io) et de
 [Nexus Mods](https://www.nexusmods.com) depuis une appli de bureau
@@ -256,11 +256,13 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
   UE4SS, script extender) compte comme un mod : ceux de ModStudio avec leur
   version et « Retirer », ceux installés à la main repérés dans le dossier du
   jeu.
-- **Apparence** (Réglages) : thème mauve et bleu par défaut, autres couleurs
+- **Apparence** (Réglages, v0.7) : thème mauve et bleu par défaut, autres couleurs
   ou deux couleurs au choix (dégradé), fond teinté ou gris, thème clair /
   sombre / comme Windows, taille du texte, des vignettes, coins, raccourcis
   des jeux dans la barre latérale. Gardée sur l'ordinateur et appliquée avant
   le premier affichage.
+- **Descriptions Nexus** (v0.7) : balises `[/*]`, entités HTML (`&#92;`…),
+  listes imbriquées ; un `[code]` d'une ligne reste dans la phrase.
 
 ## Obtenir ta clé API
 
