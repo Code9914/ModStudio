@@ -20,11 +20,12 @@ function image(url: string) {
   return src ? `<img src="${src}" alt="" loading="lazy">` : "";
 }
 
+/** Liste : `[*]` ouvre un élément, `[/*]` (facultatif) le ferme. */
 function list(kind: string | undefined, body: string) {
   const tag = kind && /^[1aAiI]$/.test(kind) ? "ol" : "ul";
   const items = body
     .split(/\[\*\]/)
-    .map((i) => i.trim())
+    .map((i) => i.replace(/\[\/\*\]/g, "").trim())
     .filter(Boolean)
     .map((i) => `<li>${i}</li>`)
     .join("");
@@ -40,7 +41,8 @@ const RULES: [RegExp, string | ((...m: string[]) => string)][] = [
   [/\[url\]([\s\S]*?)\[\/url\]/gi, (_, url) => link(url, url)],
   [/\[img(?:[^\]]*)\]([\s\S]*?)\[\/img\]/gi, (_, url) => image(url)],
   [/\[youtube\]([\w-]{6,20})\[\/youtube\]/gi, (_, id) => link(`https://www.youtube.com/watch?v=${id}`, "Vidéo sur YouTube")],
-  [/\[list(?:=([^\]]*))?\]([\s\S]*?)\[\/list\]/gi, (_, kind, body) => list(kind, body)],
+  // Listes imbriquées : la plus intérieure d'abord (corps sans autre [list]).
+  [/\[list(?:=([^\]]*))?\]((?:(?!\[list[\]=])[\s\S])*?)\[\/list\]/gi, (_, kind, body) => list(kind, body)],
   [/\[quote(?:=[^\]]*)?\]([\s\S]*?)\[\/quote\]/gi, "<blockquote>$1</blockquote>"],
   [/\[code\]([\s\S]*?)\[\/code\]/gi, "<pre><code>$1</code></pre>"],
   [/\[spoiler(?:=[^\]]*)?\]([\s\S]*?)\[\/spoiler\]/gi, "<details><summary>Spoiler</summary>$1</details>"],
@@ -48,8 +50,8 @@ const RULES: [RegExp, string | ((...m: string[]) => string)][] = [
   [/\[line\]/gi, "<hr>"],
 ];
 
-/** Balises de mise en forme abandonnées (taille, couleur, police, alignement). */
-const DROPPED = /\[\/?(?:size|color|colour|font|center|centre|left|right|justify|indent|align|style|h[1-6])(?:=[^\]]*)?\]/gi;
+/** Balises de mise en forme abandonnées (taille, couleur, police, alignement), et listes mal fermées. */
+const DROPPED = /\[\/?(?:size|color|colour|font|center|centre|left|right|justify|indent|align|style|h[1-6]|list)(?:=[^\]]*)?\]/gi;
 
 const BLOCK = "(?:ul|ol|li|blockquote|pre|details|summary|h3|hr)";
 
@@ -63,6 +65,8 @@ export function bbcodeToHtml(input: string): string {
     if (s === before) break;
   }
   s = s.replace(DROPPED, "");
+  // Éléments de liste hors d'un [list] : une puce, sans la balise de fin.
+  s = s.replace(/\[\/\*\]/g, "").replace(/\[\*\]/g, "• ");
   s = s.replace(/\n/g, "<br>");
   // Pas de saut de ligne collé aux blocs.
   s = s.replace(new RegExp(`(?:<br>\\s*)+(<\\/?${BLOCK}\\b)`, "g"), "$1");
