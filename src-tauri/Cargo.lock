@@ -2400,6 +2400,7 @@ dependencies = [
  "md-5",
  "reqwest",
  "roxmltree",
+ "semver",
  "serde",
  "serde_json",
  "sevenz-rust2",

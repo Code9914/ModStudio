@@ -1,11 +1,15 @@
 // Mods installés depuis Thunderstore : état partagé par toutes les vues.
 import {
   asAppError,
+  rml,
   ts,
   type AppError,
   type DetectedGame,
   type GameInstall,
+  type InstallEvent,
   type InstalledMod,
+  type RmlMod,
+  type RmlStatus,
   type TsCommunity,
   type TsInstalled,
   type TsLoader,
@@ -38,8 +42,14 @@ class TsStore {
   updates = $state<Record<string, string>>({});
   /** Chargeur de mods présent, par jeu. */
   loaders = $state<Record<number, TsLoader>>({});
+  /** Liste vérifiée des mods de ResoniteModLoader (`null` : pas encore chargée). */
+  rmlMods = $state<RmlMod[] | null>(null);
+  rmlError = $state<AppError | null>(null);
+  /** ResoniteModLoader dans le dossier de Resonite. */
+  rmlStatus = $state<RmlStatus | null>(null);
 
   #communitiesLoading: Promise<void> | null = null;
+  #rmlLoading: Promise<void> | null = null;
 
   async load() {
     const list = await ts.overview();
@@ -127,12 +137,25 @@ class TsStore {
   }
 
   /** Installe un mod et ce dont il a besoin. */
-  async install(c: TsCommunity, namespace: string, name: string, modId: number, version?: string | null): Promise<TsInstalled> {
-    const gameId = c.id;
+  install(c: TsCommunity, namespace: string, name: string, modId: number, version?: string | null): Promise<TsInstalled> {
+    return this.#run(c.id, modId, (onEvent) => ts.install({ community: c.identifier, namespace, name, version }, onEvent));
+  }
+
+  /** Installe un mod de ResoniteModLoader, ce dont il a besoin, et RML s'il manque. */
+  async installRml(c: TsCommunity, mod: RmlMod, version?: string | null): Promise<TsInstalled> {
+    try {
+      return await this.#run(c.id, mod.modId, (onEvent) => rml.install(mod.id, version ?? null, onEvent));
+    } finally {
+      this.refreshRmlStatus();
+    }
+  }
+
+  /** Suit l'installation (étapes, progression) puis met la bibliothèque à jour. */
+  async #run(gameId: number, modId: number, start: (onEvent: (e: InstallEvent) => void) => Promise<TsInstalled>): Promise<TsInstalled> {
     let step = "";
     this.progress[gameId] = { modId, label: "Préparation…", ratio: null };
     try {
-      const result = await ts.install({ community: c.identifier, namespace, name, version }, (e) => {
+      const result = await start((e) => {
         if (e.phase === "step") {
           // Un seul mod : pas besoin de le nommer à chaque étape.
           step = e.total > 1 ? `${e.name} (${e.index} sur ${e.total}), ` : "";
@@ -156,6 +179,34 @@ class TsStore {
     }
   }
 
+  loadRml(refresh = false): Promise<void> {
+    if (this.rmlMods && !refresh) return Promise.resolve();
+    this.#rmlLoading ??= (async () => {
+      this.rmlError = null;
+      try {
+        this.rmlMods = await rml.mods(refresh);
+      } catch (e) {
+        this.rmlError = asAppError(e);
+      } finally {
+        this.#rmlLoading = null;
+      }
+    })();
+    return this.#rmlLoading;
+  }
+
+  rmlMod(id: string): RmlMod | null {
+    const key = id.toLowerCase();
+    return this.rmlMods?.find((m) => m.id.toLowerCase() === key) ?? null;
+  }
+
+  async refreshRmlStatus() {
+    try {
+      this.rmlStatus = await rml.status();
+    } catch {
+      this.rmlStatus = null;
+    }
+  }
+
   cancel(c: TsCommunity) {
     ts.cancel(c.identifier).catch(() => {});
   }
@@ -173,6 +224,7 @@ class TsStore {
     }
     delete this.updates[keyOf(gameId, modId)];
     this.refreshLoader(gameId);
+    if (game?.domain === RML_COMMUNITY) this.refreshRmlStatus();
     return result;
   }
 
@@ -187,6 +239,48 @@ class TsStore {
 }
 
 export const tsStore = new TsStore();
+
+/** Le jeu Thunderstore qui reçoit aussi les mods de ResoniteModLoader. */
+export const RML_COMMUNITY = "resonite";
+
+/** Catégories de la liste de ResoniteModLoader. */
+const RML_CATEGORIES: Record<string, string> = {
+  "Asset Importing": "Import de fichiers",
+  Audio: "Audio",
+  "Bug Workaround": "Correctifs",
+  "Context Menu": "Menu contextuel",
+  Controls: "Contrôles",
+  Dashboard: "Tableau de bord",
+  "Hardware Integration": "Matériel",
+  Inspectors: "Inspecteurs",
+  Libraries: "Bibliothèques",
+  Memes: "Pour rire",
+  Misc: "Divers",
+  Optimization: "Optimisation",
+  Plugins: "Plugins",
+  Protoflux: "ProtoFlux",
+  "Technical Tweaks": "Réglages techniques",
+  Template: "Modèles",
+  "Visual Tweaks": "Apparence",
+  Wizards: "Assistants",
+};
+
+export function rmlCategory(category: string) {
+  return RML_CATEGORIES[category] ?? category;
+}
+
+/** Systèmes visés par un mod de ResoniteModLoader, en clair. */
+export function rmlPlatforms(platforms: string[]) {
+  const names: Record<string, string> = {
+    headless: "serveurs (headless)",
+    windows: "Windows",
+    linux: "Linux",
+    "linux-native": "Linux",
+    "linux-wine": "Linux (Proton)",
+    android: "Android",
+  };
+  return [...new Set(platforms.map((p) => names[p] ?? p))].join(", ");
+}
 
 /** `Équipe-Nom` d'un mod installé. */
 export function splitFullName(fileName: string | null | undefined): { namespace: string; name: string } | null {

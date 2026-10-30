@@ -168,6 +168,13 @@ pub enum AppError {
     /// Jeu dont le chargeur de mods n'est pas encore pris en charge.
     #[error("Ce jeu charge ses mods avec {0} : ModStudio ne sait pas encore les installer. Utilise r2modman ou Gale pour ce jeu.")]
     ThunderstoreUnsupported(String),
+
+    // ------------------------------------------------------------ ResoniteModLoader
+    #[error("Impossible de récupérer la liste des mods de ResoniteModLoader. Vérifie ta connexion internet. ({0})")]
+    RmlUnavailable(String),
+
+    #[error("Impossible de télécharger « {name} » depuis {host} ({detail}). Réessaie plus tard.")]
+    RmlDownload { name: String, host: String, detail: String },
 }
 
 impl AppError {
@@ -223,6 +230,7 @@ impl AppError {
             AppError::ThunderstoreApi { .. } => "thunderstore_api",
             AppError::ThunderstoreNetwork(_) => "network",
             AppError::ThunderstoreUnsupported(_) => "thunderstore_unsupported",
+            AppError::RmlUnavailable(_) | AppError::RmlDownload { .. } => "network",
         }
     }
 

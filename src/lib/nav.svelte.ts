@@ -17,7 +17,8 @@ export type View =
   | { name: "nexusTracked" }
   | { name: "tsGames" }
   | { name: "tsMods" }
-  | { name: "tsMod"; namespace: string; modName: string };
+  | { name: "tsMod"; namespace: string; modName: string }
+  | { name: "rmlMod"; id: string };
 
 export type ModOrigin = "mods" | "library" | "installed";
 export type NexusOrigin = "nexusMods" | "installed" | "nexusTracked";
@@ -52,6 +53,11 @@ class Nav {
   tsGame = $state<TsCommunity | null>(null);
   tsModStack = $state<TsRef[]>([]);
   tsOrigin = $state<TsOrigin>("tsMods");
+  /** Onglet de la page de Resonite : paquets Thunderstore ou mods de ResoniteModLoader. */
+  tsTab = $state<"thunderstore" | "rml">("thunderstore");
+  /** Mods de ResoniteModLoader ouverts (puis via leurs dépendances). */
+  rmlStack = $state<string[]>([]);
+  rmlOrigin = $state<TsOrigin>("tsMods");
 
   /** Mods suivis dans le jeu ouvert. */
   subs = new SvelteSet<number>();
@@ -133,7 +139,10 @@ class Nav {
   }
 
   openTsGame(game: TsCommunity) {
-    if (this.tsGame?.id !== game.id) this.tsGame = game;
+    if (this.tsGame?.id !== game.id) {
+      this.tsGame = game;
+      this.tsTab = "thunderstore";
+    }
     this.tsModStack = [];
     this.view = { name: "tsMods" };
   }
@@ -152,6 +161,22 @@ class Nav {
     this.view = { name: "tsMod", namespace: ref.namespace, modName: ref.name };
   }
 
+  /** Fiche d'un mod de ResoniteModLoader (onglet de la page de Resonite). */
+  openRmlMod(id: string) {
+    if (this.view.name !== "rmlMod") this.rmlOrigin = "tsMods";
+    this.rmlStack = [...this.rmlStack, id];
+    this.view = { name: "rmlMod", id };
+  }
+
+  /** Fiche d'un mod de ResoniteModLoader ouverte depuis « Installés ». */
+  openRmlModFromInstalled(game: TsCommunity, id: string) {
+    if (this.tsGame?.id !== game.id) this.tsGame = game;
+    this.tsTab = "rml";
+    this.rmlOrigin = "installed";
+    this.rmlStack = [id];
+    this.view = { name: "rmlMod", id };
+  }
+
   openNexusAccount(returnTo: View | null = null) {
     this.afterNexusKey = returnTo;
     this.nexusWelcome = false;
@@ -166,6 +191,16 @@ class Nav {
   }
 
   back() {
+    if (this.view.name === "rmlMod" && this.rmlStack.length > 1) {
+      this.rmlStack = this.rmlStack.slice(0, -1);
+      this.view = { name: "rmlMod", id: this.rmlStack[this.rmlStack.length - 1] };
+      return;
+    }
+    if (this.view.name === "rmlMod") {
+      this.rmlStack = [];
+      this.view = { name: this.rmlOrigin };
+      return;
+    }
     if (this.view.name === "tsMod" && this.tsModStack.length > 1) {
       this.tsModStack = this.tsModStack.slice(0, -1);
       const top = this.tsModStack[this.tsModStack.length - 1];

@@ -5,6 +5,7 @@
     api,
     asAppError,
     nexus,
+    rmlIdOf,
     ts,
     type AppError,
     type GameInstall,
@@ -325,6 +326,8 @@
   const tsUpdatingAll = new SvelteSet<number>();
 
   function tsOpen(g: GameInstall, m: InstalledMod) {
+    const rmlId = rmlIdOf(m.fileName);
+    if (rmlId && g.domain) return nav.openRmlModFromInstalled(tsStore.communityOf(g), rmlId);
     const ref = splitFullName(m.fileName);
     if (ref && g.domain) nav.openTsModFromInstalled(tsStore.communityOf(g), ref);
   }
@@ -334,13 +337,22 @@
   }
 
   async function tsUpdate(g: GameInstall, m: InstalledMod) {
+    const rmlId = rmlIdOf(m.fileName);
     const ref = splitFullName(m.fileName);
-    if (!ref || !g.domain) return;
+    if ((!rmlId && !ref) || !g.domain) return;
     const k = tsKey(g, m);
     tsErrors.delete(k);
     tsNotes.delete(k);
     try {
-      await tsStore.install(tsStore.communityOf(g), ref.namespace, ref.name, m.modId);
+      if (rmlId) {
+        // Mod de ResoniteModLoader : mis à jour depuis sa liste.
+        await tsStore.loadRml();
+        const mod = tsStore.rmlMod(rmlId);
+        if (!mod) throw tsStore.rmlError ?? { kind: "not_found", message: "Ce mod n'est plus dans la liste de ResoniteModLoader.", retryAfter: null };
+        await tsStore.installRml(tsStore.communityOf(g), mod);
+      } else if (ref) {
+        await tsStore.install(tsStore.communityOf(g), ref.namespace, ref.name, m.modId);
+      }
       tsNotes.set(k, "Mis à jour.");
     } catch (e) {
       const err = asAppError(e);
@@ -799,7 +811,7 @@
               <span class="row-text">
                 <span class="row-name">{m.name}</span>
                 <span class="row-meta">
-                  {#if m.fileName}<span>{m.fileName.split("-")[0]}</span>{/if}
+                  {#if rmlIdOf(m.fileName)}<span>ResoniteModLoader</span>{:else if m.fileName}<span>{m.fileName.split("-")[0]}</span>{/if}
                   <span>{m.version ? `version ${m.version}` : "version sans numéro"}</span>
                   <span>{bytes(m.size)}</span>
                   <span>installé {ago(m.installedAt)}</span>

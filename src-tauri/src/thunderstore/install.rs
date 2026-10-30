@@ -1588,8 +1588,11 @@ impl ThunderstoreState {
             .get(&game_id)
             .map(|g| g.mods.values().filter_map(|m| m.file_name.clone().map(|f| (m.mod_id, f, m.version.clone()))).collect())
             .unwrap_or_default();
-        let mut out = Vec::new();
+        let mut out = self.rml_updates(&installed).await;
         for (mod_id, full, version) in installed {
+            if super::rml::rml_id_of(&full).is_some() {
+                continue;
+            }
             let Some((ns, name)) = full.split_once('-') else { continue };
             if let Ok(latest) = self.client.latest(ns, name).await
                 && version.as_deref() != Some(latest.version_number.as_str())
@@ -1935,7 +1938,7 @@ pub(crate) mod tests {
         Arc::new(|_| {})
     }
 
-    fn state_for(base: &str, tag: &str) -> ThunderstoreState {
+    pub(crate) fn state_for(base: &str, tag: &str) -> ThunderstoreState {
         let s = ThunderstoreState::new(base.trim_end_matches("/v1"), tempdir(tag).join("installed-thunderstore.json"));
         // Les règles des jeux livrées avec ModStudio (le faux serveur ne les sert pas).
         *s.ecosystem.try_lock().unwrap() = Some(Arc::new(Ecosystem::bundled()));

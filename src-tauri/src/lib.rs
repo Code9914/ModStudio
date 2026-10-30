@@ -117,6 +117,9 @@ pub fn run() {
             thunderstore::ts_updates,
             thunderstore::ts_reveal,
             thunderstore::ts_loader,
+            thunderstore::rml_mods,
+            thunderstore::rml_status,
+            thunderstore::rml_install,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de ModStudio");

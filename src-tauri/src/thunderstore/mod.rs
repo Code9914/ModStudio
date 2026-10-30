@@ -4,6 +4,7 @@
 pub mod api;
 pub mod ecosystem;
 pub mod install;
+pub mod rml;
 
 use std::collections::HashMap;
 use std::fs;
@@ -37,6 +38,8 @@ pub struct ThunderstoreState {
     /// Ce que chaque jeu demande pour charger ses mods (et sa copie sur le disque).
     pub ecosystem: tokio::sync::Mutex<Option<Arc<Ecosystem>>>,
     pub ecosystem_path: PathBuf,
+    /// Mods de ResoniteModLoader (liste vérifiée de la communauté).
+    pub rml: rml::RmlSource,
 }
 
 impl ThunderstoreState {
@@ -48,6 +51,7 @@ impl ThunderstoreState {
             communities: Mutex::new(None),
             ecosystem: tokio::sync::Mutex::new(None),
             ecosystem_path: library_path.with_file_name("thunderstore-ecosystem.json"),
+            rml: rml::RmlSource::new(rml::MANIFEST_URL, library_path.with_file_name("rml-manifest.json")),
             library_path,
         }
     }
@@ -234,6 +238,31 @@ pub async fn ts_updates(state: State<'_, AppState>, game_id: i64) -> AppResult<V
 #[tauri::command]
 pub async fn ts_loader(state: State<'_, AppState>, game_id: i64) -> AppResult<TsLoader> {
     state.thunderstore.loader(game_id).await
+}
+
+/// Mods de la liste vérifiée de ResoniteModLoader (Resonite).
+#[tauri::command]
+pub async fn rml_mods(state: State<'_, AppState>, refresh: Option<bool>) -> AppResult<Vec<rml::RmlMod>> {
+    Ok(state.thunderstore.rml.catalog(refresh.unwrap_or(false)).await?.mods.clone())
+}
+
+#[tauri::command]
+pub fn rml_status(state: State<'_, AppState>) -> Option<rml::RmlStatus> {
+    state.thunderstore.rml_status()
+}
+
+#[tauri::command]
+pub async fn rml_install(
+    state: State<'_, AppState>,
+    id: String,
+    version: Option<String>,
+    on_event: Channel<InstallEvent>,
+) -> AppResult<TsInstalled> {
+    let emit: Arc<dyn Fn(InstallEvent) + Send + Sync> = Arc::new(move |e| {
+        let _ = on_event.send(e);
+    });
+    let others = others(&state);
+    state.thunderstore.rml_install(&id, version, &others, emit).await
 }
 
 #[tauri::command]

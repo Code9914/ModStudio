@@ -5,10 +5,11 @@
   import { count, exact } from "$lib/format";
   import { nav } from "$lib/nav.svelte";
   import { PagedList } from "$lib/paged.svelte";
-  import { tsStore } from "$lib/thunderstore.svelte";
+  import { RML_COMMUNITY, tsStore } from "$lib/thunderstore.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
   import LoadMore from "./LoadMore.svelte";
+  import RmlModsList from "./RmlModsList.svelte";
   import Thumb from "./Thumb.svelte";
   import TsGameSetup from "./TsGameSetup.svelte";
 
@@ -55,6 +56,10 @@
   const hideMature = $derived(nav.settings?.hideMature === true);
   const items = $derived(hideMature ? list.items.filter((m) => !m.isNsfw) : list.items);
 
+  /** Resonite : un onglet pour les mods de ResoniteModLoader. */
+  const withRml = $derived(game.identifier === RML_COMMUNITY);
+  const tab = $derived(withRml ? nav.tsTab : "thunderstore");
+
   const sorts: { value: TsOrdering; label: string }[] = [
     { value: "most-downloaded", label: "Plus téléchargés" },
     { value: "top-rated", label: "Mieux notés" },
@@ -95,6 +100,20 @@
   <div class="body">
     {#key game.id}<TsGameSetup game={info} />{/key}
 
+    {#if withRml}
+      <div class="tabs" role="tablist" aria-label="Sources de mods">
+        <button role="tab" class="tab" aria-selected={tab === "thunderstore"} onclick={() => (nav.tsTab = "thunderstore")}>
+          Thunderstore <span class="muted">BepisLoader</span>
+        </button>
+        <button role="tab" class="tab" aria-selected={tab === "rml"} onclick={() => (nav.tsTab = "rml")}>
+          ResoniteModLoader <span class="muted">liste vérifiée</span>
+        </button>
+      </div>
+    {/if}
+
+    {#if tab === "rml"}
+      <RmlModsList game={info} />
+    {:else}
     <div class="toolbar">
       <label class="search">
         <span class="visually-hidden">Rechercher dans les mods de {info.name}</span>
@@ -159,6 +178,7 @@
     {/if}
 
     {#if list.items.length > 0}<LoadMore {list} noun="mods" />{/if}
+    {/if}
   </div>
 </div>
 
@@ -249,6 +269,43 @@
 
   .body {
     padding: 1.5rem 2.5rem 3rem;
+  }
+
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tab {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.6rem 0.9rem;
+    margin-bottom: -1px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  .tab .muted {
+    font-size: var(--t-xs);
+    font-weight: 500;
+  }
+
+  .tab:hover {
+    color: var(--text);
+  }
+
+  .tab[aria-selected="true"] {
+    color: var(--text);
+    border-bottom-color: var(--accent);
   }
 
   .toolbar {

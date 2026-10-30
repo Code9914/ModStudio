@@ -960,6 +960,77 @@ export const ts = {
   reveal: (gameId: number, modId: number | null = null) => call<null>("ts_reveal", { gameId, modId }),
 };
 
+// ---------------------------------------------------------------- ResoniteModLoader
+
+/** Mod demandé ou en conflit. */
+export interface RmlDep {
+  id: string;
+  name: string;
+  /** Version demandée (`^2.4.3`, `*`…). */
+  version: string;
+  optional: boolean;
+}
+
+export interface RmlVersion {
+  version: string;
+  changelog: string | null;
+  releaseUrl: string | null;
+  dependencies: RmlDep[];
+  conflicts: RmlDep[];
+  /** Où vont ses fichiers, relatifs au dossier du jeu. */
+  files: string[];
+}
+
+/** Mod de la liste vérifiée de ResoniteModLoader. */
+export interface RmlMod {
+  id: string;
+  /** Identifiant dans la bibliothèque Thunderstore de Resonite. */
+  modId: number;
+  name: string;
+  description: string;
+  category: string;
+  author: string;
+  authorUrl: string | null;
+  authorIcon: string | null;
+  source: string | null;
+  website: string | null;
+  tags: string[];
+  deprecated: boolean;
+  broken: boolean;
+  platforms: string[];
+  /** Peut se charger dans le jeu sur ce PC. */
+  compatible: boolean;
+  latest: string;
+  /** La plus récente d'abord. */
+  versions: RmlVersion[];
+}
+
+/** ResoniteModLoader dans le dossier de Resonite. */
+export interface RmlStatus {
+  present: boolean;
+  /** Installé par ModStudio. */
+  managed: boolean;
+  version: string | null;
+  /** Chargé par BepisLoader (Resonite Mod Loader Loader). */
+  viaBepis: boolean;
+  launchOption: string;
+}
+
+export const rml = {
+  mods: (refresh = false) => call<RmlMod[]>("rml_mods", { refresh }),
+  status: () => call<RmlStatus | null>("rml_status"),
+  install: (id: string, version: string | null, onProgress: (e: InstallEvent) => void) => {
+    const onEvent = new Channel<InstallEvent>();
+    onEvent.onmessage = onProgress;
+    return call<TsInstalled>("rml_install", { id, version, onEvent });
+  },
+};
+
+/** `rml:<id>` : mod de ResoniteModLoader dans la bibliothèque Thunderstore. */
+export function rmlIdOf(fileName: string | null | undefined): string | null {
+  return fileName?.startsWith("rml:") ? fileName.slice(4) : null;
+}
+
 /** Page d'un mod sur le site de Thunderstore. */
 export function tsPackageUrl(community: string, namespace: string, name: string) {
   return `https://thunderstore.io/c/${community}/p/${namespace}/${name}/`;

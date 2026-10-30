@@ -360,6 +360,27 @@ l'appli pour le hors-ligne (`scripts/trim-thunderstore-ecosystem.py`).
   (`WINEDLLOVERRIDES="winhttp=n,b" %command%`, ou `winmm`, `version`, `dwmapi`,
   `d3d12`, `hostfxr` selon le chargeur) est affichée sur la page du jeu.
 
+### ResoniteModLoader (Resonite)
+
+La page de Resonite a un deuxième onglet pour les mods de **ResoniteModLoader**
+(RML), l'autre chargeur de mods du jeu : ceux de la
+[liste vérifiée par la communauté](https://github.com/resonite-modding-group/resonite-mod-manifest)
+(celle de Resolute), avec recherche et catégories (Optimisation, Inspecteurs…).
+
+- **RML installé avec le premier mod** : `Libraries/ResoniteModLoader.dll`,
+  Harmony dans `rml_libs`, et le plugin « Resonite Mod Loader Loader »
+  (Thunderstore) qui le fait charger par BepisLoader : pas d'option
+  `-LoadAssembly` à ajouter dans Steam. Un RML installé à la main est gardé
+  tel quel.
+- **Chaque fichier vérifié** : l'empreinte SHA-256 publiée dans la liste est
+  contrôlée avant de placer le fichier (`rml_mods`, ou l'endroit indiqué par la
+  liste), téléchargé en HTTPS depuis la forge de l'auteur.
+- Mods nécessaires installés avec le mod, mods connus pour ne pas marcher
+  ensemble refusés, mods cassés ou faits pour les serveurs (headless) cachés et
+  refusés, un fichier identique déjà là est repris sans être retéléchargé.
+- Mises à jour, activer / désactiver et désinstaller comme les autres mods, dans
+  « Installés » avec ceux de Thunderstore.
+
 ## Obtenir ta clé API
 
 1. Ouvre <https://mod.io/me/access> et connecte-toi.
@@ -396,6 +417,7 @@ src-tauri/src/
     api.rs        jeux, mods, fiches, versions, README (API publique)
     ecosystem.rs  chargeur et règles d'installation de chaque jeu (+ copie embarquée)
     install.rs    dépendances, chargeur, rangement selon les règles, mises à jour
+    rml.rs        mods de ResoniteModLoader (liste vérifiée, empreintes, RML chargé par BepisLoader)
   games/          jeux installés sur ce PC :
     steam.rs      bibliothèques et jeux Steam
     epic.rs       jeux Epic Games
@@ -453,6 +475,12 @@ différents), moteur reconnu (en-tête PE, version de l'exécutable), rangement
 Unreal / Unity / Bethesda, `plugins.txt` activé puis restauré, et installation
 d'UE4SS contre un faux GitHub (empreinte, fichiers du jeu jamais touchés).
 
+Pour ResoniteModLoader : liste lue sans les fichiers douteux (adresse non
+HTTPS, empreinte mal formée, chemin qui sortirait du dossier du jeu), RML et
+Harmony installés avant le mod, RML installé à la main gardé, fichier abîmé
+refusé (empreinte SHA-256), mods cassés, de serveur ou en conflit refusés avant
+tout téléchargement, plugin BepInEx qui charge RML installé depuis Thunderstore.
+
 Pour Thunderstore : noms et versions vérifiés avant toute requête,
 téléchargements limités à `thunderstore.io` et son CDN, règles des jeux (BepInEx,
 MelonLoader et MelonLoader 0.7+, règles propres à Timberborn, BONELAB…, dossier
@@ -477,6 +505,9 @@ qui garde les réglages, conflits refusés sans rien toucher.
 - Se déconnecter révoque le jeton obtenu par e-mail. Un jeton créé à la main
   sur mod.io est seulement oublié : supprime-le sur mod.io/me/access pour le
   révoquer.
+- Les mods de ResoniteModLoader ne sont installés que depuis la liste vérifiée
+  par la communauté, en HTTPS, et chaque fichier doit avoir l'empreinte SHA-256
+  publiée dans la liste.
 - Les descriptions de mods (HTML, BBCode ou Markdown écrits par leurs auteurs)
   passent par DOMPurify, et l'appli applique une politique CSP stricte. Les liens s'ouvrent
   dans ton navigateur, jamais dans l'appli.

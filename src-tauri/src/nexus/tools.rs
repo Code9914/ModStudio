@@ -228,7 +228,7 @@ pub fn parse_be_builds(html: &str, arch: Arch) -> Vec<(u32, String)> {
     out
 }
 
-fn sha256_file(path: &std::path::Path) -> std::io::Result<String> {
+pub(crate) fn sha256_file(path: &std::path::Path) -> std::io::Result<String> {
     let mut f = File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 1 << 16];

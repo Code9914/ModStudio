@@ -21,6 +21,7 @@
   import TsGamesView from "$lib/components/TsGamesView.svelte";
   import TsModsView from "$lib/components/TsModsView.svelte";
   import TsModView from "$lib/components/TsModView.svelte";
+  import RmlModView from "$lib/components/RmlModView.svelte";
   import { tsStore } from "$lib/thunderstore.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import { updates as appUpdates } from "$lib/updates.svelte";
@@ -124,7 +125,7 @@
     if (typing) return;
     if ((event.key === "Escape" || (event.altKey && event.key === "ArrowLeft")) && nav.view.name !== "games") {
       const v = nav.view.name;
-      if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods" || v === "tsMod" || v === "tsMods") nav.back();
+      if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods" || v === "tsMod" || v === "tsMods" || v === "rmlMod") nav.back();
       else if (v === "nexusAccount" || v === "nexusTracked") nav.openNexusGames();
       else if (v !== "nexusGames" && v !== "tsGames") nav.openGames();
     }
@@ -172,7 +173,11 @@
     nav.view.name === "nexusGames" ||
       (onNexusGame && (!appearance.value.railGames || !nexusRail.some((g) => g.id === nav.nexusGame?.id))),
   );
-  const onTsGame = $derived(nav.view.name === "tsMods" || (nav.view.name === "tsMod" && nav.tsOrigin === "tsMods"));
+  const onTsGame = $derived(
+    nav.view.name === "tsMods" ||
+      (nav.view.name === "tsMod" && nav.tsOrigin === "tsMods") ||
+      (nav.view.name === "rmlMod" && nav.rmlOrigin === "tsMods"),
+  );
   const tsGamesCurrent = $derived(
     nav.view.name === "tsGames" ||
       (onTsGame && (!appearance.value.railGames || !tsRail.some((g) => g.id === nav.tsGame?.id))),
@@ -337,7 +342,8 @@
           aria-current={nav.view.name === "installed" ||
           (nav.view.name === "mod" && nav.modOrigin === "installed") ||
           (nav.view.name === "nexusMod" && nav.nexusOrigin === "installed") ||
-          (nav.view.name === "tsMod" && nav.tsOrigin === "installed")
+          (nav.view.name === "tsMod" && nav.tsOrigin === "installed") ||
+          (nav.view.name === "rmlMod" && nav.rmlOrigin === "installed")
             ? "page"
             : undefined}
           onclick={() => nav.openInstalled()}
@@ -450,6 +456,11 @@
       {#if nav.view.name === "tsMod" && nav.tsGame}
         {#key `${nav.view.namespace}-${nav.view.modName}`}
           <div class="pane"><TsModView game={nav.tsGame} namespace={nav.view.namespace} name={nav.view.modName} /></div>
+        {/key}
+      {/if}
+      {#if nav.view.name === "rmlMod" && nav.tsGame}
+        {#key nav.view.id}
+          <div class="pane"><RmlModView game={nav.tsGame} id={nav.view.id} /></div>
         {/key}
       {/if}
       {#if nav.view.name === "nexusTracked"}
