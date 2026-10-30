@@ -1,4 +1,4 @@
-# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.8)
+# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.9)
 
 ModStudio parcourt et installe les mods de [mod.io](https://mod.io) et de
 [Nexus Mods](https://www.nexusmods.com) depuis une appli de bureau
@@ -269,13 +269,13 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
   sombre / comme Windows, taille du texte, des vignettes, coins, raccourcis
   des jeux dans la barre latérale. Gardée sur l'ordinateur et appliquée avant
   le premier affichage.
-- **Suivre et recommander** (Nexus) : boutons « Suivre » et « Recommander »
+- **Suivre et recommander** (Nexus, v0.9) : boutons « Suivre » et « Recommander »
   sur la fiche d'un mod (refus de Nexus expliqués : mod pas encore
   téléchargé…), vue « Mods suivis » de tous les jeux.
 - **Descriptions Nexus** (v0.7) : balises `[/*]`, entités HTML (`&#92;`…),
   listes imbriquées ; un `[code]` d'une ligne reste dans la phrase.
 
-## Linux
+## Linux (v0.9)
 
 ModStudio est aussi publié pour Linux, à côté des installateurs Windows :
 
