@@ -27,10 +27,40 @@ export function plainText(input: string): string {
   return decodeEntities(input.replace(/\s*<br\s*\/?>\s*/gi, " ")).trim();
 }
 
-/** Code sur une ligne : dans le texte ; sur plusieurs : un bloc. */
-function code(body: string) {
-  const text = body.replace(/^\n+|\n+$/g, "");
-  return text.includes("\n") ? `<pre><code>${text}</code></pre>` : `<code>${text.trim()}</code>`;
+/** Début de ligne ou d'élément (rien à rattacher avant). */
+const LINE_START = /(?:^|\[\*\]|\[list(?:=[^\]]*)?\]|\[quote(?:=[^\]]*)?\])[ \t\n]*$/i;
+
+/**
+ * Les [code] sont mis de côté avant les autres balises (leur contenu reste
+ * tel quel), remplacés par des repères `\uE000n\uE001`.
+ *
+ * Sur plusieurs lignes, c'est un bloc. Sur une ligne, il reste dans le texte :
+ * beaucoup de descriptions (converties depuis Markdown) entourent un simple
+ * `.exe` de retours à la ligne. Ceux d'avant sont remplacés par une espace,
+ * sauf après une fin de phrase ; ceux d'après sont retirés si la suite est
+ * une ponctuation.
+ */
+function setCodeAside(s: string, codes: string[]): string {
+  let out = "";
+  let rest = s;
+  const re = /\[code\]([\s\S]*?)\[\/code\]/i;
+  for (let m = re.exec(rest); m; m = re.exec(rest)) {
+    let before = out + rest.slice(0, m.index);
+    let after = rest.slice(m.index + m[0].length);
+    const body = m[1].replace(/^\n+|\n+$/g, "");
+    if (body.includes("\n")) {
+      codes.push(`<pre><code>${body}</code></pre>`);
+    } else {
+      codes.push(`<code>${body.trim()}</code>`);
+      if (/\n[ \t\n]*$/.test(before) && !LINE_START.test(before) && !/[.!?][ \t\n]*$/.test(before)) {
+        before = before.replace(/[ \t\n]+$/, " ");
+      }
+      after = after.replace(/^[ \t]*\n[ \t\n]*(?=[.,;:!?)])/, "");
+    }
+    out = before + `\uE000${codes.length - 1}\uE001`;
+    rest = after;
+  }
+  return out + rest;
 }
 
 /** Seuls les liens web sont gardés ; le reste devient du texte. */
@@ -73,7 +103,6 @@ const RULES: [RegExp, string | ((...m: string[]) => string)][] = [
   // Listes imbriquées : la plus intérieure d'abord (corps sans autre [list]).
   [/\[list(?:=([^\]]*))?\]((?:(?!\[list[\]=])[\s\S])*?)\[\/list\]/gi, (_, kind, body) => list(kind, body)],
   [/\[quote(?:=[^\]]*)?\]([\s\S]*?)\[\/quote\]/gi, "<blockquote>$1</blockquote>"],
-  [/\[code\]([\s\S]*?)\[\/code\]/gi, (_, body) => code(body)],
   [/\[spoiler(?:=[^\]]*)?\]([\s\S]*?)\[\/spoiler\]/gi, "<details><summary>Spoiler</summary>$1</details>"],
   [/\[heading\]([\s\S]*?)\[\/heading\]/gi, "<h3>$1</h3>"],
   [/\[line\]/gi, "<hr>"],
@@ -86,7 +115,9 @@ const BLOCK = "(?:ul|ol|li|blockquote|pre|details|summary|h3|hr)";
 
 export function bbcodeToHtml(input: string): string {
   let s = input.replace(/\r\n?/g, "\n").replace(/\n?<br\s*\/?>\n?/gi, "\n");
-  s = escapeHtml(decodeEntities(s));
+  s = escapeHtml(decodeEntities(s)).replace(/[\uE000\uE001]/g, "");
+  const codes: string[] = [];
+  s = setCodeAside(s, codes);
   // Les balises imbriquées se résolvent de l'intérieur vers l'extérieur.
   for (let pass = 0; pass < 8; pass++) {
     const before = s;
@@ -96,6 +127,7 @@ export function bbcodeToHtml(input: string): string {
   s = s.replace(DROPPED, "");
   // Éléments de liste hors d'un [list] : une puce, sans la balise de fin.
   s = s.replace(/\[\/\*\]/g, "").replace(/\[\*\]/g, "• ");
+  s = s.replace(/\uE000(\d+)\uE001/g, (_, i) => codes[Number(i)]);
   s = s.replace(/\n/g, "<br>");
   // Pas de saut de ligne collé aux blocs.
   s = s.replace(new RegExp(`(?:<br>\\s*)+(<\\/?${BLOCK}\\b)`, "g"), "$1");
