@@ -1,4 +1,4 @@
-# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.5)
+# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.6)
 
 ModStudio parcourt et installe les mods de [mod.io](https://mod.io) et de
 [Nexus Mods](https://www.nexusmods.com) depuis une appli de bureau
@@ -210,8 +210,7 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
   - **Jeux Bethesda** (Skyrim, Fallout, Starfield, Oblivion) : contenu dans
     `Data`, plugins `.esp/.esm/.esl` ajoutés à la fin de `plugins.txt` (copie
     de sécurité faite une fois) et retirés à la désinstallation ; script
-    extender à la racine du jeu. Les installateurs à options (FOMOD) sont
-    refusés avec une explication.
+    extender à la racine du jeu.
 - **Outils de mods**, installés après confirmation, depuis leur page GitHub
   officielle (empreinte SHA-256 vérifiée) : **UE4SS** (version expérimentale,
   compatible Unreal 5.4+), **BepInEx 5** (Unity Mono), **MelonLoader** ; et
@@ -230,6 +229,28 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
   jeu à laquelle le fichier doit correspondre.
 - Après l'installation d'un mod qui a besoin d'un outil absent (UE4SS,
   MelonLoader…), ModStudio le signale et propose de l'installer.
+
+## Mods nécessaires, activation, profils, FOMOD (v0.6)
+
+- **Mods nécessaires** (Nexus) : la fiche d'un mod liste ceux qui sont sur
+  Nexus pour le même jeu ; cochés par défaut, ils s'installent avant le mod
+  (fichier conseillé, une page Nexus chacun pour un compte gratuit), marqués
+  « nécessaire à … ». À la désinstallation, ModStudio propose de retirer ceux
+  qui ne servent plus.
+- **Activer / désactiver** sans désinstaller (mod.io et Nexus) : les fichiers
+  sont mis de côté — dans `.modstudio-disabled` à la racine du dossier pour les
+  jeux à règles, que le jeu ne lit pas, sinon dans `disabled/` du dossier de
+  configuration — et reviennent d'un clic, sans jamais écraser un autre mod.
+  Les plugins Bethesda sont retirés puis remis dans `plugins.txt`.
+- **Profils** par jeu : ensembles de mods activés (« Principal », « Coop »…),
+  créés à partir de l'état actuel ; le profil actif suit les changements.
+- **Installateurs FOMOD** (`fomod/ModuleConfig.xml`, UTF-8 ou UTF-16) :
+  étapes, groupes (une option, au plus une, au moins une, toutes, au choix),
+  options obligatoires / conseillées / indisponibles, images et descriptions,
+  étapes et types qui dépendent des choix précédents (« flags »), conditions
+  sur les fichiers et plugins actifs du jeu, version du jeu, fichiers
+  obligatoires et conditionnels, priorités. Les destinations partent de `Data`
+  pour les jeux Bethesda. L'archive reste extraite le temps des choix.
 
 ## Obtenir ta clé API
 
@@ -251,6 +272,7 @@ src-tauri/src/
   install_commands.rs  commandes d'installation (dossiers, progression…)
   modio_sdk.rs    détection des jeux qui gèrent leurs mods via mod.io
   archive.rs      extraction zip / 7z protégée
+  toggle.rs       activer / désactiver un mod, profils
   nexus/          source Nexus Mods :
     client.rs     requêtes GraphQL v2 et REST v1, en-têtes Application-Name
     browse.rs     jeux, mods, fiches, fichiers
@@ -260,6 +282,7 @@ src-tauri/src/
     rules.rs      règles de Bonelab (pallets, MelonLoader, versions Quest)
     engine_rules.rs  rangement Unreal / Unity / Bethesda, plugins.txt
     tools.rs      outils de mods depuis GitHub (UE4SS, BepInEx, MelonLoader)
+    fomod.rs      installateurs FOMOD (lecture, conditions, fichiers choisis)
     local.rs      jeux installés reconnus, moteur, outil conseillé
   games/          jeux installés sur ce PC :
     steam.rs      bibliothèques et jeux Steam
@@ -340,7 +363,6 @@ d'UE4SS contre un faux GitHub (empreinte, fichiers du jeu jamais touchés).
 ## Idées pour la suite
 
 - Archives RAR pour Nexus Mods.
-- Installateurs à options (FOMOD) des jeux Bethesda.
 - Jeux GOG et Xbox (Game Pass).
 - Suivre ses mods Nexus (« Track ») et les recommander depuis l'appli.
 - Noter les mods (pouce haut / bas).

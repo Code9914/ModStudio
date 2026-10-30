@@ -4,8 +4,11 @@
     asAppError,
     nexus,
     type AppError,
+    type FomodInstaller,
     type NexusFile,
     type NexusGame,
+    type NexusInstallOutcome,
+    type NexusInstalled,
     type NexusModDetail,
     type ToolOffer,
   } from "$lib/api";
@@ -13,6 +16,7 @@
   import { nav } from "$lib/nav.svelte";
   import { nexusStore, recommendedFile, requirementMatches } from "$lib/nexus.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
+  import FomodWizard from "./FomodWizard.svelte";
   import Icon from "./Icon.svelte";
   import NexusFolderSetup from "./NexusFolderSetup.svelte";
   import NexusToolPrompt from "./NexusToolPrompt.svelte";
@@ -109,6 +113,51 @@
     run(file);
   }
 
+  // ------------------------------------------------------------ Installateurs FOMOD
+  /** Options à choisir pour terminer une installation. */
+  let fomod = $state<{
+    token: string;
+    installer: FomodInstaller;
+    modId: number;
+    name: string;
+    resolve: (r: NexusInstalled | null) => void;
+  } | null>(null);
+
+  /** Résultat d'une installation : affiche les options FOMOD s'il y en a à choisir. */
+  function settle(outcome: NexusInstallOutcome, modId: number, name: string): Promise<NexusInstalled | null> {
+    if (outcome.status === "installed") return Promise.resolve(outcome);
+    return new Promise((resolve) => {
+      fomod = { token: outcome.token, installer: outcome.installer, modId, name, resolve };
+    });
+  }
+
+  async function finishFomod(selections: number[][][]): Promise<string | null> {
+    const f = fomod;
+    if (!f) return null;
+    try {
+      const r = await nexusStore.finishFomod(game.id, f.modId, f.token, selections);
+      fomod = null;
+      f.resolve(r);
+      return null;
+    } catch (e) {
+      const err = asAppError(e);
+      // Choix incomplet : on reste dans l'installateur.
+      if (err.kind === "invalid_argument") return err.message;
+      fomod = null;
+      error = err;
+      f.resolve(null);
+      return null;
+    }
+  }
+
+  function cancelFomod() {
+    const f = fomod;
+    if (!f) return;
+    nexusStore.cancelFomod(f.token);
+    fomod = null;
+    f.resolve(null);
+  }
+
   /**
    * Installe les mods nécessaires cochés, l'un après l'autre (chacun passe par
    * la page Nexus pour un compte gratuit). Renvoie leurs noms, ou `null` si
@@ -122,7 +171,13 @@
       try {
         const file = recommendedFile(await nexus.listFiles(game.id, r.modId), gameLoaders);
         if (!file) throw { kind: "nexus_not_found", message: "aucun fichier à télécharger.", retryAfter: null };
-        const res = await nexusStore.request(game.id, game.domainName, r.modId, file.fileId, file.name, mod.modId);
+        const outcome = await nexusStore.request(game.id, game.domainName, r.modId, file.fileId, file.name, mod.modId);
+        const res = await settle(outcome, r.modId, r.modName);
+        if (!res) {
+          currentDep = null;
+          if (!error) note = `Installation annulée (mod nécessaire « ${r.modName} »).`;
+          return null;
+        }
         done.push(res.record.name);
         if (res.needsTool && !neededTool) neededTool = res.needsTool;
       } catch (e) {
@@ -152,7 +207,12 @@
     const deps = updating ? [] : await runDeps();
     if (deps === null) return;
     try {
-      const r = await nexusStore.request(game.id, game.domainName, mod.modId, file.fileId, file.name);
+      const outcome = await nexusStore.request(game.id, game.domainName, mod.modId, file.fileId, file.name);
+      const r = await settle(outcome, mod.modId, mod.name);
+      if (!r) {
+        if (!error) note = "Installation annulée.";
+        return;
+      }
       note = [
         updating ? "Mis à jour." : "Installé.",
         deps.length ? `Mods nécessaires installés avant lui : ${deps.join(", ")}.` : null,
@@ -396,6 +456,10 @@
 
   {#if error}<ErrorNotice {error} />{/if}
   {#if note}<p class="note small" role="status">{note}</p>{/if}
+
+  {#if fomod}
+    <FomodWizard installer={fomod.installer} modName={fomod.name} onfinish={finishFomod} oncancel={cancelFomod} />
+  {/if}
 
   {#if orphans.length}
     <div class="deps">

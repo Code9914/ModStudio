@@ -250,7 +250,7 @@
           {/if}
         </span>
       </button>
-      <p class="version muted">Version 0.5, client non officiel</p>
+      <p class="version muted">Version 0.6, client non officiel</p>
     </div>
   </nav>
 

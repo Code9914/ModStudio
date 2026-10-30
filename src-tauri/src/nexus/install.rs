@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use super::browse::check_domain;
 use super::engine_rules::{self, UnityLoader};
+use super::fomod;
 use super::local::{self, ToolOffer};
 use super::models::{DownloadLink, NexusFile};
 use super::rules::{self, RulePlan, GAME_DIR};
@@ -113,6 +114,159 @@ pub fn owned_by_others(libraries: &[&Library], game_id: i64, mod_id: i64) -> Has
         }
     }
     out
+}
+
+/// Résultat d'une installation : mod installé, ou options FOMOD à choisir.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+#[allow(clippy::large_enum_variant)] // valeur de retour éphémère, envoyée telle quelle à l'interface
+pub enum InstallOutcome {
+    Installed(NexusInstalled),
+    Choices(FomodPrompt),
+}
+
+#[cfg(test)]
+impl InstallOutcome {
+    pub fn done(self) -> NexusInstalled {
+        match self {
+            InstallOutcome::Installed(i) => i,
+            InstallOutcome::Choices(_) => panic!("options FOMOD à choisir"),
+        }
+    }
+}
+
+/// Installateur FOMOD à présenter, avec le jeton qui permet de le terminer.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FomodPrompt {
+    pub token: String,
+    pub installer: fomod::Installer,
+}
+
+/// Installation FOMOD en attente de choix : l'archive est déjà extraite.
+pub struct FomodSession {
+    req: InstallRequest,
+    file: NexusFile,
+    name: String,
+    logo: Option<String>,
+    installer: fomod::Installer,
+    /// Dossier qui contient le dossier `fomod`.
+    root: PathBuf,
+    job_dir: PathBuf,
+    staging: PathBuf,
+}
+
+/// Étape de l'installation après extraction.
+enum Stage {
+    Placed {
+        placed: Vec<installer::PlacedBatch>,
+        root: Option<String>,
+        detected_dir: Option<PathBuf>,
+        plugins: Vec<String>,
+    },
+    Choices {
+        installer: fomod::Installer,
+        root: PathBuf,
+    },
+}
+
+/// Mod placé, à enregistrer.
+struct Finished {
+    req: InstallRequest,
+    config: GameInstall,
+    file: NexusFile,
+    name: String,
+    logo: Option<String>,
+    old: Option<InstalledMod>,
+    engine_info: Option<EngineInfo>,
+    placed: Vec<installer::PlacedBatch>,
+    root: Option<String>,
+    detected_dir: Option<PathBuf>,
+    plugins: Vec<String>,
+}
+
+/// Place les fichiers : un lot par dossier touché (nouvelle version ou ancienne).
+fn place_plan(
+    config: &GameInstall,
+    old: Option<&InstalledMod>,
+    others: &HashMap<PathBuf, BTreeMap<String, String>>,
+    mut new_batches: BTreeMap<String, Vec<(PathBuf, String)>>,
+    detected_dir: Option<PathBuf>,
+) -> AppResult<Vec<installer::PlacedBatch>> {
+    let mut keys: BTreeSet<String> = new_batches.keys().cloned().collect();
+    if let Some(o) = old {
+        keys.insert(String::new());
+        keys.extend(o.parts.iter().map(|p| p.key.clone()));
+    }
+    let mut batches = Vec::new();
+    for key in keys {
+        let folder = match config.folder_for(&key) {
+            Some(f) => f.to_path_buf(),
+            None if key == GAME_DIR => detected_dir.clone().ok_or_else(|| AppError::NeedGameDir(config.game_name.clone()))?,
+            None => continue,
+        };
+        let (old_files, old_dirs) = match (old, key.as_str()) {
+            (Some(o), "") => (o.files.clone(), o.dirs.clone()),
+            (Some(o), k) => o
+                .parts
+                .iter()
+                .find(|p| p.key == k)
+                .map(|p| (p.files.clone(), p.dirs.clone()))
+                .unwrap_or_default(),
+            (None, _) => Default::default(),
+        };
+        batches.push(Batch {
+            others: others.get(&folder).cloned().unwrap_or_default(),
+            moves: new_batches.remove(&key).unwrap_or_default(),
+            key,
+            folder,
+            old_files,
+            old_dirs,
+        });
+    }
+    installer::place_batches(batches)
+}
+
+/// Fichiers choisis dans un installateur FOMOD → lots à placer. Les
+/// destinations FOMOD partent du dossier `Data` des jeux Bethesda, du dossier
+/// du jeu pour Unreal / Unity, et du dossier des mods sinon (dans le
+/// sous-dossier du mod pour ce rangement).
+fn fomod_batches(
+    config: &GameInstall,
+    domain: &str,
+    moves: Vec<(PathBuf, String)>,
+    mod_name: &str,
+    mod_id: i64,
+    old: Option<&InstalledMod>,
+) -> (BTreeMap<String, Vec<(PathBuf, String)>>, Vec<String>, Option<String>) {
+    let bethesda = config.rules.as_deref() == Some("bethesda") && engine::bethesda(domain).is_some();
+    let mut sub = None;
+    let prefix = if bethesda {
+        "Data/".to_string()
+    } else if config.rules.is_none() && config.layout == Layout::Subfolder {
+        let chosen = old.and_then(|o| o.root.clone()).unwrap_or_else(|| {
+            let preferred = installer::safe_name(mod_name);
+            if config.folder.join(&preferred).exists() { format!("{preferred}-{mod_id}") } else { preferred }
+        });
+        sub = Some(chosen.clone());
+        format!("{chosen}/")
+    } else {
+        String::new()
+    };
+    let mut plugins = Vec::new();
+    let moved: Vec<(PathBuf, String)> = moves
+        .into_iter()
+        .map(|(src, dest)| {
+            if bethesda && !dest.contains('/') {
+                let lower = dest.to_ascii_lowercase();
+                if lower.ends_with(".esp") || lower.ends_with(".esm") || lower.ends_with(".esl") {
+                    plugins.push(dest.clone());
+                }
+            }
+            (src, format!("{prefix}{dest}"))
+        })
+        .collect();
+    (BTreeMap::from([(String::new(), moved)]), plugins, sub)
 }
 
 impl NexusState {
@@ -257,7 +411,7 @@ impl NexusState {
         req: InstallRequest,
         other_library: &Library,
         emit: Arc<dyn Fn(InstallEvent) + Send + Sync>,
-    ) -> AppResult<NexusInstalled> {
+    ) -> AppResult<InstallOutcome> {
         check_domain(&req.game_domain)?;
         if req.game_id <= 0 || req.mod_id <= 0 || req.file_id <= 0 {
             return Err(AppError::InvalidArgument("identifiants invalides".into()));
@@ -328,29 +482,10 @@ impl NexusState {
             let lib = self.library.lock().expect("library");
             owned_by_others(&[&lib, other_library], req.game_id, mod_id)
         };
-        let mut old = config.mods.get(&mod_id).cloned();
-        if let Some(o) = old.as_mut().filter(|o| o.disabled) {
-            // Nouvelle version d'un mod désactivé : l'ancienne, mise de côté, disparaît.
-            let root = self.disabled_root();
-            toggle::discard(&config, o, &toggle::Ctx { store_root: &root, source: "nexus" });
-            o.files.clear();
-            o.dirs.clear();
-            o.parts.clear();
-        }
+        let old = self.previous_version(&config, mod_id);
         let mod_name = detail.summary.name.clone();
         let domain = req.game_domain.clone();
-        // Jeux rangés selon leur moteur : le dossier configuré est celui du jeu.
-        let engine_info = match config.rules.as_deref() {
-            Some("unreal" | "unity" | "bethesda") => Some(
-                local::detect_engine(&config.folder, &domain).ok_or_else(|| {
-                    AppError::UnknownLayout(format!(
-                        "ModStudio ne reconnaît plus le jeu dans {}. Vérifie le dossier du jeu.",
-                        config.folder.display()
-                    ))
-                })?,
-            ),
-            _ => None,
-        };
+        let engine_info = self.engine_for(&config, &domain)?;
         let loader = match &engine_info {
             Some(info) if config.rules.as_deref() == Some("unity") => {
                 let hints = if info.tools.is_empty() { self.hints(&domain).await } else { Default::default() };
@@ -361,6 +496,7 @@ impl NexusState {
             }
             _ => None,
         };
+        let game_state = self.fomod_game_state(&config, &domain, engine_info.as_ref());
         let file_name = file.uri.clone().unwrap_or_else(|| format!("{}.zip", file.name));
         let limit = installer::extraction_limit(file.bytes().max(0) as u64, 0);
         let blocking_emit = emit.clone();
@@ -368,8 +504,7 @@ impl NexusState {
         let (config_b, archive_b, job_b, old_b) = (config.clone(), archive_path.clone(), job_dir.clone(), old.clone());
         let (engine_b, domain_b) = (engine_info.clone(), domain.clone());
 
-        type Outcome = (Vec<installer::PlacedBatch>, Option<String>, Option<PathBuf>, Vec<String>);
-        let placed = tokio::task::spawn_blocking(move || -> AppResult<Outcome> {
+        let stage = tokio::task::spawn_blocking(move || -> AppResult<Stage> {
             let extracted = job_b.join("extracted");
             let needs_extract = config_b.rules.is_some() || config_b.layout != Layout::Archive;
             if needs_extract {
@@ -380,6 +515,20 @@ impl NexusState {
                 return Err(AppError::Cancelled);
             }
             blocking_emit(InstallEvent::Finishing);
+
+            // Installateur FOMOD : options à choisir (sauf BONELAB, qui a ses règles).
+            let fomod_allowed = config_b.rules.as_deref() != Some("bonelab") && needs_extract;
+            if let Some((froot, fconfig)) = fomod_allowed.then(|| fomod::find(&extracted)).flatten() {
+                let inst = fomod::parse(&froot, &fconfig, &game_state)?;
+                if inst.has_choices() {
+                    return Ok(Stage::Choices { installer: inst, root: froot });
+                }
+                // Pas de choix à faire : fichiers obligatoires et conditionnels.
+                let moves = fomod::expand(&froot, &fomod::resolve(&inst, &[])?)?;
+                let (batches, plugins, root) = fomod_batches(&config_b, &domain_b, moves, &mod_name, mod_id, old_b.as_ref());
+                let placed = place_plan(&config_b, old_b.as_ref(), &others, batches, None)?;
+                return Ok(Stage::Placed { placed, root, detected_dir: None, plugins });
+            }
 
             let mut root = None;
             let mut detected_dir = None;
@@ -446,54 +595,219 @@ impl NexusState {
                 }
                 new_batches = plan.batches;
             }
-
-            // Un lot par dossier touché (nouvelle version ou ancienne).
-            let mut keys: BTreeSet<String> = new_batches.keys().cloned().collect();
-            if let Some(o) = &old_b {
-                keys.insert(String::new());
-                keys.extend(o.parts.iter().map(|p| p.key.clone()));
-            }
-            let mut batches = Vec::new();
-            for key in keys {
-                let folder = match config_b.folder_for(&key) {
-                    Some(f) => f.to_path_buf(),
-                    None if key == GAME_DIR => detected_dir.clone().ok_or_else(|| AppError::NeedGameDir(config_b.game_name.clone()))?,
-                    None => continue,
-                };
-                let (old_files, old_dirs) = match (&old_b, key.as_str()) {
-                    (Some(o), "") => (o.files.clone(), o.dirs.clone()),
-                    (Some(o), k) => o
-                        .parts
-                        .iter()
-                        .find(|p| p.key == k)
-                        .map(|p| (p.files.clone(), p.dirs.clone()))
-                        .unwrap_or_default(),
-                    (None, _) => Default::default(),
-                };
-                batches.push(Batch {
-                    others: others.get(&folder).cloned().unwrap_or_default(),
-                    moves: new_batches.remove(&key).unwrap_or_default(),
-                    key,
-                    folder,
-                    old_files,
-                    old_dirs,
-                });
-            }
-            Ok((installer::place_batches(batches)?, root, detected_dir, plugins))
+            let placed = place_plan(&config_b, old_b.as_ref(), &others, new_batches, detected_dir.clone())?;
+            Ok(Stage::Placed { placed, root, detected_dir, plugins })
         })
         .await
         .map_err(|e| AppError::Io(e.to_string()))
         .and_then(|r| r);
-        cleanup();
-        let (placed, root, detected_dir, plugins) = placed?;
 
+        match stage {
+            Err(e) => {
+                cleanup();
+                Err(e)
+            }
+            Ok(Stage::Choices { installer, root }) => {
+                // Les fichiers extraits attendent les choix (voir `fomod_finish`).
+                let token = format!("{mod_id}-{}-{}", file.file_id, now());
+                let prompt = FomodPrompt { token: token.clone(), installer: installer.clone() };
+                self.fomods.lock().expect("fomods").insert(
+                    token,
+                    FomodSession {
+                        req,
+                        file,
+                        name: detail.summary.name.clone(),
+                        logo: detail.summary.thumbnail_url.clone().or(detail.summary.picture_url.clone()),
+                        installer,
+                        root,
+                        job_dir: job_dir.clone(),
+                        staging: staging.clone(),
+                    },
+                );
+                Ok(InstallOutcome::Choices(prompt))
+            }
+            Ok(Stage::Placed { placed, root, detected_dir, plugins }) => {
+                cleanup();
+                let done = self
+                    .record_install(Finished {
+                        req,
+                        config,
+                        file,
+                        name: detail.summary.name.clone(),
+                        logo: detail.summary.thumbnail_url.clone().or(detail.summary.picture_url.clone()),
+                        old,
+                        engine_info,
+                        placed,
+                        root,
+                        detected_dir,
+                        plugins,
+                    })
+                    .await?;
+                Ok(InstallOutcome::Installed(done))
+            }
+        }
+    }
+
+    /// Termine l'installation d'un mod à installateur FOMOD avec les options choisies.
+    pub async fn fomod_finish(
+        &self,
+        token: &str,
+        selections: Vec<Vec<Vec<usize>>>,
+        other_library: &Library,
+        emit: Arc<dyn Fn(InstallEvent) + Send + Sync>,
+    ) -> AppResult<NexusInstalled> {
+        let session = self.fomods.lock().expect("fomods").remove(token).ok_or(AppError::NotFound)?;
+        let req = session.req.clone();
+        let mod_id = req.mod_id;
+        let cleanup = |s: &FomodSession| {
+            let _ = fs::remove_dir_all(&s.job_dir);
+            let _ = fs::remove_dir(&s.staging);
+        };
+        let config = match self.library.lock().expect("library").games.get(&req.game_id).cloned() {
+            Some(c) => c,
+            None => {
+                cleanup(&session);
+                return Err(AppError::NoGameFolder);
+            }
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        {
+            let mut jobs = self.jobs.lock().expect("jobs");
+            if jobs.contains_key(&mod_id) {
+                drop(jobs);
+                // Garde la session : l'utilisateur pourra réessayer.
+                self.fomods.lock().expect("fomods").insert(token.to_string(), session);
+                return Err(AppError::InstallInProgress);
+            }
+            jobs.insert(mod_id, cancel);
+        }
+        let _guard = JobGuard { state: self, mod_id };
+        emit(InstallEvent::Finishing);
+
+        let others = {
+            let lib = self.library.lock().expect("library");
+            owned_by_others(&[&lib, other_library], req.game_id, mod_id)
+        };
+        let old = self.previous_version(&config, mod_id);
+        let domain = req.game_domain.clone();
+        let engine_info = match self.engine_for(&config, &domain) {
+            Ok(e) => e,
+            Err(e) => {
+                cleanup(&session);
+                return Err(e);
+            }
+        };
+        let (config_b, old_b, installer, root, name) =
+            (config.clone(), old.clone(), session.installer.clone(), session.root.clone(), session.name.clone());
+        let domain_b = domain.clone();
+        let placed = tokio::task::spawn_blocking(move || -> AppResult<(Vec<installer::PlacedBatch>, Option<String>, Vec<String>)> {
+            let moves = fomod::expand(&root, &fomod::resolve(&installer, &selections)?)?;
+            let (batches, plugins, sub) = fomod_batches(&config_b, &domain_b, moves, &name, mod_id, old_b.as_ref());
+            Ok((place_plan(&config_b, old_b.as_ref(), &others, batches, None)?, sub, plugins))
+        })
+        .await
+        .map_err(|e| AppError::Io(e.to_string()))
+        .and_then(|r| r);
+        let (placed, sub, plugins) = match placed {
+            Ok(p) => p,
+            // Choix refusés (règle d'un groupe) : la session reste pour corriger.
+            Err(e @ AppError::InvalidArgument(_)) => {
+                self.fomods.lock().expect("fomods").insert(token.to_string(), session);
+                return Err(e);
+            }
+            Err(e) => {
+                cleanup(&session);
+                return Err(e);
+            }
+        };
+        cleanup(&session);
+        self.record_install(Finished {
+            req,
+            config,
+            file: session.file,
+            name: session.name,
+            logo: session.logo,
+            old,
+            engine_info,
+            placed,
+            root: sub,
+            detected_dir: None,
+            plugins,
+        })
+        .await
+    }
+
+    /// Abandonne une installation FOMOD en attente de choix.
+    pub fn fomod_cancel(&self, token: &str) {
+        if let Some(s) = self.fomods.lock().expect("fomods").remove(token) {
+            let _ = fs::remove_dir_all(&s.job_dir);
+            let _ = fs::remove_dir(&s.staging);
+        }
+    }
+
+    /// Version déjà installée du mod. Si elle est désactivée, ses fichiers mis
+    /// de côté disparaissent et elle n'a plus de fichiers en place.
+    fn previous_version(&self, config: &GameInstall, mod_id: i64) -> Option<InstalledMod> {
+        let mut old = config.mods.get(&mod_id).cloned();
+        if let Some(o) = old.as_mut().filter(|o| o.disabled) {
+            let root = self.disabled_root();
+            toggle::discard(config, o, &toggle::Ctx { store_root: &root, source: "nexus" });
+            o.files.clear();
+            o.dirs.clear();
+            o.parts.clear();
+        }
+        old
+    }
+
+    /// Moteur du jeu, pour les jeux rangés selon leur moteur (le dossier
+    /// configuré est alors celui du jeu).
+    fn engine_for(&self, config: &GameInstall, domain: &str) -> AppResult<Option<EngineInfo>> {
+        Ok(match config.rules.as_deref() {
+            Some("unreal" | "unity" | "bethesda") => Some(local::detect_engine(&config.folder, domain).ok_or_else(|| {
+                AppError::UnknownLayout(format!(
+                    "ModStudio ne reconnaît plus le jeu dans {}. Vérifie le dossier du jeu.",
+                    config.folder.display()
+                ))
+            })?),
+            _ => None,
+        })
+    }
+
+    /// Ce qu'un installateur FOMOD peut vérifier sur le jeu (fichiers, plugins actifs, version).
+    fn fomod_game_state(&self, config: &GameInstall, domain: &str, info: Option<&EngineInfo>) -> fomod::GameState {
+        let beth = engine::bethesda(domain).filter(|_| config.rules.as_deref() == Some("bethesda"));
+        let active_plugins = beth
+            .and_then(|g| self.plugins_path(g).map(|p| (p, g.star_format)))
+            .and_then(|(p, star)| fs::read_to_string(p).ok().map(|t| (t, star)))
+            .map(|(text, star)| {
+                text.lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                    .filter(|l| !star || l.starts_with('*'))
+                    .map(|l| l.trim_start_matches('*').trim().to_ascii_lowercase())
+                    .collect()
+            })
+            .unwrap_or_default();
+        fomod::GameState {
+            data_dir: Some(if beth.is_some() { config.folder.join("Data") } else { config.folder.clone() }),
+            active_plugins,
+            game_version: info.and_then(|i| i.exe_version.clone()),
+            extender_present: beth.is_some_and(|g| info.is_some_and(|i| i.tools.iter().any(|t| t == g.extender))),
+        }
+    }
+
+    /// Enregistre un mod placé : plugins Bethesda, outil manquant, manifeste.
+    async fn record_install(&self, f: Finished) -> AppResult<NexusInstalled> {
+        let Finished { req, config, file, name, logo, old, engine_info, placed, root, detected_dir, plugins } = f;
+        let mod_id = req.mod_id;
+        let domain = req.game_domain.clone();
         let (auto, required_by) = dependency_state(req.required_by, old.as_ref());
         let mut record = InstalledMod {
             mod_id,
             auto,
             required_by,
-            name: detail.summary.name.clone(),
-            logo: detail.summary.thumbnail_url.clone().or(detail.summary.picture_url.clone()),
+            name,
+            logo,
             version: file.version.clone().filter(|v| !v.trim().is_empty()),
             modfile_id: file.file_id,
             size: file.bytes(),
@@ -895,7 +1209,7 @@ mod tests {
                 v.push(tag);
             }
         });
-        let out = s.install(request(None), &Library::default(), emit).await.unwrap();
+        let out = s.install(request(None), &Library::default(), emit).await.unwrap().done();
         assert_eq!(out.record.modfile_id, 316);
         assert_eq!(out.record.file_uid.as_deref(), Some("u316"));
         assert!(out.notice.is_none() && out.needs_tool.is_none());
@@ -936,7 +1250,7 @@ mod tests {
             Some(game.to_string_lossy().into_owned()),
         )
         .unwrap();
-        let out = s.install(request(None), &Library::default(), quiet()).await.unwrap();
+        let out = s.install(request(None), &Library::default(), quiet()).await.unwrap().done();
         assert_eq!(out.record.parts, vec![ModPart { key: "game".into(), files: vec!["Mods/LabFusion.dll".into()], dirs: vec![] }]);
         assert_eq!(out.needs_tool.map(|t| t.id).as_deref(), Some("melonloader"));
         assert_eq!(fs::read(game.join("Mods/LabFusion.dll")).unwrap(), b"dll");
@@ -1032,7 +1346,7 @@ mod tests {
             .unwrap();
         assert_eq!(g.rules.as_deref(), Some("unreal"));
 
-        let out = s.install(request_for(6534, "pilgrim"), &Library::default(), quiet()).await.unwrap();
+        let out = s.install(request_for(6534, "pilgrim"), &Library::default(), quiet()).await.unwrap().done();
         let mods = game.join("Pilgrim/Binaries/Win64/ue4ss/Mods/PushToCharge");
         assert_eq!(fs::read(mods.join("Scripts/main.lua")).unwrap(), b"print('hi')");
         assert!(mods.join("enabled.txt").is_file(), "UE4SS ne charge que les mods activés");
@@ -1069,7 +1383,7 @@ mod tests {
             .unwrap();
         assert_eq!(g.rules.as_deref(), Some("bethesda"));
 
-        let out = s.install(request_for(1704, "skyrimspecialedition"), &Library::default(), quiet()).await.unwrap();
+        let out = s.install(request_for(1704, "skyrimspecialedition"), &Library::default(), quiet()).await.unwrap().done();
         assert_eq!(fs::read(game.join("Data/BetterLanterns.esp")).unwrap(), b"esp");
         assert!(game.join("Data/textures/lantern.dds").is_file());
         assert!(game.join("Data/SKSE/Plugins/lanterns.dll").is_file());
@@ -1099,6 +1413,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fomod_installers_ask_then_install_the_chosen_options() {
+        let config = br#"<config><moduleName>Lanternes</moduleName>
+            <requiredInstallFiles><folder source="Core" destination=""/></requiredInstallFiles>
+            <installSteps order="Explicit"><installStep name="Style"><optionalFileGroups>
+              <group name="Couleur" type="SelectExactlyOne"><plugins order="Explicit">
+                <plugin name="Chaude"><description>Orange</description><files><file source="Warm\Lanterns.esp" destination="Lanterns.esp"/></files><typeDescriptor><type name="Recommended"/></typeDescriptor></plugin>
+                <plugin name="Froide"><description>Bleu</description><files><file source="Cold/Lanterns.esp" destination="Lanterns.esp"/></files><typeDescriptor><type name="Optional"/></typeDescriptor></plugin>
+              </plugins></group>
+            </optionalFileGroups></installStep></installSteps></config>"#;
+        let zip = make_zip(&[
+            ("Lanternes/fomod/ModuleConfig.xml", config.as_slice()),
+            ("Lanternes/Core/textures/lantern.dds", b"dds"),
+            ("Lanternes/Warm/Lanterns.esp", b"chaude"),
+            ("Lanternes/Cold/Lanterns.esp", b"froide"),
+        ]);
+        let (_server, mut s) = nexus_with(zip, 200);
+        let appdata = tempdir("fomod-appdata");
+        s.local_appdata = Some(appdata.clone());
+        s.set_key("cle").await.unwrap();
+        let game = tempdir("fomod-game");
+        fs::write(game.join("SkyrimSE.exe"), b"MZ").unwrap();
+        fs::create_dir_all(game.join("Data")).unwrap();
+        s.configure(1704, "skyrimspecialedition", "Skyrim SE".into(), None, game.to_string_lossy().into_owned(), Layout::Subfolder, false, None)
+            .unwrap();
+
+        let outcome = s.install(request_for(1704, "skyrimspecialedition"), &Library::default(), quiet()).await.unwrap();
+        let InstallOutcome::Choices(prompt) = outcome else { panic!("des choix étaient attendus") };
+        assert_eq!(prompt.installer.steps[0].groups[0].plugins[1].name, "Froide");
+        assert!(!game.join("Data/Lanterns.esp").exists(), "rien n'est installé avant les choix");
+
+        // Choix incomplet : refusé, la session reste.
+        let err = s.fomod_finish(&prompt.token, vec![vec![vec![]]], &Library::default(), quiet()).await.unwrap_err();
+        assert!(matches!(err, AppError::InvalidArgument(_)), "{err}");
+
+        let done = s.fomod_finish(&prompt.token, vec![vec![vec![1]]], &Library::default(), quiet()).await.unwrap();
+        assert_eq!(fs::read(game.join("Data/Lanterns.esp")).unwrap(), b"froide");
+        assert!(game.join("Data/textures/lantern.dds").is_file());
+        assert_eq!(done.record.plugins, vec!["Lanterns.esp"]);
+        assert!(fs::read_to_string(appdata.join("Skyrim Special Edition/plugins.txt")).unwrap().contains("*Lanterns.esp"));
+        assert!(!game.join(STAGING_DIR).exists(), "fichiers extraits supprimés");
+        assert!(s.fomods.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn required_mods_are_marked_and_offered_for_removal() {
         let zip = make_zip(&[("BoneLib/BoneLib.pallet.json", b"{}")]);
         let (_server, s) = nexus_with(zip, 200);
@@ -1109,7 +1467,7 @@ mod tests {
         // Le mod 148 est installé comme mod nécessaire du mod 200.
         let mut req = request(None);
         req.required_by = Some(200);
-        let out = s.install(req, &Library::default(), quiet()).await.unwrap();
+        let out = s.install(req, &Library::default(), quiet()).await.unwrap().done();
         assert!(out.record.auto);
         assert_eq!(out.record.required_by, vec![200]);
 

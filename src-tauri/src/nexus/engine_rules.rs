@@ -319,15 +319,14 @@ pub fn bethesda_plan(extracted: &Path, game: &BethesdaGame) -> AppResult<(RulePl
     let mut plugins = Vec::new();
     let extender = lower(game.extender);
 
-    if files.iter().any(|f| f.iter().any(|c| lower(c) == "fomod")) {
-        let content_outside = files.iter().any(|f| !f.iter().any(|c| lower(c) == "fomod") && f.len() > 1);
-        if content_outside {
-            return Err(AppError::UnknownLayout(
-                "Ce mod a un installateur avec des options (FOMOD) : ModStudio ne sait pas encore choisir à ta place. \
-                 Utilise Vortex ou Mod Organizer 2 pour celui-ci."
-                    .into(),
-            ));
-        }
+    // Installateur FOMOD trop enfoui dans l'archive pour être lu (ceux qu'on trouve passent par `fomod.rs`).
+    let installer = files.iter().any(|f| f.last().is_some_and(|n| lower(n) == "moduleconfig.xml"));
+    if installer {
+        return Err(AppError::UnknownLayout(
+            "Ce mod a un installateur avec des options (FOMOD) que ModStudio n'a pas trouvé à l'endroit habituel : \
+             installe-le à la main en suivant la page du mod."
+                .into(),
+        ));
     }
 
     let keep = |c: &str| {

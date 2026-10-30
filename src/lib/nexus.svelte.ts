@@ -11,9 +11,12 @@ import {
   type NexusFile,
   type NexusGame,
   type NexusGameSetup,
+  type NexusInstallOutcome,
   type NexusInstalled,
   type NexusUpdate,
   type NxmLink,
+  type FomodDep,
+  type FomodPlugin,
   type ProfileEdit,
   type ToolOffer,
 } from "./api";
@@ -28,7 +31,7 @@ interface Pending {
   gameId: number;
   fileId: number;
   requiredBy?: number;
-  resolve: (r: NexusInstalled) => void;
+  resolve: (r: NexusInstallOutcome) => void;
   reject: (e: AppError) => void;
 }
 
@@ -138,7 +141,7 @@ class NexusStore {
     fileId: number,
     fileName: string | null = null,
     requiredBy?: number,
-  ): Promise<NexusInstalled> {
+  ): Promise<NexusInstallOutcome> {
     if (this.premium) {
       try {
         return await this.#install(gameId, domain, modId, fileId, undefined, requiredBy);
@@ -156,7 +159,7 @@ class NexusStore {
     fileId: number,
     fileName: string | null,
     requiredBy?: number,
-  ): Promise<NexusInstalled> {
+  ): Promise<NexusInstallOutcome> {
     const k = `${domain}:${modId}`;
     this.#pending.get(k)?.reject(cancelled());
     return new Promise((resolve, reject) => {
@@ -227,17 +230,42 @@ class NexusStore {
           this.progress[k] = describe(e);
         },
       );
-      const game = this.games[gameId];
-      if (game) game.mods[modId] = result.record;
-      delete this.updates[k];
-      // Le dossier du jeu a pu être détecté pendant l'installation.
-      this.load().catch(() => {});
+      if (result.status === "installed") this.#installed(gameId, modId, result);
       return result;
     } catch (e) {
       throw asAppError(e);
     } finally {
       delete this.progress[k];
     }
+  }
+
+  #installed(gameId: number, modId: number, result: NexusInstalled) {
+    const game = this.games[gameId];
+    if (game) game.mods[modId] = result.record;
+    delete this.updates[keyOf(gameId, modId)];
+    // Le dossier du jeu a pu être détecté pendant l'installation.
+    this.load().catch(() => {});
+  }
+
+  /** Termine une installation FOMOD avec les options choisies. */
+  async finishFomod(gameId: number, modId: number, token: string, selections: number[][][]) {
+    const k = keyOf(gameId, modId);
+    this.progress[k] = { label: "Installation des options choisies…", ratio: null };
+    try {
+      const result = await api.fomodFinish(token, selections, (e) => {
+        this.progress[k] = describe(e);
+      });
+      this.#installed(gameId, modId, result);
+      return result;
+    } catch (e) {
+      throw asAppError(e);
+    } finally {
+      delete this.progress[k];
+    }
+  }
+
+  cancelFomod(token: string) {
+    api.fomodCancel(token).catch(() => {});
   }
 
   cancel(modId: number) {
@@ -391,6 +419,24 @@ export const engineNames: Record<string, string> = {
 export const launcherNames: Record<string, string> = { steam: "Steam", epic: "Epic Games" };
 
 /** L'outil correspond-il à un mod nécessaire indiqué sur la page d'un mod ? */
+/** Type d'une option FOMOD selon les choix déjà faits. */
+export function fomodType(plugin: FomodPlugin, flags: Record<string, string>): string {
+  return plugin.typePatterns.find((p) => fomodEval(p.dep, flags))?.type ?? plugin.typeDefault;
+}
+
+export function fomodEval(dep: FomodDep, flags: Record<string, string>): boolean {
+  switch (dep.kind) {
+    case "all":
+      return dep.items.every((d) => fomodEval(d, flags));
+    case "any":
+      return dep.items.length === 0 || dep.items.some((d) => fomodEval(d, flags));
+    case "flag":
+      return (flags[dep.flag] ?? "") === dep.value;
+    case "const":
+      return dep.value;
+  }
+}
+
 export function requirementMatches(tool: ToolOffer, requirementName: string): boolean {
   const n = requirementName.toLowerCase();
   if (tool.id === "ue4ss") return n.includes("ue4ss");

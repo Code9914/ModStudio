@@ -105,6 +105,7 @@ pub fn steam_roots() -> Vec<PathBuf> {
 }
 
 /// Valeur `REG_SZ` dans la sortie de `reg query`.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn reg_value(output: &str, name: &str) -> Option<String> {
     output.lines().find_map(|line| {
         let mut parts = line.trim().splitn(3, "    ");

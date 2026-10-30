@@ -14,6 +14,7 @@ pub mod account;
 pub mod browse;
 pub mod client;
 pub mod engine_rules;
+pub mod fomod;
 pub mod install;
 pub mod local;
 pub mod models;
@@ -39,7 +40,7 @@ use crate::games::{DetectedGame, InstalledGame};
 use crate::installer::{GameInstall, InstallEvent, InstalledTool, Layout, Library};
 use account::{NexusAuth, NexusAuthView};
 use client::NexusClient;
-use install::{GameSetup, InstallRequest, NexusInstalled, UpdateInfo};
+use install::{GameSetup, InstallOutcome, InstallRequest, NexusInstalled, UpdateInfo};
 use models::{NexusFile, NexusGame, NexusMod, NexusModDetail};
 
 /// Nom de l'entrée du trousseau qui garde la clé API Nexus.
@@ -74,6 +75,8 @@ pub struct NexusState {
     pub bepinex_builds: String,
     /// Versions d'outils déjà cherchées (date, version).
     pub releases: Mutex<HashMap<String, (i64, tools::ToolRelease)>>,
+    /// Installations FOMOD en attente des choix de l'utilisateur.
+    pub fomods: Mutex<HashMap<String, install::FomodSession>>,
 }
 
 impl NexusState {
@@ -96,6 +99,7 @@ impl NexusState {
             local_appdata: std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
             bepinex_builds: tools::BEPINEX_BUILDS.to_string(),
             releases: Mutex::new(HashMap::new()),
+            fomods: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -269,7 +273,7 @@ pub async fn nexus_install(
     nxm_expires: Option<i64>,
     required_by: Option<i64>,
     on_event: Channel<InstallEvent>,
-) -> AppResult<NexusInstalled> {
+) -> AppResult<InstallOutcome> {
     let emit: Arc<dyn Fn(InstallEvent) + Send + Sync> = Arc::new(move |e| {
         let _ = on_event.send(e);
     });
@@ -294,6 +298,28 @@ pub async fn nexus_install(
             emit,
         )
         .await
+}
+
+/// Termine une installation FOMOD avec les options choisies
+/// (`selections[étape][groupe]` = options cochées).
+#[tauri::command]
+pub async fn nexus_fomod_finish(
+    state: State<'_, AppState>,
+    token: String,
+    selections: Vec<Vec<Vec<usize>>>,
+    on_event: Channel<InstallEvent>,
+) -> AppResult<NexusInstalled> {
+    let emit: Arc<dyn Fn(InstallEvent) + Send + Sync> = Arc::new(move |e| {
+        let _ = on_event.send(e);
+    });
+    let modio = state.library.lock().expect("library").clone();
+    state.nexus.fomod_finish(&token, selections, &modio, emit).await
+}
+
+/// Abandonne une installation FOMOD (fichiers extraits supprimés).
+#[tauri::command]
+pub fn nexus_fomod_cancel(state: State<'_, AppState>, token: String) {
+    state.nexus.fomod_cancel(&token)
 }
 
 #[tauri::command]

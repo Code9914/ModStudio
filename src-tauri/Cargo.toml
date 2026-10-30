@@ -1,6 +1,6 @@
 [package]
 name = "modstudio"
-version = "0.5.2"
+version = "0.6.0"
 description = "Client de bureau non officiel pour mod.io et Nexus Mods"
 authors = []
 edition = "2024"
@@ -32,6 +32,8 @@ md-5 = "0.11.0"
 sha2 = "0.11.1"
 sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["bzip2", "deflate", "ppmd"] }
 tauri-plugin-dialog = "2.8.4"
+roxmltree = "0.20"
+base64 = "0.22"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

@@ -579,6 +579,52 @@ export interface NexusInstalled {
   needsTool: ToolOffer | null;
 }
 
+// ------------------------------------------------------------------ FOMOD
+
+/** Condition d'un installateur FOMOD sur les choix déjà faits. */
+export type FomodDep =
+  | { kind: "all"; items: FomodDep[] }
+  | { kind: "any"; items: FomodDep[] }
+  | { kind: "flag"; flag: string; value: string }
+  | { kind: "const"; value: boolean };
+
+export type FomodPluginType = "Required" | "Recommended" | "Optional" | "NotUsable" | "CouldBeUsable" | string;
+
+export interface FomodPlugin {
+  name: string;
+  description: string;
+  /** Image en `data:`. */
+  image: string | null;
+  flags: { name: string; value: string }[];
+  typeDefault: FomodPluginType;
+  typePatterns: { dep: FomodDep; type: FomodPluginType }[];
+}
+
+export type FomodGroupType = "SelectExactlyOne" | "SelectAtMostOne" | "SelectAtLeastOne" | "SelectAll" | "SelectAny" | string;
+
+export interface FomodGroup {
+  name: string;
+  type: FomodGroupType;
+  plugins: FomodPlugin[];
+}
+
+export interface FomodStep {
+  name: string;
+  visible: FomodDep | null;
+  groups: FomodGroup[];
+}
+
+export interface FomodInstaller {
+  moduleName: string;
+  image: string | null;
+  steps: FomodStep[];
+}
+
+/** Installation d'un fichier Nexus : installé, ou options FOMOD à choisir. */
+export type NexusInstallOutcome =
+  | ({ status: "installed" } & NexusInstalled)
+  | { status: "choices"; token: string; installer: FomodInstaller };
+
 export interface NexusUpdate {
   modId: number;
   superseded: boolean;
@@ -678,8 +724,15 @@ export const nexus = {
   ) => {
     const onEvent = new Channel<InstallEvent>();
     onEvent.onmessage = onProgress;
-    return call<NexusInstalled>("nexus_install", { ...p, onEvent });
+    return call<NexusInstallOutcome>("nexus_install", { ...p, onEvent });
   },
+  /** Termine une installation FOMOD : `selections[étape][groupe]` = options cochées. */
+  fomodFinish: (token: string, selections: number[][][], onProgress: (e: InstallEvent) => void) => {
+    const onEvent = new Channel<InstallEvent>();
+    onEvent.onmessage = onProgress;
+    return call<NexusInstalled>("nexus_fomod_finish", { token, selections, onEvent });
+  },
+  fomodCancel: (token: string) => call<null>("nexus_fomod_cancel", { token }),
   cancelInstall: (modId: number) => call<null>("nexus_cancel_install", { modId }),
   uninstall: (gameId: number, modId: number) => call<UninstallResult>("nexus_uninstall", { gameId, modId }),
   updates: (gameId: number) => call<NexusUpdate[]>("nexus_updates", { gameId }),

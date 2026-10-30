@@ -94,6 +94,8 @@ pub fn run() {
             nexus::nexus_configure_game,
             nexus::nexus_install,
             nexus::nexus_cancel_install,
+            nexus::nexus_fomod_finish,
+            nexus::nexus_fomod_cancel,
             nexus::nexus_uninstall,
             nexus::nexus_updates,
             nexus::nexus_reveal,
