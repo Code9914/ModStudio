@@ -4,6 +4,7 @@
   import { count, exact } from "$lib/format";
   import { nav } from "$lib/nav.svelte";
   import { launcherNames, nexusStore } from "$lib/nexus.svelte";
+  import { inview } from "$lib/paged.svelte";
   import { normalizeName, tsStore } from "$lib/thunderstore.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -171,10 +172,12 @@
       {/each}
     </ul>
     {#if all.length > shown}
-      <div class="more">
-        <button class="btn" onclick={() => (shown += PAGE)}>Afficher plus de jeux</button>
-        <span class="muted">{exact(shown)} sur {exact(all.length)}</span>
-      </div>
+      <!-- La suite s'affiche en défilant ; recréé à chaque ajout pour remplir l'écran. -->
+      {#key shown}
+        <div class="more" use:inview={() => (shown = Math.min(shown + PAGE, all.length))}>
+          <span class="muted">{exact(shown)} jeux affichés sur {exact(all.length)}</span>
+        </div>
+      {/key}
     {/if}
   {/if}
 </div>
