@@ -4,6 +4,35 @@
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+const NAMED: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0" };
+
+/**
+ * Entités HTML déjà présentes dans le texte (`&#92;` pour `\`, `&quot;`…) :
+ * remises en caractères avant l'échappement, sinon elles s'affichent telles
+ * quelles. Deux passes pour les entités échappées deux fois (`&amp;#92;`).
+ */
+function decodeEntities(s: string): string {
+  for (let pass = 0; pass < 2; pass++) {
+    s = s.replace(/&(?:#(\d{1,7})|#x([0-9a-f]{1,6})|(amp|lt|gt|quot|apos|nbsp));/gi, (m, dec, hex, name) => {
+      if (name) return NAMED[name.toLowerCase()];
+      const code = dec ? Number(dec) : parseInt(hex, 16);
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
+    });
+  }
+  return s;
+}
+
+/** Texte simple de Nexus (résumé d'un mod) : entités et `<br />` remis en clair. */
+export function plainText(input: string): string {
+  return decodeEntities(input.replace(/\s*<br\s*\/?>\s*/gi, " ")).trim();
+}
+
+/** Code sur une ligne : dans le texte ; sur plusieurs : un bloc. */
+function code(body: string) {
+  const text = body.replace(/^\n+|\n+$/g, "");
+  return text.includes("\n") ? `<pre><code>${text}</code></pre>` : `<code>${text.trim()}</code>`;
+}
+
 /** Seuls les liens web sont gardés ; le reste devient du texte. */
 function safeUrl(raw: string): string | null {
   const url = raw.trim().replace(/^["']|["']$/g, "").replace(/&amp;/g, "&");
@@ -44,7 +73,7 @@ const RULES: [RegExp, string | ((...m: string[]) => string)][] = [
   // Listes imbriquées : la plus intérieure d'abord (corps sans autre [list]).
   [/\[list(?:=([^\]]*))?\]((?:(?!\[list[\]=])[\s\S])*?)\[\/list\]/gi, (_, kind, body) => list(kind, body)],
   [/\[quote(?:=[^\]]*)?\]([\s\S]*?)\[\/quote\]/gi, "<blockquote>$1</blockquote>"],
-  [/\[code\]([\s\S]*?)\[\/code\]/gi, "<pre><code>$1</code></pre>"],
+  [/\[code\]([\s\S]*?)\[\/code\]/gi, (_, body) => code(body)],
   [/\[spoiler(?:=[^\]]*)?\]([\s\S]*?)\[\/spoiler\]/gi, "<details><summary>Spoiler</summary>$1</details>"],
   [/\[heading\]([\s\S]*?)\[\/heading\]/gi, "<h3>$1</h3>"],
   [/\[line\]/gi, "<hr>"],
@@ -57,7 +86,7 @@ const BLOCK = "(?:ul|ol|li|blockquote|pre|details|summary|h3|hr)";
 
 export function bbcodeToHtml(input: string): string {
   let s = input.replace(/\r\n?/g, "\n").replace(/\n?<br\s*\/?>\n?/gi, "\n");
-  s = escapeHtml(s);
+  s = escapeHtml(decodeEntities(s));
   // Les balises imbriquées se résolvent de l'intérieur vers l'extérieur.
   for (let pass = 0; pass < 8; pass++) {
     const before = s;

@@ -2,7 +2,7 @@
   import DOMPurify from "dompurify";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { asAppError, nexus, nexusModUrl, type AppError, type NexusFile, type NexusGame, type NexusModDetail } from "$lib/api";
-  import { bbcodeToHtml } from "$lib/bbcode";
+  import { bbcodeToHtml, plainText } from "$lib/bbcode";
   import { ago, bytes, date, exact } from "$lib/format";
   import { nav } from "$lib/nav.svelte";
   import { fileCategories, isoToUnix, nexusStore, questFile } from "$lib/nexus.svelte";
@@ -137,7 +137,7 @@
         </div>
 
         {#if mod.summary}
-          <p class="lead">{mod.summary}</p>
+          <p class="lead">{plainText(mod.summary)}</p>
         {/if}
 
         {#if description}
@@ -385,6 +385,13 @@
     padding: 0.8rem;
     overflow-x: auto;
     font-size: var(--t-sm);
+    background: var(--raise);
+    border-radius: var(--r-sm);
+  }
+
+  .prose :global(:not(pre) > code) {
+    padding: 0.1em 0.4em;
+    font-size: 0.9em;
     background: var(--raise);
     border-radius: var(--r-sm);
   }
