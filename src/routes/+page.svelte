@@ -19,7 +19,7 @@
   import SettingsView from "$lib/components/SettingsView.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import { updates as appUpdates } from "$lib/updates.svelte";
-  import { nexusGameImage, type GameInstall, type NexusGame } from "$lib/api";
+  import { nexusGameImage, type GameInstall } from "$lib/api";
   import { nexusGameOf, nexusStore, welcomeDone } from "$lib/nexus.svelte";
 
   let startError = $state<AppError | null>(null);
@@ -109,32 +109,37 @@
     }
   }
 
-  // Barre latérale : les jeux qui ont des mods installés, puis le jeu ouvert s'il n'en a pas.
+  // Barre latérale : seulement les jeux qui ont au moins un mod installé.
   const hasMods = (g: GameInstall) => Object.keys(g.mods).length > 0;
   const byName = (a: { name: string | null }, b: { name: string | null }) =>
     (a.name ?? "").localeCompare(b.name ?? "", "fr", { sensitivity: "base" });
 
-  type RailGame = { id: number; name: string | null; icon: string | null };
-  const modioRail = $derived.by(() => {
-    const list: RailGame[] = Object.values(installs.games)
+  const modioRail = $derived(
+    Object.values(installs.games)
       .filter(hasMods)
       .map((g) => ({ id: g.gameId, name: g.gameName, icon: g.icon }))
-      .sort(byName);
-    const open = nav.game;
-    if (open && !list.some((g) => g.id === open.id))
-      list.push({ id: open.id, name: open.name, icon: open.icon?.thumb_64x64 ?? null });
-    return list;
-  });
+      .sort(byName),
+  );
 
-  const nexusRail = $derived.by(() => {
-    const list: NexusGame[] = Object.values(nexusStore.games)
+  const nexusRail = $derived(
+    Object.values(nexusStore.games)
       .filter((g) => g.domain && hasMods(g))
       .map(nexusGameOf)
-      .sort(byName);
-    const open = nav.nexusGame;
-    if (open && !list.some((g) => g.id === open.id)) list.push(open);
-    return list;
-  });
+      .sort(byName),
+  );
+
+  // Page d'un jeu (ou d'un de ses mods) ouverte depuis sa liste.
+  const onModioGame = $derived(nav.view.name === "mods" || (nav.view.name === "mod" && nav.modOrigin === "mods"));
+  const onNexusGame = $derived(
+    nav.view.name === "nexusMods" || (nav.view.name === "nexusMod" && nav.nexusOrigin === "nexusMods"),
+  );
+  // Jeu sans mod ouvert : « Jeux » reste en surbrillance.
+  const modioGamesCurrent = $derived(
+    nav.view.name === "games" || (onModioGame && !modioRail.some((g) => g.id === nav.game?.id)),
+  );
+  const nexusGamesCurrent = $derived(
+    nav.view.name === "nexusGames" || (onNexusGame && !nexusRail.some((g) => g.id === nav.nexusGame?.id)),
+  );
 
   /** Ouvre un jeu mod.io de la barre latérale (sa fiche est chargée au besoin). */
   async function openModioGame(id: number) {
@@ -163,7 +168,7 @@
       <li>
         <button
           class="nav-item"
-          aria-current={nav.view.name === "games" ? "page" : undefined}
+          aria-current={modioGamesCurrent ? "page" : undefined}
           disabled={!ready}
           onclick={() => nav.openGames()}
         >
@@ -175,10 +180,7 @@
           <li>
             <button
               class="nav-item sub"
-              aria-current={nav.game?.id === g.id &&
-              (nav.view.name === "mods" || (nav.view.name === "mod" && nav.modOrigin === "mods"))
-                ? "page"
-                : undefined}
+              aria-current={onModioGame && nav.game?.id === g.id ? "page" : undefined}
               onclick={() => openModioGame(g.id)}
             >
               {#if g.icon}
@@ -211,7 +213,7 @@
         <button
           class="nav-item"
           aria-label="Jeux Nexus Mods"
-          aria-current={nav.view.name === "nexusGames" ? "page" : undefined}
+          aria-current={nexusGamesCurrent ? "page" : undefined}
           onclick={() => nav.openNexusGames()}
         >
           <Icon name="grid" size={18} />Jeux
@@ -221,10 +223,7 @@
         <li>
           <button
             class="nav-item sub"
-            aria-current={nav.nexusGame?.id === g.id &&
-            (nav.view.name === "nexusMods" || (nav.view.name === "nexusMod" && nav.nexusOrigin === "nexusMods"))
-              ? "page"
-              : undefined}
+            aria-current={onNexusGame && nav.nexusGame?.id === g.id ? "page" : undefined}
             onclick={() => nav.openNexusGame(nav.nexusGame?.id === g.id ? nav.nexusGame : g)}
           >
             <img
