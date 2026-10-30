@@ -128,7 +128,7 @@ impl Installer {
 }
 
 /// Ce que l'installateur peut vérifier sur le jeu.
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GameState {
     /// Dossier où se trouvent les fichiers testés (`Data` des jeux Bethesda).
     pub data_dir: Option<PathBuf>,

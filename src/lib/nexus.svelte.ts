@@ -270,7 +270,10 @@ class NexusStore {
     this.refreshSetup(gameId);
   }
 
-  /** Termine une installation FOMOD avec les options choisies. */
+  /**
+   * Termine une installation en attente de choix (options FOMOD, archives à
+   * installer). Peut renvoyer un nouveau choix : l'archive choisie a ses options.
+   */
   async finishFomod(gameId: number, modId: number, token: string, selections: number[][][]) {
     const k = keyOf(gameId, modId);
     this.progress[k] = { label: "Installation des options choisies…", ratio: null };
@@ -278,7 +281,7 @@ class NexusStore {
       const result = await api.fomodFinish(token, selections, (e) => {
         this.progress[k] = describe(e);
       });
-      this.#installed(gameId, modId, result);
+      if (result.status === "installed") this.#installed(gameId, modId, result);
       return result;
     } catch (e) {
       throw asAppError(e);

@@ -1,6 +1,6 @@
-//! Extraction des archives téléchargées sur Nexus Mods (zip et 7z), avec les
-//! mêmes garde-fous que pour mod.io : pas de chemin qui sorte du dossier, pas
-//! d'archive démesurée, annulation possible.
+//! Extraction des archives téléchargées sur Nexus Mods (zip, 7z et RAR), avec
+//! les mêmes garde-fous que pour mod.io : pas de chemin qui sorte du dossier,
+//! pas d'archive démesurée, annulation possible.
 
 use std::fs::{self, File};
 use std::io::{self, Read};
@@ -46,9 +46,46 @@ pub fn extract(
     match detect(archive)? {
         ArchiveKind::Zip => installer::extract_zip(archive, dest, max_total, cancel, progress),
         ArchiveKind::SevenZip => extract_7z(archive, dest, max_total, cancel, progress),
-        ArchiveKind::Rar => Err(AppError::UnsupportedArchive("RAR".into())),
-        ArchiveKind::Unknown => Err(AppError::UnsupportedArchive("ce n'est pas une archive zip ou 7z".into())),
+        ArchiveKind::Rar => extract_rar(archive, dest, max_total, cancel, progress),
+        ArchiveKind::Unknown => Err(AppError::UnsupportedArchive("ce n'est pas une archive zip, 7z ou RAR".into())),
     }
+}
+
+/// Fichiers qui accompagnent souvent des archives sans rien installer
+/// (lisez-moi, captures d'écran).
+const SIDE_FILES: &[&str] = &["txt", "md", "pdf", "rtf", "nfo", "url", "htm", "html", "png", "jpg", "jpeg", "gif", "webp", "bmp"];
+
+/// Archives que contient un mod fait seulement d'archives (« une archive par
+/// version ou par option ») : à la racine, ou dans l'unique dossier qui
+/// l'enveloppe, avec au plus des lisez-moi et des images à côté. Vide si le
+/// mod contient autre chose.
+pub fn nested_archives(dir: &Path) -> Vec<PathBuf> {
+    let list = |d: &Path| -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = fs::read_dir(d).map(|it| it.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+        v.sort();
+        v
+    };
+    let mut entries = list(dir);
+    if let [only] = entries.as_slice()
+        && only.is_dir()
+    {
+        entries = list(&only.clone());
+    }
+    let mut archives = Vec::new();
+    for path in entries {
+        if path.is_dir() {
+            return Vec::new();
+        }
+        if detect(&path).is_ok_and(|k| k != ArchiveKind::Unknown) {
+            archives.push(path);
+            continue;
+        }
+        let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+        if !SIDE_FILES.contains(&ext.as_str()) {
+            return Vec::new();
+        }
+    }
+    archives
 }
 
 /// Nom d'entrée d'archive → chemin relatif sûr. `None` si le chemin sortirait
@@ -149,6 +186,91 @@ fn extract_7z(
     Ok(())
 }
 
+/// Extraction RAR (RAR 4 et 5, archives « solides ») avec le décompresseur
+/// officiel. Les liens symboliques ne sont jamais suivis : un lien créé par
+/// l'extraction est supprimé aussitôt.
+fn extract_rar(
+    archive: &Path,
+    dest: &Path,
+    max_total: u64,
+    cancel: &AtomicBool,
+    progress: &dyn Fn(u64, u64),
+) -> AppResult<()> {
+    use unrar::error::{Code, UnrarError};
+
+    let map = |e: UnrarError| match e.code {
+        Code::MissingPassword | Code::BadPassword => AppError::UnsupportedArchive("archive protégée par un mot de passe".into()),
+        Code::EOpen => AppError::UnsupportedArchive("archive RAR en plusieurs parties : il manque les autres parties".into()),
+        _ => AppError::BadArchive(format!("archive RAR illisible ({e})")),
+    };
+
+    // Premier passage : liste et taille totale, avant d'écrire quoi que ce soit.
+    let mut total: u64 = 0;
+    let mut size: u64 = 0;
+    let mut listing = unrar::Archive::new(archive).open_for_listing().map_err(map)?;
+    if listing.is_locked() || listing.has_encrypted_headers() {
+        return Err(AppError::UnsupportedArchive("archive protégée par un mot de passe".into()));
+    }
+    for entry in &mut listing {
+        let entry = entry.map_err(map)?;
+        if entry.is_split() {
+            return Err(AppError::UnsupportedArchive("archive RAR en plusieurs parties : il manque les autres parties".into()));
+        }
+        if entry.is_encrypted() {
+            return Err(AppError::UnsupportedArchive("archive protégée par un mot de passe".into()));
+        }
+        total += 1;
+        size = size.saturating_add(entry.unpacked_size);
+    }
+    if total == 0 {
+        return Err(AppError::BadArchive("archive RAR vide ou illisible".into()));
+    }
+    if size > max_total {
+        return Err(AppError::BadArchive("contenu bien plus gros qu'annoncé".into()));
+    }
+
+    fs::create_dir_all(dest).map_err(io_err)?;
+    let mut done: u64 = 0;
+    let mut written: u64 = 0;
+    let mut open = unrar::Archive::new(archive).open_for_processing().map_err(map)?;
+    while let Some(header) = open.read_header().map_err(map)? {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(AppError::Cancelled);
+        }
+        let name = header.entry().filename.to_string_lossy().into_owned();
+        let Some(rel) = safe_rel(&name) else {
+            return Err(AppError::BadArchive(format!("chemin dangereux dans l'archive : {name}")));
+        };
+        done += 1;
+        let out = dest.join(&rel);
+        if rel.as_os_str().is_empty() || header.entry().is_directory() {
+            if !rel.as_os_str().is_empty() {
+                fs::create_dir_all(&out).map_err(io_err)?;
+            }
+            open = header.skip().map_err(map)?;
+            continue;
+        }
+        if let Some(parent) = out.parent() {
+            fs::create_dir_all(parent).map_err(io_err)?;
+        }
+        open = header.extract_to(&out).map_err(map)?;
+        match fs::symlink_metadata(&out) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                let _ = fs::remove_file(&out);
+                return Err(AppError::BadArchive(format!("lien symbolique dans l'archive : {name}")));
+            }
+            Ok(meta) => written += meta.len(),
+            Err(_) => {}
+        }
+        if written > max_total {
+            return Err(AppError::BadArchive("contenu bien plus gros qu'annoncé".into()));
+        }
+        progress(done, total);
+    }
+    progress(total, total);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,7 +305,92 @@ mod tests {
         assert_eq!(detect(&txt).unwrap(), ArchiveKind::Unknown);
         let never = AtomicBool::new(false);
         let err = extract(&rar, &dir.join("out"), 1 << 20, &never, &|_, _| {}).unwrap_err();
-        assert!(matches!(err, AppError::UnsupportedArchive(_)));
+        assert!(matches!(err, AppError::BadArchive(_)), "archive tronquée : {err}");
+    }
+
+    /// Archive RAR de test (bibliothèque unrar), copiée sous le nom du fichier téléchargé.
+    fn rar_copy(name: &str, dir: &Path) -> PathBuf {
+        let path = dir.join(format!("{name}.part"));
+        fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/rar").join(name), &path).unwrap();
+        path
+    }
+
+    #[test]
+    fn extracts_rar_archives() {
+        let dir = tempdir("rar");
+        let never = AtomicBool::new(false);
+        let version = rar_copy("version.rar", &dir);
+        assert_eq!(detect(&version).unwrap(), ArchiveKind::Rar);
+        extract(&version, &dir.join("out"), 1 << 20, &never, &|_, _| {}).unwrap();
+        assert_eq!(fs::read_to_string(dir.join("out/VERSION")).unwrap(), "unrar-0.4.0");
+
+        let unicode = rar_copy("unicode-entry.rar", &dir);
+        extract(&unicode, &dir.join("uni"), 1 << 20, &never, &|_, _| {}).unwrap();
+        assert!(dir.join("uni/unicodefilename❤️.txt").is_file());
+
+        // Plus gros que la limite : refusé avant d'écrire quoi que ce soit.
+        let err = extract(&version, &dir.join("small"), 3, &never, &|_, _| {}).unwrap_err();
+        assert!(matches!(err, AppError::BadArchive(_)), "{err}");
+        assert!(!dir.join("small").exists());
+
+        // Annulée : arrêt avant le premier fichier.
+        let cancel = AtomicBool::new(true);
+        assert!(matches!(extract(&version, &dir.join("stop"), 1 << 20, &cancel, &|_, _| {}), Err(AppError::Cancelled)));
+    }
+
+    #[test]
+    fn refuses_protected_or_partial_rar_archives() {
+        let dir = tempdir("rar-bad");
+        let never = AtomicBool::new(false);
+        let err = extract(&rar_copy("crypted.rar", &dir), &dir.join("a"), 1 << 20, &never, &|_, _| {}).unwrap_err();
+        assert!(matches!(&err, AppError::UnsupportedArchive(m) if m.contains("mot de passe")), "{err}");
+        let err = extract(&rar_copy("archive.part1.rar", &dir), &dir.join("b"), 1 << 24, &never, &|_, _| {}).unwrap_err();
+        assert!(matches!(&err, AppError::UnsupportedArchive(m) if m.contains("plusieurs parties")), "{err}");
+    }
+
+    #[test]
+    fn finds_archives_inside_a_mod() {
+        let dir = tempdir("nested");
+        fs::write(dir.join("Version PC.zip"), make_zip(&[("a.txt", b"a")])).unwrap();
+        fs::write(dir.join("Version Quest.rar"), b"Rar!\x1A\x07\x01\x00").unwrap();
+        fs::write(dir.join("Lisez-moi.txt"), b"choisir une version").unwrap();
+        fs::write(dir.join("apercu.png"), b"png").unwrap();
+        let found = nested_archives(&dir);
+        let names: Vec<_> = found.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["Version PC.zip", "Version Quest.rar"]);
+
+        // Dans un dossier qui enveloppe tout.
+        let wrapped = tempdir("nested-wrap");
+        fs::create_dir(wrapped.join("Mod")).unwrap();
+        fs::write(wrapped.join("Mod/Mod.7z"), [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0, 4]).unwrap();
+        assert_eq!(nested_archives(&wrapped).len(), 1);
+
+        // Un mod avec d'autres fichiers n'est pas fait que d'archives.
+        fs::write(dir.join("plugin.dll"), b"MZ").unwrap();
+        assert!(nested_archives(&dir).is_empty());
+        let with_dir = tempdir("nested-dir");
+        fs::write(with_dir.join("a.zip"), make_zip(&[("a.txt", b"a")])).unwrap();
+        fs::create_dir(with_dir.join("textures")).unwrap();
+        assert!(nested_archives(&with_dir).is_empty());
+    }
+
+    #[test]
+    fn extracts_zips_with_other_compression_methods() {
+        use std::io::Write;
+        use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
+        let dir = tempdir("zip-methods");
+        let never = AtomicBool::new(false);
+        let text = "texte du mod ".repeat(200);
+        for method in [CompressionMethod::Bzip2, CompressionMethod::Zstd, CompressionMethod::Xz] {
+            let mut w = ZipWriter::new(io::Cursor::new(Vec::new()));
+            w.start_file("Mod/lisez-moi.txt", SimpleFileOptions::default().compression_method(method)).unwrap();
+            w.write_all(text.as_bytes()).unwrap();
+            let path = dir.join(format!("{method:?}.zip"));
+            fs::write(&path, w.finish().unwrap().into_inner()).unwrap();
+            let out = dir.join(format!("{method:?}"));
+            extract(&path, &out, 1 << 20, &never, &|_, _| {}).unwrap_or_else(|e| panic!("{method:?} : {e}"));
+            assert_eq!(fs::read_to_string(out.join("Mod/lisez-moi.txt")).unwrap(), text, "{method:?}");
+        }
     }
 
     #[test]

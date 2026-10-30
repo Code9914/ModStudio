@@ -40,7 +40,7 @@ use crate::games::{DetectedGame, InstalledGame};
 use crate::installer::{GameInstall, InstallEvent, InstalledTool, Layout, Library};
 use account::{NexusAuth, NexusAuthView};
 use client::NexusClient;
-use install::{GameSetup, InstallOutcome, InstallRequest, NexusInstalled, UpdateInfo};
+use install::{GameSetup, InstallOutcome, InstallRequest, UpdateInfo};
 use models::{NexusFile, NexusGame, NexusMod, NexusModDetail};
 
 /// Nom de l'entrée du trousseau qui garde la clé API Nexus.
@@ -314,7 +314,7 @@ pub async fn nexus_fomod_finish(
     token: String,
     selections: Vec<Vec<Vec<usize>>>,
     on_event: Channel<InstallEvent>,
-) -> AppResult<NexusInstalled> {
+) -> AppResult<InstallOutcome> {
     let emit: Arc<dyn Fn(InstallEvent) + Send + Sync> = Arc::new(move |e| {
         let _ = on_event.send(e);
     });

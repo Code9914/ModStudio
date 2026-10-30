@@ -177,7 +177,15 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
   et installe le fichier. Aucun autre
   gestionnaire de mods n'est lancé et le protocole `nxm://` n'est pas
   réquisitionné sur le système.
-- Archives **zip** et **7z** (RAR : pas encore).
+- Archives **zip** (y compris bzip2, LZMA, XZ, zstd, Deflate64), **7z** et
+  **RAR** (RAR 4 et 5, archives solides ; décompresseur officiel UnRAR). Les
+  archives protégées par mot de passe ou en plusieurs parties sont refusées
+  avec un message clair.
+- **Archive dans l'archive** : un fichier qui ne contient qu'une archive (avec
+  au plus un lisez-moi ou des images) est ouvert d'office, sur deux niveaux ;
+  s'il en contient plusieurs (une par version, par option…), ModStudio demande
+  lesquelles installer, puis les installe comme le fichier téléchargé (FOMOD,
+  règles du jeu).
 - **Bonelab** : rangement automatique. Le contenu (« pallets » : avatars,
   cartes, armes) va dans `AppData\LocalLow\Stress Level Zero\BONELAB\Mods`,
   les mods de code MelonLoader (`.dll`) dans le dossier du jeu (`Mods`,
@@ -283,7 +291,7 @@ src-tauri/src/
   installer.rs    téléchargement, MD5, extraction, placement, désinstallation
   install_commands.rs  commandes d'installation (dossiers, progression…)
   modio_sdk.rs    détection des jeux qui gèrent leurs mods via mod.io
-  archive.rs      extraction zip / 7z protégée
+  archive.rs      extraction zip / 7z / RAR protégée, archives imbriquées
   toggle.rs       activer / désactiver un mod, profils
   nexus/          source Nexus Mods :
     client.rs     requêtes GraphQL v2 et REST v1, en-têtes Application-Name
@@ -374,9 +382,7 @@ d'UE4SS contre un faux GitHub (empreinte, fichiers du jeu jamais touchés).
 
 ## Idées pour la suite
 
-- Archives RAR pour Nexus Mods.
 - Jeux GOG et Xbox (Game Pass).
 - Suivre ses mods Nexus (« Track ») et les recommander depuis l'appli.
 - Noter les mods (pouce haut / bas).
-- Profils de mods (activer ou désactiver un ensemble de mods d'un coup).
 - Build Linux (.AppImage, .deb) dans GitHub Actions.

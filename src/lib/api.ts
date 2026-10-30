@@ -737,7 +737,8 @@ export const nexus = {
   fomodFinish: (token: string, selections: number[][][], onProgress: (e: InstallEvent) => void) => {
     const onEvent = new Channel<InstallEvent>();
     onEvent.onmessage = onProgress;
-    return call<NexusInstalled>("nexus_fomod_finish", { token, selections, onEvent });
+    // Une archive choisie peut à son tour proposer des options : nouveau choix.
+    return call<NexusInstallOutcome>("nexus_fomod_finish", { token, selections, onEvent });
   },
   fomodCancel: (token: string) => call<null>("nexus_fomod_cancel", { token }),
   cancelInstall: (modId: number) => call<null>("nexus_cancel_install", { modId }),

@@ -143,17 +143,27 @@ pub struct FomodPrompt {
     pub installer: fomod::Installer,
 }
 
-/// Installation FOMOD en attente de choix : l'archive est déjà extraite.
-pub struct FomodSession {
+/// Installation en cours, téléchargée et extraite dans `job_dir`.
+struct Pending {
     req: InstallRequest,
     file: NexusFile,
     name: String,
     logo: Option<String>,
+    job_dir: PathBuf,
+    staging: PathBuf,
+}
+
+/// Installation en attente de choix : options FOMOD, ou archives à installer
+/// parmi celles que contient le fichier téléchargé.
+pub struct FomodSession {
+    pending: Pending,
     installer: fomod::Installer,
     /// Dossier qui contient le dossier `fomod`.
     root: PathBuf,
-    job_dir: PathBuf,
-    staging: PathBuf,
+    /// Archives proposées (une par option de `installer`), à extraire une fois choisies.
+    nested: Option<Vec<PathBuf>>,
+    /// Profondeur des archives proposées (archive dans l'archive…).
+    depth: u8,
 }
 
 /// Étape de l'installation après extraction.
@@ -168,7 +178,180 @@ enum Stage {
         installer: fomod::Installer,
         root: PathBuf,
     },
+    /// Le fichier ne contient que des archives : laquelle installer ?
+    Archives {
+        paths: Vec<PathBuf>,
+        depth: u8,
+    },
 }
+
+/// Archives imbriquées ouvertes d'office : au plus deux niveaux.
+const NESTED_DEPTH: u8 = 2;
+
+/// Ce qu'il faut pour placer les fichiers d'un mod extrait.
+#[derive(Clone)]
+struct PlanCtx {
+    config: GameInstall,
+    domain: String,
+    mod_id: i64,
+    mod_name: String,
+    old: Option<InstalledMod>,
+    /// Ancienne version désactivée, supprimée une fois la nouvelle en place.
+    set_aside: Option<InstalledMod>,
+    others: HashMap<PathBuf, BTreeMap<String, String>>,
+    engine: Option<EngineInfo>,
+    loader: Option<UnityLoader>,
+    game_state: fomod::GameState,
+    archive: PathBuf,
+    file_name: String,
+    job_dir: PathBuf,
+    limit: u64,
+}
+
+/// Choix entre les archives d'un fichier (présenté comme un installateur FOMOD).
+fn archive_choice(mod_name: &str, paths: &[PathBuf]) -> fomod::Installer {
+    let plugins = paths
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let file = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            fomod::Plugin {
+                name: p.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| file.clone()),
+                description: format!("Archive « {file} », contenue dans le fichier téléchargé."),
+                image: None,
+                flags: Vec::new(),
+                type_default: "Optional".into(),
+                type_patterns: Vec::new(),
+                files: vec![fomod::FileItem { source: i.to_string(), destination: None, folder: false, priority: 0 }],
+            }
+        })
+        .collect();
+    fomod::Installer {
+        module_name: mod_name.to_string(),
+        image: None,
+        steps: vec![fomod::Step {
+            name: "Ce fichier contient plusieurs archives".into(),
+            visible: None,
+            groups: vec![fomod::Group { name: "Archives à installer".into(), kind: "SelectAtLeastOne".into(), plugins }],
+        }],
+        required: Vec::new(),
+        conditional: Vec::new(),
+    }
+}
+
+/// Après l'extraction : archive imbriquée, installateur FOMOD, puis règles du
+/// jeu ou rangement choisi. `extracted` est absent si l'archive se copie telle quelle.
+fn plan_extracted(
+    ctx: &PlanCtx,
+    extracted: Option<&Path>,
+    depth: u8,
+    cancel: &AtomicBool,
+    emit: &(dyn Fn(InstallEvent) + Send + Sync),
+) -> AppResult<Stage> {
+    // Un fichier qui ne contient qu'une archive : on l'ouvre ; plusieurs : à choisir.
+    if let Some(dir) = extracted.filter(|_| depth < NESTED_DEPTH) {
+        let nested = archive::nested_archives(dir);
+        match nested.as_slice() {
+            [] => {}
+            [only] => {
+                let inner = ctx.job_dir.join(format!("nested-{depth}"));
+                let progress = |done: u64, total: u64| emit(InstallEvent::Extracting { done, total });
+                archive::extract(only, &inner, ctx.limit, cancel, &progress)?;
+                emit(InstallEvent::Finishing);
+                return plan_extracted(ctx, Some(&inner), depth + 1, cancel, emit);
+            }
+            _ => return Ok(Stage::Archives { paths: nested, depth }),
+        }
+    }
+    let config = &ctx.config;
+    let mod_id = ctx.mod_id;
+    let unpacked = || extracted.ok_or_else(|| AppError::Io("archive non extraite".into()));
+
+    // Installateur FOMOD : options à choisir (sauf BONELAB, qui a ses règles).
+    let fomod_allowed = config.rules.as_deref() != Some("bonelab");
+    if let Some((froot, fconfig)) = extracted.filter(|_| fomod_allowed).and_then(fomod::find) {
+        let inst = fomod::parse(&froot, &fconfig, &ctx.game_state)?;
+        if inst.has_choices() {
+            return Ok(Stage::Choices { installer: inst, root: froot });
+        }
+        // Pas de choix à faire : fichiers obligatoires et conditionnels.
+        let moves = fomod::expand(&froot, &fomod::resolve(&inst, &[])?, &ctx.job_dir.join("fomod-copies"))?;
+        let (batches, plugins, root) = fomod_batches(config, &ctx.domain, moves, &ctx.mod_name, mod_id, ctx.old.as_ref());
+        let placed = place_plan(config, ctx.old.as_ref(), &ctx.others, batches, None)?;
+        return Ok(Stage::Placed { placed, root, detected_dir: None, plugins });
+    }
+
+    let mut root = None;
+    let mut detected_dir = None;
+    let mut plugins = Vec::new();
+    let mut new_batches: BTreeMap<String, Vec<(PathBuf, String)>> = BTreeMap::new();
+    let mut ruled: Option<RulePlan> = None;
+    match (config.rules.as_deref(), &ctx.engine) {
+        (Some("bonelab"), _) => {
+            let plan = rules::bonelab_plan(unpacked()?, &ctx.mod_name)?;
+            if plan.needs_game_dir() && !config.extra_folders.contains_key(GAME_DIR) {
+                // Dossier du jeu pas encore indiqué : on le cherche.
+                detected_dir = Some(rules::detect_bonelab_dir().ok_or_else(|| AppError::NeedGameDir(config.game_name.clone()))?);
+            }
+            ruled = Some(plan);
+        }
+        (Some("unreal"), Some(info)) => {
+            let project = info.project.clone().unwrap_or_default();
+            ruled = Some(engine_rules::unreal_plan(unpacked()?, &config.folder, &project, &ctx.mod_name)?.0);
+        }
+        (Some("unity"), Some(info)) => {
+            let loader = ctx.loader.unwrap_or(UnityLoader::BepInEx);
+            ruled = Some(engine_rules::unity_plan(unpacked()?, loader, &ctx.mod_name, &info.tools)?.0);
+        }
+        (Some("bethesda"), Some(_)) => {
+            let game = engine::bethesda(&ctx.domain).ok_or_else(|| AppError::UnknownLayout("jeu Bethesda inconnu".into()))?;
+            let (plan, p) = engine_rules::bethesda_plan(unpacked()?, game)?;
+            plugins = p;
+            ruled = Some(plan);
+        }
+        _ => {
+            let empty = BTreeMap::new();
+            let (r, moves) = installer::layout_moves(&PlaceInput {
+                folder: &config.folder,
+                layout: config.layout,
+                mod_id,
+                name_id: &installer::safe_name(&ctx.mod_name),
+                archive: &ctx.archive,
+                filename: &ctx.file_name,
+                extracted,
+                old: ctx.old.as_ref(),
+                others: &empty,
+            })?;
+            root = r;
+            new_batches.insert(String::new(), moves);
+        }
+    }
+    if let Some(mut plan) = ruled {
+        // Fichiers vides à créer (`enabled.txt` d'UE4SS), sauf s'ils sont dans l'archive.
+        let generated = std::mem::take(&mut plan.generated);
+        let present: BTreeSet<String> = plan
+            .batches
+            .get("")
+            .map(|m| m.iter().map(|(_, d)| d.to_ascii_lowercase()).collect())
+            .unwrap_or_default();
+        let gen_dir = ctx.job_dir.join("generated");
+        for (i, rel) in generated.into_iter().enumerate() {
+            if present.contains(&rel.to_ascii_lowercase()) {
+                continue;
+            }
+            fs::create_dir_all(&gen_dir).map_err(installer::io_err)?;
+            let src = gen_dir.join(i.to_string());
+            fs::write(&src, b"").map_err(installer::io_err)?;
+            plan.push_root(src, rel);
+        }
+        new_batches = plan.batches;
+    }
+    let placed = place_plan(config, ctx.old.as_ref(), &ctx.others, new_batches, detected_dir.clone())?;
+    Ok(Stage::Placed { placed, root, detected_dir, plugins })
+}
+
+/// Jetons des installations en attente de choix.
+static SESSIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// Mod placé, à enregistrer.
 struct Finished {
@@ -479,16 +662,60 @@ impl NexusState {
         }
         emit(InstallEvent::Verifying);
 
-        // Fichiers des autres mods, à ne jamais écraser.
+        let mod_name = detail.summary.name.clone();
+        let logo = detail.summary.thumbnail_url.clone().or(detail.summary.picture_url.clone());
+        let file_name = file.uri.clone().unwrap_or_else(|| format!("{}.zip", file.name));
+        let limit = installer::extraction_limit(file.bytes().max(0) as u64, 0);
+        let ctx = match self.plan_ctx(&req, &config, &mod_name, &archive_path, &file_name, &job_dir, limit, other_library).await {
+            Ok(c) => c,
+            Err(e) => {
+                cleanup();
+                return Err(e);
+            }
+        };
+        let needs_extract = config.rules.is_some() || config.layout != Layout::Archive;
+        let (blocking_emit, blocking_cancel, ctx_b) = (emit.clone(), cancel.clone(), ctx.clone());
+        let stage = tokio::task::spawn_blocking(move || -> AppResult<Stage> {
+            let extracted = ctx_b.job_dir.join("extracted");
+            if needs_extract {
+                let progress = |done: u64, total: u64| blocking_emit(InstallEvent::Extracting { done, total });
+                archive::extract(&ctx_b.archive, &extracted, limit, &blocking_cancel, &progress)?;
+            }
+            if blocking_cancel.load(Ordering::Relaxed) {
+                return Err(AppError::Cancelled);
+            }
+            blocking_emit(InstallEvent::Finishing);
+            plan_extracted(&ctx_b, needs_extract.then_some(extracted.as_path()), 0, &blocking_cancel, &*blocking_emit)
+        })
+        .await
+        .map_err(|e| AppError::Io(e.to_string()))
+        .and_then(|r| r);
+        let pending = Pending { req, file, name: mod_name, logo, job_dir, staging };
+        self.conclude(stage, pending, ctx).await
+    }
+
+    /// Ce qu'il faut pour placer les fichiers : fichiers des autres mods (à ne
+    /// jamais écraser), version déjà installée, moteur et outil du jeu.
+    #[allow(clippy::too_many_arguments)]
+    async fn plan_ctx(
+        &self,
+        req: &InstallRequest,
+        config: &GameInstall,
+        mod_name: &str,
+        archive: &Path,
+        file_name: &str,
+        job_dir: &Path,
+        limit: u64,
+        other_library: &Library,
+    ) -> AppResult<PlanCtx> {
         let others = {
             let lib = self.library.lock().expect("library");
-            owned_by_others(&[&lib, other_library], req.game_id, mod_id)
+            owned_by_others(&[&lib, other_library], req.game_id, req.mod_id)
         };
-        let (old, set_aside) = Self::previous_version(&config, mod_id);
-        let mod_name = detail.summary.name.clone();
+        let (old, set_aside) = Self::previous_version(config, req.mod_id);
         let domain = req.game_domain.clone();
-        let engine_info = self.engine_for(&config, &domain)?;
-        let loader = match &engine_info {
+        let engine = self.engine_for(config, &domain)?;
+        let loader = match &engine {
             Some(info) if config.rules.as_deref() == Some("unity") => {
                 let hints = if info.tools.is_empty() { self.hints(&domain).await } else { Default::default() };
                 Some(match local::chosen_tool(req.game_id, info, &hints) {
@@ -498,148 +725,57 @@ impl NexusState {
             }
             _ => None,
         };
-        let game_state = self.fomod_game_state(&config, &domain, engine_info.as_ref());
-        let file_name = file.uri.clone().unwrap_or_else(|| format!("{}.zip", file.name));
-        let limit = installer::extraction_limit(file.bytes().max(0) as u64, 0);
-        let blocking_emit = emit.clone();
-        let blocking_cancel = cancel.clone();
-        let (config_b, archive_b, job_b, old_b) = (config.clone(), archive_path.clone(), job_dir.clone(), old.clone());
-        let (engine_b, domain_b) = (engine_info.clone(), domain.clone());
-
-        let stage = tokio::task::spawn_blocking(move || -> AppResult<Stage> {
-            let extracted = job_b.join("extracted");
-            let needs_extract = config_b.rules.is_some() || config_b.layout != Layout::Archive;
-            if needs_extract {
-                let progress = |done: u64, total: u64| blocking_emit(InstallEvent::Extracting { done, total });
-                archive::extract(&archive_b, &extracted, limit, &blocking_cancel, &progress)?;
-            }
-            if blocking_cancel.load(Ordering::Relaxed) {
-                return Err(AppError::Cancelled);
-            }
-            blocking_emit(InstallEvent::Finishing);
-
-            // Installateur FOMOD : options à choisir (sauf BONELAB, qui a ses règles).
-            let fomod_allowed = config_b.rules.as_deref() != Some("bonelab") && needs_extract;
-            if let Some((froot, fconfig)) = fomod_allowed.then(|| fomod::find(&extracted)).flatten() {
-                let inst = fomod::parse(&froot, &fconfig, &game_state)?;
-                if inst.has_choices() {
-                    return Ok(Stage::Choices { installer: inst, root: froot });
-                }
-                // Pas de choix à faire : fichiers obligatoires et conditionnels.
-                let moves = fomod::expand(&froot, &fomod::resolve(&inst, &[])?, &job_b.join("fomod-copies"))?;
-                let (batches, plugins, root) = fomod_batches(&config_b, &domain_b, moves, &mod_name, mod_id, old_b.as_ref());
-                let placed = place_plan(&config_b, old_b.as_ref(), &others, batches, None)?;
-                return Ok(Stage::Placed { placed, root, detected_dir: None, plugins });
-            }
-
-            let mut root = None;
-            let mut detected_dir = None;
-            let mut plugins = Vec::new();
-            let mut new_batches: BTreeMap<String, Vec<(PathBuf, String)>> = BTreeMap::new();
-            let mut ruled: Option<RulePlan> = None;
-            match (config_b.rules.as_deref(), &engine_b) {
-                (Some("bonelab"), _) => {
-                    let plan = rules::bonelab_plan(&extracted, &mod_name)?;
-                    if plan.needs_game_dir() && !config_b.extra_folders.contains_key(GAME_DIR) {
-                        // Dossier du jeu pas encore indiqué : on le cherche.
-                        detected_dir = Some(rules::detect_bonelab_dir().ok_or_else(|| AppError::NeedGameDir(config_b.game_name.clone()))?);
-                    }
-                    ruled = Some(plan);
-                }
-                (Some("unreal"), Some(info)) => {
-                    let project = info.project.clone().unwrap_or_default();
-                    ruled = Some(engine_rules::unreal_plan(&extracted, &config_b.folder, &project, &mod_name)?.0);
-                }
-                (Some("unity"), Some(info)) => {
-                    let loader = loader.unwrap_or(UnityLoader::BepInEx);
-                    ruled = Some(engine_rules::unity_plan(&extracted, loader, &mod_name, &info.tools)?.0);
-                }
-                (Some("bethesda"), Some(_)) => {
-                    let game = engine::bethesda(&domain_b).ok_or_else(|| AppError::UnknownLayout("jeu Bethesda inconnu".into()))?;
-                    let (plan, p) = engine_rules::bethesda_plan(&extracted, game)?;
-                    plugins = p;
-                    ruled = Some(plan);
-                }
-                _ => {
-                    let empty = BTreeMap::new();
-                    let (r, moves) = installer::layout_moves(&PlaceInput {
-                        folder: &config_b.folder,
-                        layout: config_b.layout,
-                        mod_id,
-                        name_id: &installer::safe_name(&mod_name),
-                        archive: &archive_b,
-                        filename: &file_name,
-                        extracted: needs_extract.then_some(extracted.as_path()),
-                        old: old_b.as_ref(),
-                        others: &empty,
-                    })?;
-                    root = r;
-                    new_batches.insert(String::new(), moves);
-                }
-            }
-            if let Some(mut plan) = ruled {
-                // Fichiers vides à créer (`enabled.txt` d'UE4SS), sauf s'ils sont dans l'archive.
-                let generated = std::mem::take(&mut plan.generated);
-                let present: BTreeSet<String> = plan
-                    .batches
-                    .get("")
-                    .map(|m| m.iter().map(|(_, d)| d.to_ascii_lowercase()).collect())
-                    .unwrap_or_default();
-                let gen_dir = job_b.join("generated");
-                for (i, rel) in generated.into_iter().enumerate() {
-                    if present.contains(&rel.to_ascii_lowercase()) {
-                        continue;
-                    }
-                    fs::create_dir_all(&gen_dir).map_err(installer::io_err)?;
-                    let src = gen_dir.join(i.to_string());
-                    fs::write(&src, b"").map_err(installer::io_err)?;
-                    plan.push_root(src, rel);
-                }
-                new_batches = plan.batches;
-            }
-            let placed = place_plan(&config_b, old_b.as_ref(), &others, new_batches, detected_dir.clone())?;
-            Ok(Stage::Placed { placed, root, detected_dir, plugins })
+        let game_state = self.fomod_game_state(config, &domain, engine.as_ref());
+        Ok(PlanCtx {
+            config: config.clone(),
+            domain,
+            mod_id: req.mod_id,
+            mod_name: mod_name.to_string(),
+            old,
+            set_aside,
+            others,
+            engine,
+            loader,
+            game_state,
+            archive: archive.to_path_buf(),
+            file_name: file_name.to_string(),
+            job_dir: job_dir.to_path_buf(),
+            limit,
         })
-        .await
-        .map_err(|e| AppError::Io(e.to_string()))
-        .and_then(|r| r);
+    }
 
+    /// Suite d'une étape : choix à faire (la session garde les fichiers
+    /// extraits), ou mod placé à enregistrer.
+    async fn conclude(&self, stage: AppResult<Stage>, pending: Pending, ctx: PlanCtx) -> AppResult<InstallOutcome> {
+        let cleanup = |p: &Pending| {
+            let _ = fs::remove_dir_all(&p.job_dir);
+            let _ = fs::remove_dir(&p.staging); // seulement s'il est vide
+        };
         match stage {
             Err(e) => {
-                cleanup();
+                cleanup(&pending);
                 Err(e)
             }
-            Ok(Stage::Choices { installer, root }) => {
-                // Les fichiers extraits attendent les choix (voir `fomod_finish`).
-                let token = format!("{mod_id}-{}-{}", file.file_id, now());
-                let prompt = FomodPrompt { token: token.clone(), installer: installer.clone() };
-                self.fomods.lock().expect("fomods").insert(
-                    token,
-                    FomodSession {
-                        req,
-                        file,
-                        name: detail.summary.name.clone(),
-                        logo: detail.summary.thumbnail_url.clone().or(detail.summary.picture_url.clone()),
-                        installer,
-                        root,
-                        job_dir: job_dir.clone(),
-                        staging: staging.clone(),
-                    },
-                );
-                Ok(InstallOutcome::Choices(prompt))
+            Ok(Stage::Choices { installer, root }) => Ok(self.open_session(pending, installer, root, None, 0)),
+            Ok(Stage::Archives { paths, depth }) => {
+                let installer = archive_choice(&pending.name, &paths);
+                let root = pending.job_dir.clone();
+                Ok(self.open_session(pending, installer, root, Some(paths), depth))
             }
             Ok(Stage::Placed { placed, root, detected_dir, plugins }) => {
-                cleanup();
+                cleanup(&pending);
+                let PlanCtx { config, old, set_aside, engine, .. } = ctx;
+                let Pending { req, file, name, logo, .. } = pending;
                 let done = self
                     .record_install(Finished {
                         req,
                         config,
                         file,
-                        name: detail.summary.name.clone(),
-                        logo: detail.summary.thumbnail_url.clone().or(detail.summary.picture_url.clone()),
+                        name,
+                        logo,
                         old,
                         set_aside,
-                        engine_info,
+                        engine_info: engine,
                         placed,
                         root,
                         detected_dir,
@@ -651,20 +787,37 @@ impl NexusState {
         }
     }
 
-    /// Termine l'installation d'un mod à installateur FOMOD avec les options choisies.
+    /// Garde les fichiers extraits en attendant les choix (voir `fomod_finish`).
+    fn open_session(
+        &self,
+        pending: Pending,
+        installer: fomod::Installer,
+        root: PathBuf,
+        nested: Option<Vec<PathBuf>>,
+        depth: u8,
+    ) -> InstallOutcome {
+        let n = SESSIONS.fetch_add(1, Ordering::Relaxed);
+        let token = format!("{}-{}-{n}", pending.req.mod_id, pending.file.file_id);
+        let prompt = FomodPrompt { token: token.clone(), installer: installer.clone() };
+        self.fomods.lock().expect("fomods").insert(token, FomodSession { pending, installer, root, nested, depth });
+        InstallOutcome::Choices(prompt)
+    }
+
+    /// Termine une installation en attente de choix : options FOMOD, ou
+    /// archives choisies (qui peuvent à leur tour proposer des options).
     pub async fn fomod_finish(
         &self,
         token: &str,
         selections: Vec<Vec<Vec<usize>>>,
         other_library: &Library,
         emit: Arc<dyn Fn(InstallEvent) + Send + Sync>,
-    ) -> AppResult<NexusInstalled> {
+    ) -> AppResult<InstallOutcome> {
         let session = self.fomods.lock().expect("fomods").remove(token).ok_or(AppError::NotFound)?;
-        let req = session.req.clone();
+        let req = session.pending.req.clone();
         let mod_id = req.mod_id;
         let cleanup = |s: &FomodSession| {
-            let _ = fs::remove_dir_all(&s.job_dir);
-            let _ = fs::remove_dir(&s.staging);
+            let _ = fs::remove_dir_all(&s.pending.job_dir);
+            let _ = fs::remove_dir(&s.pending.staging);
         };
         let config = match self.library.lock().expect("library").games.get(&req.game_id).cloned() {
             Some(c) => c,
@@ -682,39 +835,14 @@ impl NexusState {
                 self.fomods.lock().expect("fomods").insert(token.to_string(), session);
                 return Err(AppError::InstallInProgress);
             }
-            jobs.insert(mod_id, cancel);
+            jobs.insert(mod_id, cancel.clone());
         }
         let _guard = JobGuard { state: self, mod_id };
         emit(InstallEvent::Finishing);
 
-        let others = {
-            let lib = self.library.lock().expect("library");
-            owned_by_others(&[&lib, other_library], req.game_id, mod_id)
-        };
-        let (old, set_aside) = Self::previous_version(&config, mod_id);
-        let domain = req.game_domain.clone();
-        let engine_info = match self.engine_for(&config, &domain) {
-            Ok(e) => e,
-            Err(e) => {
-                cleanup(&session);
-                return Err(e);
-            }
-        };
-        let (config_b, old_b, installer, root, name) =
-            (config.clone(), old.clone(), session.installer.clone(), session.root.clone(), session.name.clone());
-        let scratch = session.job_dir.join("fomod-copies");
-        let domain_b = domain.clone();
-        let placed = tokio::task::spawn_blocking(move || -> AppResult<(Vec<installer::PlacedBatch>, Option<String>, Vec<String>)> {
-            let moves = fomod::expand(&root, &fomod::resolve(&installer, &selections)?, &scratch)?;
-            let (batches, plugins, sub) = fomod_batches(&config_b, &domain_b, moves, &name, mod_id, old_b.as_ref());
-            Ok((place_plan(&config_b, old_b.as_ref(), &others, batches, None)?, sub, plugins))
-        })
-        .await
-        .map_err(|e| AppError::Io(e.to_string()))
-        .and_then(|r| r);
-        let (placed, sub, plugins) = match placed {
-            Ok(p) => p,
-            // Choix refusés (règle d'un groupe) : la session reste pour corriger.
+        // Choix refusés (règle d'un groupe) : la session reste pour corriger.
+        let items = match fomod::resolve(&session.installer, &selections) {
+            Ok(items) => items,
             Err(e @ AppError::InvalidArgument(_)) => {
                 self.fomods.lock().expect("fomods").insert(token.to_string(), session);
                 return Err(e);
@@ -724,29 +852,54 @@ impl NexusState {
                 return Err(e);
             }
         };
-        cleanup(&session);
-        self.record_install(Finished {
-            req,
-            config,
-            file: session.file,
-            name: session.name,
-            logo: session.logo,
-            old,
-            set_aside,
-            engine_info,
-            placed,
-            root: sub,
-            detected_dir: None,
-            plugins,
+        let p = &session.pending;
+        let file_name = p.file.uri.clone().unwrap_or_else(|| format!("{}.zip", p.file.name));
+        let limit = installer::extraction_limit(p.file.bytes().max(0) as u64, 0);
+        let archive_path = p.job_dir.join("download.part");
+        let ctx = match self.plan_ctx(&req, &config, &p.name, &archive_path, &file_name, &p.job_dir, limit, other_library).await {
+            Ok(c) => c,
+            Err(e) => {
+                cleanup(&session);
+                return Err(e);
+            }
+        };
+        let (ctx_b, emit_b) = (ctx.clone(), emit.clone());
+        let (root, nested, depth) = (session.root.clone(), session.nested.clone(), session.depth);
+        let stage = tokio::task::spawn_blocking(move || -> AppResult<Stage> {
+            match nested {
+                // Archives choisies : extraites ensemble, puis installées comme un fichier téléchargé.
+                Some(paths) => {
+                    let dest = ctx_b.job_dir.join(format!("chosen-{depth}"));
+                    let progress = |done: u64, total: u64| emit_b(InstallEvent::Extracting { done, total });
+                    for i in items.iter().filter_map(|f| f.source.parse::<usize>().ok()) {
+                        if let Some(path) = paths.get(i) {
+                            archive::extract(path, &dest, limit, &cancel, &progress)?;
+                        }
+                    }
+                    emit_b(InstallEvent::Finishing);
+                    plan_extracted(&ctx_b, Some(&dest), depth + 1, &cancel, &*emit_b)
+                }
+                None => {
+                    let moves = fomod::expand(&root, &items, &ctx_b.job_dir.join("fomod-copies"))?;
+                    let config = &ctx_b.config;
+                    let (batches, plugins, sub) =
+                        fomod_batches(config, &ctx_b.domain, moves, &ctx_b.mod_name, mod_id, ctx_b.old.as_ref());
+                    let placed = place_plan(config, ctx_b.old.as_ref(), &ctx_b.others, batches, None)?;
+                    Ok(Stage::Placed { placed, root: sub, detected_dir: None, plugins })
+                }
+            }
         })
         .await
+        .map_err(|e| AppError::Io(e.to_string()))
+        .and_then(|r| r);
+        self.conclude(stage, session.pending, ctx).await
     }
 
-    /// Abandonne une installation FOMOD en attente de choix.
+    /// Abandonne une installation en attente de choix.
     pub fn fomod_cancel(&self, token: &str) {
         if let Some(s) = self.fomods.lock().expect("fomods").remove(token) {
-            let _ = fs::remove_dir_all(&s.job_dir);
-            let _ = fs::remove_dir(&s.staging);
+            let _ = fs::remove_dir_all(&s.pending.job_dir);
+            let _ = fs::remove_dir(&s.pending.staging);
         }
     }
 
@@ -1458,12 +1611,55 @@ mod tests {
         let err = s.fomod_finish(&prompt.token, vec![vec![vec![]]], &Library::default(), quiet()).await.unwrap_err();
         assert!(matches!(err, AppError::InvalidArgument(_)), "{err}");
 
-        let done = s.fomod_finish(&prompt.token, vec![vec![vec![1]]], &Library::default(), quiet()).await.unwrap();
+        let done = s.fomod_finish(&prompt.token, vec![vec![vec![1]]], &Library::default(), quiet()).await.unwrap().done();
         assert_eq!(fs::read(game.join("Data/Lanterns.esp")).unwrap(), b"froide");
         assert!(game.join("Data/textures/lantern.dds").is_file());
         assert_eq!(done.record.plugins, vec!["Lanterns.esp"]);
         assert!(fs::read_to_string(appdata.join("Skyrim Special Edition/plugins.txt")).unwrap().contains("*Lanterns.esp"));
         assert!(!game.join(STAGING_DIR).exists(), "fichiers extraits supprimés");
+        assert!(s.fomods.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_archive_inside_the_archive_is_opened() {
+        let inner = make_zip(&[("BaBaCorp.711/BaBaCorp.711.pallet.json", b"{}")]);
+        let zip = make_zip(&[("711 Sandbox/711 Sandbox PC.zip", inner.as_slice()), ("711 Sandbox/Lisez-moi.txt", b"PC")]);
+        let (_server, s) = nexus_with(zip, 200);
+        s.set_key("cle").await.unwrap();
+        let mods = tempdir("nested-one");
+        s.configure(rules::BONELAB, "bonelab", "BONELAB".into(), None, mods.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+        s.install(request(None), &Library::default(), quiet()).await.unwrap().done();
+        assert!(mods.join("BaBaCorp.711/BaBaCorp.711.pallet.json").is_file());
+        assert!(!mods.join(STAGING_DIR).exists());
+    }
+
+    #[tokio::test]
+    async fn several_archives_inside_the_archive_are_chosen() {
+        let pc = make_zip(&[("BaBaCorp.711/BaBaCorp.711.pallet.json", b"pc")]);
+        let quest = make_zip(&[("BaBaCorp.711Quest/BaBaCorp.711Quest.pallet.json", b"quest")]);
+        let zip = make_zip(&[("711 PC.zip", pc.as_slice()), ("711 QUEST.zip", quest.as_slice()), ("readme.txt", b"choisis")]);
+        let (_server, s) = nexus_with(zip, 200);
+        s.set_key("cle").await.unwrap();
+        let mods = tempdir("nested-many");
+        s.configure(rules::BONELAB, "bonelab", "BONELAB".into(), None, mods.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+
+        let InstallOutcome::Choices(prompt) = s.install(request(None), &Library::default(), quiet()).await.unwrap() else {
+            panic!("un choix d'archive était attendu")
+        };
+        let names: Vec<_> = prompt.installer.steps[0].groups[0].plugins.iter().map(|p| p.name.clone()).collect();
+        assert_eq!(names, ["711 PC", "711 QUEST"]);
+        assert!(!mods.join("BaBaCorp.711").exists(), "rien n'est installé avant le choix");
+
+        // Aucune archive cochée : refusé, la session reste.
+        let err = s.fomod_finish(&prompt.token, vec![vec![vec![]]], &Library::default(), quiet()).await.unwrap_err();
+        assert!(matches!(err, AppError::InvalidArgument(_)), "{err}");
+
+        s.fomod_finish(&prompt.token, vec![vec![vec![0]]], &Library::default(), quiet()).await.unwrap().done();
+        assert_eq!(fs::read(mods.join("BaBaCorp.711/BaBaCorp.711.pallet.json")).unwrap(), b"pc");
+        assert!(!mods.join("BaBaCorp.711Quest").exists());
+        assert!(!mods.join(STAGING_DIR).exists(), "fichiers extraits supprimés");
         assert!(s.fomods.lock().unwrap().is_empty());
     }
 

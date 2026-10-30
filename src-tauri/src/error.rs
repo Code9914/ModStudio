@@ -96,7 +96,7 @@ pub enum AppError {
     #[error("L'éditeur de ce jeu n'autorise pas les applications tierces comme ModStudio à accéder à ses mods. Tu peux les parcourir et t'y abonner sur mod.io.")]
     GameClosed,
 
-    #[error("Format d'archive pas encore pris en charge ({0}). Installe ce fichier à la main en suivant la page du mod.")]
+    #[error("ModStudio ne peut pas installer cette archive ({0}). Installe ce fichier à la main en suivant la page du mod.")]
     UnsupportedArchive(String),
 
     #[error("{0}")]

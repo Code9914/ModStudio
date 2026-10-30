@@ -145,6 +145,11 @@
     if (!f) return null;
     try {
       const r = await nexusStore.finishFomod(game.id, f.modId, f.token, selections);
+      if (r.status === "choices") {
+        // L'archive choisie a ses propres options : l'assistant continue.
+        fomod = { ...f, token: r.token, installer: r.installer };
+        return null;
+      }
       fomod = null;
       f.resolve(r);
       return null;
@@ -467,7 +472,9 @@
   {#if note}<p class="note small" role="status">{note}</p>{/if}
 
   {#if fomod}
-    <FomodWizard installer={fomod.installer} modName={fomod.name} onfinish={finishFomod} oncancel={cancelFomod} />
+    {#key fomod.token}
+      <FomodWizard installer={fomod.installer} modName={fomod.name} onfinish={finishFomod} oncancel={cancelFomod} />
+    {/key}
   {/if}
 
   {#if orphans.length}
