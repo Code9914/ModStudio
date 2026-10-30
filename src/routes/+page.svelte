@@ -19,8 +19,8 @@
   import SettingsView from "$lib/components/SettingsView.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import { updates as appUpdates } from "$lib/updates.svelte";
-  import { nexusGameImage } from "$lib/api";
-  import { nexusStore, welcomeDone } from "$lib/nexus.svelte";
+  import { nexusGameImage, type GameInstall, type NexusGame } from "$lib/api";
+  import { nexusGameOf, nexusStore, welcomeDone } from "$lib/nexus.svelte";
 
   let startError = $state<AppError | null>(null);
 
@@ -109,6 +109,44 @@
     }
   }
 
+  // Barre latérale : les jeux qui ont des mods installés, puis le jeu ouvert s'il n'en a pas.
+  const hasMods = (g: GameInstall) => Object.keys(g.mods).length > 0;
+  const byName = (a: { name: string | null }, b: { name: string | null }) =>
+    (a.name ?? "").localeCompare(b.name ?? "", "fr", { sensitivity: "base" });
+
+  type RailGame = { id: number; name: string | null; icon: string | null };
+  const modioRail = $derived.by(() => {
+    const list: RailGame[] = Object.values(installs.games)
+      .filter(hasMods)
+      .map((g) => ({ id: g.gameId, name: g.gameName, icon: g.icon }))
+      .sort(byName);
+    const open = nav.game;
+    if (open && !list.some((g) => g.id === open.id))
+      list.push({ id: open.id, name: open.name, icon: open.icon?.thumb_64x64 ?? null });
+    return list;
+  });
+
+  const nexusRail = $derived.by(() => {
+    const list: NexusGame[] = Object.values(nexusStore.games)
+      .filter((g) => g.domain && hasMods(g))
+      .map(nexusGameOf)
+      .sort(byName);
+    const open = nav.nexusGame;
+    if (open && !list.some((g) => g.id === open.id)) list.push(open);
+    return list;
+  });
+
+  /** Ouvre un jeu mod.io de la barre latérale (sa fiche est chargée au besoin). */
+  async function openModioGame(id: number) {
+    if (nav.game?.id === id) return nav.openGame(nav.game);
+    try {
+      nav.openGame(await api.getGame(id));
+    } catch {
+      // Hors ligne : ses mods restent accessibles dans « Installés ».
+      nav.openInstalled();
+    }
+  }
+
   const ready = $derived(nav.settings?.hasApiKey === true);
   const user = $derived(nav.auth?.user ?? null);
   const avatar = $derived(user?.avatar?.thumb_50x50 ?? user?.avatar?.thumb_100x100 ?? user?.avatar?.original ?? null);
@@ -132,21 +170,26 @@
           <Icon name="grid" size={18} />Jeux
         </button>
       </li>
-      {#if nav.game}
-        <li>
-          <button
-            class="nav-item sub"
-            aria-current={nav.view.name === "mods" || (nav.view.name === "mod" && nav.modOrigin === "mods")
-              ? "page"
-              : undefined}
-            onclick={() => nav.game && nav.openGame(nav.game)}
-          >
-            {#if nav.game.icon?.thumb_64x64}
-              <img src={nav.game.icon.thumb_64x64} alt="" width="18" height="18" />
-            {/if}
-            <span class="ellipsis">{nav.game.name}</span>
-          </button>
-        </li>
+      {#if ready}
+        {#each modioRail as g (g.id)}
+          <li>
+            <button
+              class="nav-item sub"
+              aria-current={nav.game?.id === g.id &&
+              (nav.view.name === "mods" || (nav.view.name === "mod" && nav.modOrigin === "mods"))
+                ? "page"
+                : undefined}
+              onclick={() => openModioGame(g.id)}
+            >
+              {#if g.icon}
+                <img src={g.icon} alt="" width="18" height="18" />
+              {:else}
+                <span class="icon-gap" aria-hidden="true"></span>
+              {/if}
+              <span class="ellipsis">{g.name}</span>
+            </button>
+          </li>
+        {/each}
       {/if}
       <li>
         <button
@@ -174,26 +217,27 @@
           <Icon name="grid" size={18} />Jeux
         </button>
       </li>
-      {#if nav.nexusGame}
+      {#each nexusRail as g (g.id)}
         <li>
           <button
             class="nav-item sub"
-            aria-current={nav.view.name === "nexusMods" || (nav.view.name === "nexusMod" && nav.nexusOrigin === "nexusMods")
+            aria-current={nav.nexusGame?.id === g.id &&
+            (nav.view.name === "nexusMods" || (nav.view.name === "nexusMod" && nav.nexusOrigin === "nexusMods"))
               ? "page"
               : undefined}
-            onclick={() => nav.nexusGame && nav.openNexusGame(nav.nexusGame)}
+            onclick={() => nav.openNexusGame(nav.nexusGame?.id === g.id ? nav.nexusGame : g)}
           >
             <img
-              src={nexusGameImage(nav.nexusGame.id, "thumbnail")}
+              src={nexusGameImage(g.id, "thumbnail")}
               alt=""
               width="18"
               height="18"
               onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = "hidden")}
             />
-            <span class="ellipsis">{nav.nexusGame.name}</span>
+            <span class="ellipsis">{g.name}</span>
           </button>
         </li>
-      {/if}
+      {/each}
     </ul>
 
     <ul class="nav">
@@ -336,6 +380,14 @@
     padding: 1.5rem 0.9rem 1.25rem;
     background: var(--panel);
     min-width: 0;
+    /* Beaucoup de jeux avec des mods : la barre défile. */
+    overflow: hidden auto;
+    scrollbar-width: thin;
+  }
+
+  .icon-gap {
+    width: 18px;
+    flex: none;
   }
 
   .wordmark {

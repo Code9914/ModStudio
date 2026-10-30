@@ -3,7 +3,7 @@
   import { nexus, nexusGameImage, type NexusGame, type NexusGameSort } from "$lib/api";
   import { count, exact } from "$lib/format";
   import { nav } from "$lib/nav.svelte";
-  import { launcherNames, nexusStore } from "$lib/nexus.svelte";
+  import { launcherNames, nexusGameOf, nexusStore } from "$lib/nexus.svelte";
   import { PagedList } from "$lib/paged.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -103,15 +103,7 @@
         {#each mine as g (g.gameId)}
           <button
             class="chip mine-chip"
-            onclick={() =>
-              nav.openNexusGame({
-                id: g.gameId,
-                name: g.gameName,
-                domainName: g.domain ?? "",
-                modCount: 0,
-                downloadCount: 0,
-                genre: null,
-              })}
+            onclick={() => nav.openNexusGame(nexusGameOf(g))}
           >
             <img src={nexusGameImage(g.gameId, "thumbnail")} alt="" width="18" height="18" />
             {g.gameName}

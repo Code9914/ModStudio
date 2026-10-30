@@ -429,6 +429,11 @@ class NexusStore {
 
 export const nexusStore = new NexusStore();
 
+/** Jeu Nexus d'après ses mods installés (ses chiffres sont chargés par sa page). */
+export function nexusGameOf(g: GameInstall): NexusGame {
+  return { id: g.gameId, name: g.gameName, domainName: g.domain ?? "", modCount: 0, downloadCount: 0, genre: null };
+}
+
 const WELCOME_KEY = "modstudio.nexusWelcomeDone";
 
 /** L'accueil Nexus du premier lancement a déjà été vu (clé ajoutée ou « Plus tard »). */

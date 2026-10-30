@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { api, asAppError, nexus, type AppError, type GameInstall, type InstalledMod } from "$lib/api";
-  import { engineNames, nexusStore } from "$lib/nexus.svelte";
+  import { engineNames, nexusGameOf, nexusStore } from "$lib/nexus.svelte";
   import NexusFolderSetup from "./NexusFolderSetup.svelte";
   import ModToggle from "./ModToggle.svelte";
   import ProfileBar from "./ProfileBar.svelte";
@@ -184,10 +184,6 @@
   const nxConfirming = new SvelteSet<string>();
   const nxRemoving = new SvelteSet<string>();
   const nxNotes = new SvelteMap<number, string>();
-
-  function nexusGameOf(g: GameInstall) {
-    return { id: g.gameId, name: g.gameName, domainName: g.domain ?? "", modCount: 0, downloadCount: 0, genre: null };
-  }
 
   function nexusOpen(g: GameInstall, m: InstalledMod) {
     if (!g.domain) return;
