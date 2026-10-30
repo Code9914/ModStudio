@@ -1,4 +1,4 @@
-# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.7)
+# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.8)
 
 ModStudio parcourt et installe les mods de [mod.io](https://mod.io) et de
 [Nexus Mods](https://www.nexusmods.com) depuis une appli de bureau
@@ -177,11 +177,11 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
   et installe le fichier. Aucun autre
   gestionnaire de mods n'est lancé et le protocole `nxm://` n'est pas
   réquisitionné sur le système.
-- Archives **zip** (y compris bzip2, LZMA, XZ, zstd, Deflate64), **7z** et
+- Archives **zip** (v0.8 : y compris bzip2, LZMA, XZ, zstd, Deflate64), **7z** et
   **RAR** (RAR 4 et 5, archives solides ; décompresseur officiel UnRAR). Les
   archives protégées par mot de passe ou en plusieurs parties sont refusées
   avec un message clair.
-- **Archive dans l'archive** : un fichier qui ne contient qu'une archive (avec
+- **Archive dans l'archive** (v0.8) : un fichier qui ne contient qu'une archive (avec
   au plus un lisez-moi ou des images) est ouvert d'office, sur deux niveaux ;
   s'il en contient plusieurs (une par version, par option…), ModStudio demande
   lesquelles installer, puis les installe comme le fichier téléchargé (FOMOD,
