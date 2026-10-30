@@ -32,7 +32,8 @@ pub fn content_folder(game_id: i64) -> Option<String> {
         _ => return None,
     };
     let (template, _) = installer::known_folder(modio_id)?;
-    installer::expand_env(template, |name| std::env::var(name).ok())
+    let prefix = crate::games::proton::game_prefix(crate::games::proton::BONELAB_APP);
+    crate::games::proton::expand(template, prefix.as_deref())
 }
 
 /// Ce qu'il faut déplacer, par dossier de destination (`""` : dossier des mods).

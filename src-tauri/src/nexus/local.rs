@@ -44,6 +44,8 @@ pub struct ToolOffer {
     pub update: Option<String>,
     /// Version précise demandée par les mods du jeu (`6.0.0-be.791`).
     pub required_version: Option<String>,
+    /// Sous Linux (Proton) : options de lancement pour que le chargeur soit chargé.
+    pub launch_option: Option<String>,
 }
 
 impl ToolOffer {
@@ -66,6 +68,7 @@ impl ToolOffer {
             required_version: (def.id == "bepinex6")
                 .then(|| hints.wanted_be_build().map(|b| format!("6.0.0-be.{b}")))
                 .flatten(),
+            launch_option: crate::games::proton::launch_option(def.id),
         })
     }
 
@@ -85,6 +88,7 @@ impl ToolOffer {
             installed_version: None,
             update: None,
             required_version: None,
+            launch_option: None,
         })
     }
 }

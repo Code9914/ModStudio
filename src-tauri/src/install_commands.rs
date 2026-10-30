@@ -147,7 +147,8 @@ pub fn set_folder(
 
 pub fn suggestion(game_id: i64) -> Option<FolderSuggestion> {
     let (template, layout) = installer::known_folder(game_id)?;
-    let path = installer::expand_env(template, |name| std::env::var(name).ok())?;
+    let prefix = installer::modio_steam_app(game_id).and_then(crate::games::proton::game_prefix);
+    let path = crate::games::proton::expand(template, prefix.as_deref())?;
     let exists = PathBuf::from(&path).is_dir();
     Some(FolderSuggestion { path, layout, exists })
 }

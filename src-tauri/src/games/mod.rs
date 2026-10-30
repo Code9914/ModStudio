@@ -1,8 +1,9 @@
-//! Jeux installés sur ce PC (Steam, Epic) et leur moteur.
+//! Jeux installés sur ce PC (Steam, Epic ; sous Linux, Steam et Heroic) et leur moteur.
 
 pub mod catalog;
 pub mod engine;
 pub mod epic;
+pub mod proton;
 pub mod steam;
 
 use std::path::PathBuf;
@@ -41,6 +42,10 @@ pub fn installed_games() -> Vec<InstalledGame> {
     let mut games = steam::installed_games(&steam::steam_roots());
     if let Some(dir) = epic::manifests_dir() {
         games.extend(epic::installed_games(&dir));
+    }
+    // Sous Linux, les jeux Epic passent par Heroic Games Launcher.
+    for file in epic::heroic_files() {
+        games.extend(epic::heroic_games(&file));
     }
     games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     games

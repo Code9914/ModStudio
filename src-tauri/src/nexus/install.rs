@@ -937,7 +937,7 @@ impl NexusState {
     fn fomod_game_state(&self, config: &GameInstall, domain: &str, info: Option<&EngineInfo>) -> fomod::GameState {
         let beth = engine::bethesda(domain).filter(|_| config.rules.as_deref() == Some("bethesda"));
         let active_plugins = beth
-            .and_then(|g| self.plugins_path(g).map(|p| (p, g.star_format)))
+            .and_then(|g| self.plugins_path(g, &config.folder).map(|p| (p, g.star_format)))
             .and_then(|(p, star)| fs::read_to_string(p).ok().map(|t| (t, star)))
             .map(|(text, star)| {
                 text.lines()
@@ -1006,7 +1006,7 @@ impl NexusState {
             .cloned()
             .collect();
         let dropped: Vec<String> = old_plugins.iter().filter(|p| !kept.contains(p)).cloned().collect();
-        if let Some(path) = engine::bethesda(&domain).and_then(|g| self.plugins_path(g).map(|p| (p, g.star_format))) {
+        if let Some(path) = engine::bethesda(&domain).and_then(|g| self.plugins_path(g, &config.folder).map(|p| (p, g.star_format))) {
             if !dropped.is_empty() {
                 let _ = engine_rules::deactivate_plugins(&path.0, &dropped);
             }
@@ -1044,12 +1044,12 @@ impl NexusState {
     }
 
     /// Plugins Bethesda d'un mod qu'on active ou désactive.
-    fn toggle_plugins(&self, domain: &str, record: &InstalledMod, enabled: bool) {
+    fn toggle_plugins(&self, domain: &str, game_dir: &Path, record: &InstalledMod, enabled: bool) {
         if record.plugins.is_empty() {
             return;
         }
         let Some(g) = engine::bethesda(domain) else { return };
-        let Some(path) = self.plugins_path(g) else { return };
+        let Some(path) = self.plugins_path(g, game_dir) else { return };
         if enabled {
             let _ = engine_rules::activate_plugins(&path, &record.plugins, g.star_format);
         } else {
@@ -1075,7 +1075,7 @@ impl NexusState {
             } else {
                 toggle::disable(&mut game, mod_id, &ctx)?;
             }
-            self.toggle_plugins(game.domain.as_deref().unwrap_or_default(), &record, enabled);
+            self.toggle_plugins(game.domain.as_deref().unwrap_or_default(), &game.folder, &record, enabled);
             Ok(())
         });
         let out = game.clone();
@@ -1097,7 +1097,8 @@ impl NexusState {
         let result = {
             let rest: &Library = &lib;
             let others_for = |g: &GameInstall, id: i64| toggle::others_map(g, id, &[rest, other_library]);
-            let mut on_toggle = |m: &InstalledMod, on: bool| self.toggle_plugins(&domain, m, on);
+            let folder = game.folder.clone();
+            let mut on_toggle = |m: &InstalledMod, on: bool| self.toggle_plugins(&domain, &folder, m, on);
             toggle::apply_profile(&mut game, name, &ctx, &others_for, &mut on_toggle)
         };
         let out = game.clone();
@@ -1116,9 +1117,14 @@ impl NexusState {
         Ok(out)
     }
 
-    /// `plugins.txt` d'un jeu Bethesda.
-    pub fn plugins_path(&self, game: &engine::BethesdaGame) -> Option<PathBuf> {
-        self.local_appdata.as_ref().map(|base| engine_rules::plugins_file(base, game))
+    /// `plugins.txt` d'un jeu Bethesda installé dans `game_dir` : sous
+    /// `%LOCALAPPDATA%`, ou sous Linux dans le préfixe Proton du jeu.
+    pub fn plugins_path(&self, game: &engine::BethesdaGame, game_dir: &Path) -> Option<PathBuf> {
+        let base = self.local_appdata.clone().or_else(|| {
+            let prefix = crate::games::proton::prefix_for_dir(game_dir)?;
+            crate::games::proton::windows_env("LOCALAPPDATA", Some(&prefix)).map(PathBuf::from)
+        })?;
+        Some(engine_rules::plugins_file(&base, game))
     }
 
     /// L'outil qui manque au jeu pour charger ce mod, d'après les fichiers installés.
@@ -1199,7 +1205,7 @@ impl NexusState {
         };
         if !record.plugins.is_empty() && !record.disabled {
             let domain = game.domain.clone().unwrap_or_default();
-            if let Some(path) = engine::bethesda(&domain).and_then(|g| self.plugins_path(g)) {
+            if let Some(path) = engine::bethesda(&domain).and_then(|g| self.plugins_path(g, &game.folder)) {
                 let _ = engine_rules::deactivate_plugins(&path, &record.plugins);
             }
         }

@@ -275,6 +275,27 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
 - **Descriptions Nexus** (v0.7) : balises `[/*]`, entités HTML (`&#92;`…),
   listes imbriquées ; un `[code]` d'une ligne reste dans la phrase.
 
+## Linux
+
+ModStudio est aussi publié pour Linux, à côté des installateurs Windows :
+
+- `ModStudio_x.y.z_amd64.AppImage` (recommandé) : rends-le exécutable
+  (`chmod +x`) et lance-le ; il se met à jour tout seul, comme sous Windows.
+- `ModStudio_x.y.z_amd64.deb` : paquet Debian / Ubuntu.
+
+Ce qui change sous Linux :
+
+- Jeux trouvés dans Steam (y compris Flatpak et Snap) et dans Heroic Games
+  Launcher (jeux Epic).
+- Les jeux Windows tournent avec Proton : ModStudio range les réglages là où le
+  jeu les cherche, dans son préfixe (`steamapps/compatdata/<numéro>/pfx`) :
+  `plugins.txt` des jeux Bethesda, dossier Mods de BONELAB, mods des jeux qui
+  utilisent mod.io.
+- BepInEx, MelonLoader et UE4SS se chargent par une DLL que Proton ignore par
+  défaut : ModStudio affiche l'option de lancement Steam à ajouter
+  (`WINEDLLOVERRIDES="winhttp=n,b" %command%` pour BepInEx), ou la variable
+  d'environnement à mettre dans Heroic.
+
 ## Obtenir ta clé API
 
 1. Ouvre <https://mod.io/me/access> et connecte-toi.
@@ -386,4 +407,3 @@ d'UE4SS contre un faux GitHub (empreinte, fichiers du jeu jamais touchés).
 ## Idées pour la suite
 
 - Jeux GOG et Xbox (Game Pass).
-- Build Linux (.AppImage, .deb) dans GitHub Actions.

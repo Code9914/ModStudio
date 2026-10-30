@@ -837,6 +837,15 @@ pub fn known_folder(game_id: i64) -> Option<(&'static str, Layout)> {
     }
 }
 
+/// Numéro Steam des jeux mod.io dont le dossier connu est dans le profil
+/// Windows (sous Linux : dans le préfixe Proton de ce jeu).
+pub fn modio_steam_app(game_id: i64) -> Option<&'static str> {
+    match game_id {
+        3809 => Some(crate::games::proton::BONELAB_APP),
+        _ => None,
+    }
+}
+
 /// Remplace `%NOM%` par la variable d'environnement correspondante.
 /// Renvoie `None` si une variable est absente.
 pub fn expand_env(template: &str, lookup: impl Fn(&str) -> Option<String>) -> Option<String> {

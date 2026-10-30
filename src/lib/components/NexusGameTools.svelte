@@ -32,6 +32,20 @@
   );
   const managedTool = $derived(tool && config?.tools ? (config.tools[tool.id] ?? null) : null);
 
+  // Sous Linux, Proton ne charge la DLL du chargeur que si on le lui demande.
+  const protonValue = $derived(tool?.launchOption?.match(/"([^"]+)"/)?.[1] ?? null);
+  let copied = $state(false);
+  async function copyLaunchOption() {
+    if (!tool?.launchOption) return;
+    try {
+      await navigator.clipboard.writeText(tool.launchOption);
+      copied = true;
+      setTimeout(() => (copied = false), 2000);
+    } catch {
+      /* presse-papiers indisponible : le texte reste sélectionnable */
+    }
+  }
+
   $effect(() => {
     const id = game.id;
     const domain = game.domainName;
@@ -169,6 +183,23 @@
             {#if managedTool && tool.update}
               <NexusToolPrompt {game} {tool} folder={toolFolder} />
             {/if}
+            {#if tool.launchOption && installed?.launcher === "steam"}
+              <div class="proton">
+                <p class="small">
+                  Sous Linux, ajoute ceci aux options de lancement du jeu dans Steam (Propriétés, Général) : sans ça,
+                  Proton ne charge pas {tool.name}.
+                </p>
+                <div class="proton-row">
+                  <code>{tool.launchOption}</code>
+                  <button class="btn btn-ghost" onclick={copyLaunchOption}>{copied ? "Copié" : "Copier"}</button>
+                </div>
+              </div>
+            {:else if protonValue && installed?.launcher === "epic"}
+              <p class="small proton">
+                Sous Linux, dans Heroic : ajoute la variable d'environnement <code>WINEDLLOVERRIDES</code> avec la valeur
+                <code>{protonValue}</code> (réglages du jeu), sinon Wine ne charge pas {tool.name}.
+              </p>
+            {/if}
           {:else if config}
             <NexusToolPrompt {game} {tool} folder={toolFolder} reason={popularity ?? `${tool.name} n'est pas installé.`} />
           {:else}
@@ -259,6 +290,28 @@
     border-radius: var(--r-md);
     background: var(--raise);
     border-left: 3px solid var(--accent-fill);
+  }
+
+  .proton {
+    display: grid;
+    gap: 0.4rem;
+    flex-basis: 100%;
+  }
+
+  .proton-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .proton code {
+    padding: 0.2em 0.5em;
+    border-radius: var(--r-sm);
+    background: var(--ink);
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+    user-select: all;
   }
 
   .tool.ready {

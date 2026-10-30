@@ -98,8 +98,12 @@ pub fn steam_roots() -> Vec<PathBuf> {
         }
     }
     if let Ok(home) = std::env::var("HOME") {
-        roots.push(PathBuf::from(&home).join(".steam/steam"));
-        roots.push(PathBuf::from(&home).join(".local/share/Steam"));
+        let home = PathBuf::from(home);
+        roots.push(home.join(".steam/steam"));
+        roots.push(home.join(".local/share/Steam"));
+        // Steam en Flatpak et en Snap.
+        roots.push(home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam"));
+        roots.push(home.join("snap/steam/common/.local/share/Steam"));
     }
     roots
 }
@@ -144,9 +148,16 @@ fn registry_roots() -> Vec<PathBuf> {
 /// Toutes les bibliothèques Steam (sans doublons), y compris le dossier de Steam.
 pub fn libraries(roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut libs: Vec<PathBuf> = Vec::new();
+    // `~/.steam/steam` est souvent un lien vers `~/.local/share/Steam` : comparés une fois résolus.
+    let key = |p: &Path| {
+        let real = fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        real.to_string_lossy().to_ascii_lowercase().replace('\\', "/").trim_end_matches('/').to_string()
+    };
+    let mut seen: Vec<String> = Vec::new();
     let mut push = |p: PathBuf| {
-        let key = p.to_string_lossy().to_ascii_lowercase().replace('\\', "/").trim_end_matches('/').to_string();
-        if p.join("steamapps").is_dir() && !libs.iter().any(|l| l.to_string_lossy().to_ascii_lowercase().replace('\\', "/").trim_end_matches('/') == key) {
+        let k = key(&p);
+        if p.join("steamapps").is_dir() && !seen.contains(&k) {
+            seen.push(k);
             libs.push(p);
         }
     };

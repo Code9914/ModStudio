@@ -574,6 +574,8 @@ export interface ToolOffer {
   update: string | null;
   /** Version précise demandée par les mods du jeu (`6.0.0-be.791`). */
   requiredVersion: string | null;
+  /** Sous Linux (Proton) : options de lancement pour que le chargeur soit chargé. */
+  launchOption?: string | null;
 }
 
 export interface NexusGameSetup {

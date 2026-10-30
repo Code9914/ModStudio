@@ -1,6 +1,6 @@
-# Vérifie que ModStudio se compile et passe ses tests sous Windows à chaque
-# envoi sur la branche de développement (rien n'est publié).
-name: Vérification Windows
+# Vérifie que ModStudio se compile et passe ses tests sous Windows et sous
+# Linux à chaque envoi sur la branche de développement (rien n'est publié).
+name: Vérification
 
 on:
   push:
@@ -36,6 +36,26 @@ jobs:
 
       - name: Vérifier l'interface
         run: npm run check
+
+      - name: Tests Rust
+        working-directory: src-tauri
+        run: cargo test --lib
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dépendances système
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
 
       - name: Tests Rust
         working-directory: src-tauri

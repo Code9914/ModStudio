@@ -26,6 +26,50 @@ pub fn manifests_dir() -> Option<PathBuf> {
     Some(PathBuf::from(data).join("Epic").join("EpicGamesLauncher").join("Data").join("Manifests"))
 }
 
+/// Listes des jeux Epic installés par Heroic Games Launcher (Linux), version
+/// classique et Flatpak.
+pub fn heroic_files() -> Vec<PathBuf> {
+    if cfg!(windows) {
+        return Vec::new();
+    }
+    let Ok(home) = std::env::var("HOME") else { return Vec::new() };
+    let home = PathBuf::from(home);
+    [
+        home.join(".config/heroic/legendaryConfig/legendary/installed.json"),
+        home.join(".var/app/com.heroicgameslauncher.hgl/config/heroic/legendaryConfig/legendary/installed.json"),
+    ]
+    .into_iter()
+    .filter(|p| p.is_file())
+    .collect()
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct HeroicGame {
+    app_name: String,
+    title: String,
+    install_path: String,
+    is_dlc: bool,
+}
+
+/// Jeux Epic installés avec Heroic (`installed.json` de Legendary).
+pub fn heroic_games(file: &Path) -> Vec<InstalledGame> {
+    let Ok(raw) = fs::read(file) else { return Vec::new() };
+    let Ok(map) = serde_json::from_slice::<std::collections::HashMap<String, HeroicGame>>(&raw) else { return Vec::new() };
+    let mut out: Vec<InstalledGame> = map
+        .into_values()
+        .filter(|g| !g.is_dlc && !g.title.trim().is_empty() && Path::new(&g.install_path).is_dir())
+        .map(|g| InstalledGame {
+            launcher: Launcher::Epic,
+            app_id: g.app_name,
+            name: g.title,
+            path: PathBuf::from(g.install_path),
+        })
+        .collect();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
 /// Jeux Epic complètement installés (sans les DLC ni les extensions).
 pub fn installed_games(dir: &Path) -> Vec<InstalledGame> {
     let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
@@ -57,6 +101,26 @@ pub fn installed_games(dir: &Path) -> Vec<InstalledGame> {
 mod tests {
     use super::*;
     use crate::installer::tests::tempdir;
+
+    #[test]
+    fn reads_heroic_installs() {
+        let dir = tempdir("heroic");
+        let game = dir.join("Games/Hogwarts");
+        fs::create_dir_all(&game).unwrap();
+        let file = dir.join("installed.json");
+        let json = format!(
+            r#"{{"fa4240e57a3c46b39f169041b7811293":{{"app_name":"fa4240e57a3c46b39f169041b7811293","title":"Hogwarts Legacy","install_path":"{}","is_dlc":false}},
+               "dlc1":{{"app_name":"dlc1","title":"Un DLC","install_path":"{}","is_dlc":true}},
+               "gone":{{"app_name":"gone","title":"Désinstallé","install_path":"/nulle/part","is_dlc":false}}}}"#,
+            game.display(),
+            game.display()
+        );
+        fs::write(&file, json).unwrap();
+        let games = heroic_games(&file);
+        assert_eq!(games.len(), 1);
+        assert_eq!((games[0].name.as_str(), games[0].launcher), ("Hogwarts Legacy", Launcher::Epic));
+        assert!(heroic_games(&dir.join("absent.json")).is_empty());
+    }
 
     #[test]
     fn reads_epic_manifests() {

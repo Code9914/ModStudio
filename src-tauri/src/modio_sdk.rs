@@ -73,12 +73,21 @@ pub fn managed_by_game(root: &Path, game_id: i64) -> Option<ManagedByGame> {
     })
 }
 
-/// Détection avec les variables d'environnement de Windows.
+/// Détection avec les variables d'environnement de Windows ; sous Linux,
+/// dans le préfixe Proton de chaque jeu Steam.
 pub fn detect(game_id: i64) -> Option<ManagedByGame> {
-    let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
-    let public = std::env::var_os("PUBLIC").map(PathBuf::from);
-    let root = sdk_root(local.as_deref(), public.as_deref())?;
-    managed_by_game(&root, game_id)
+    use crate::games::proton;
+    if cfg!(windows) {
+        let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+        let public = std::env::var_os("PUBLIC").map(PathBuf::from);
+        let root = sdk_root(local.as_deref(), public.as_deref())?;
+        return managed_by_game(&root, game_id);
+    }
+    proton::all_prefixes().into_iter().find_map(|pfx| {
+        let local = proton::windows_env("LOCALAPPDATA", Some(&pfx)).map(PathBuf::from);
+        let public = proton::windows_env("PUBLIC", Some(&pfx)).map(PathBuf::from);
+        managed_by_game(&sdk_root(local.as_deref(), public.as_deref())?, game_id)
+    })
 }
 
 #[tauri::command]
