@@ -5,6 +5,7 @@ import {
   nexus as api,
   type AppError,
   type DetectedGame,
+  type FoundLoader,
   type GameInstall,
   type InstalledMod,
   type NexusAuthView,
@@ -45,6 +46,8 @@ class NexusStore {
   authLoaded = $state(false);
   /** Dossiers et mods installés, par identifiant de jeu Nexus. */
   games = $state<Record<number, GameInstall>>({});
+  /** Chargeurs de mods installés sans ModStudio, par jeu configuré. */
+  found = $state<Record<number, FoundLoader[]>>({});
   loaded = $state(false);
   /** Installations en cours (clé `jeu:mod`). */
   progress = $state<Record<string, Progress>>({});
@@ -100,6 +103,24 @@ class NexusStore {
     const list = await api.overview();
     this.games = Object.fromEntries(list.map((g) => [g.gameId, g]));
     this.loaded = true;
+    this.loadFound();
+  }
+
+  /** Relit les chargeurs de mods installés à la main (dossiers des jeux configurés). */
+  async loadFound() {
+    try {
+      this.found = await api.foundLoaders();
+    } catch {
+      /* rien à afficher en plus */
+    }
+  }
+
+  /**
+   * Nombre d'éléments installés pour un jeu : ses mods et ses chargeurs de
+   * mods (installés par ModStudio ou à la main), comptés comme des mods.
+   */
+  count(g: GameInstall): number {
+    return Object.keys(g.mods).length + Object.keys(g.tools ?? {}).length + (this.found[g.gameId]?.length ?? 0);
   }
 
   game(gameId: number): GameInstall | null {
@@ -312,6 +333,7 @@ class NexusStore {
     if (now - this.#lastLocalRefresh < 15_000) return;
     this.#lastLocalRefresh = now;
     this.detectGames(true, true);
+    this.loadFound();
   }
 
   /** Relit les réglages (moteur, outils présents) d'un jeu déjà affiché. */

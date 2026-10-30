@@ -98,7 +98,7 @@ fn is_dir_ci(root: &Path, name: &str) -> Option<PathBuf> {
 }
 
 /// Projet Unreal : un dossier qui contient `Binaries/Win64` et `Content`.
-fn unreal_project(root: &Path) -> Option<String> {
+pub fn unreal_project(root: &Path) -> Option<String> {
     let entries = fs::read_dir(root).ok()?;
     let mut found: Vec<String> = entries
         .flatten()

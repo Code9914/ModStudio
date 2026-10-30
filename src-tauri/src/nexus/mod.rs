@@ -22,7 +22,7 @@ pub mod rules;
 pub mod tools;
 pub mod window;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
@@ -204,6 +204,12 @@ pub async fn nexus_site_close(app: AppHandle) {
 #[tauri::command]
 pub fn nexus_overview(state: State<'_, AppState>) -> Vec<GameInstall> {
     state.nexus.overview()
+}
+
+/// Chargeurs de mods installés sans ModStudio dans le dossier des jeux configurés.
+#[tauri::command]
+pub async fn nexus_found_loaders(state: State<'_, AppState>) -> AppResult<BTreeMap<i64, Vec<local::FoundLoader>>> {
+    Ok(state.nexus.found_loaders())
 }
 
 /// Dossiers, moteur et outil de mods d'un jeu.

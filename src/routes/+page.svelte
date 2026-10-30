@@ -109,7 +109,8 @@
     }
   }
 
-  // Barre latérale : seulement les jeux qui ont au moins un mod installé.
+  // Barre latérale : seulement les jeux qui ont au moins un mod installé
+  // (un chargeur de mods compte comme un mod).
   const hasMods = (g: GameInstall) => Object.keys(g.mods).length > 0;
   const byName = (a: { name: string | null }, b: { name: string | null }) =>
     (a.name ?? "").localeCompare(b.name ?? "", "fr", { sensitivity: "base" });
@@ -123,7 +124,7 @@
 
   const nexusRail = $derived(
     Object.values(nexusStore.games)
-      .filter((g) => g.domain && hasMods(g))
+      .filter((g) => g.domain && nexusStore.count(g) > 0)
       .map(nexusGameOf)
       .sort(byName),
   );

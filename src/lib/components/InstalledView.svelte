@@ -1,7 +1,15 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
-  import { api, asAppError, nexus, type AppError, type GameInstall, type InstalledMod } from "$lib/api";
+  import {
+    api,
+    asAppError,
+    nexus,
+    type AppError,
+    type GameInstall,
+    type InstalledMod,
+    type InstalledTool,
+  } from "$lib/api";
   import { engineNames, nexusGameOf, nexusStore } from "$lib/nexus.svelte";
   import NexusFolderSetup from "./NexusFolderSetup.svelte";
   import ModToggle from "./ModToggle.svelte";
@@ -33,6 +41,10 @@
         ...Object.keys(installs.games).map((id) => installs.checkUpdates(Number(id))),
         ...Object.keys(nexusStore.games).map((id) => nexusStore.checkUpdates(Number(id))),
       ]);
+      // Nouvelles versions des chargeurs de mods installés par ModStudio.
+      for (const g of Object.values(nexusStore.games)) {
+        if (g.tools && Object.keys(g.tools).length > 0) nexusStore.refreshSetup(g.gameId);
+      }
     } catch (e) {
       error = asAppError(e);
     }
@@ -43,7 +55,7 @@
     if (nav.view.name === "installed") untrack(() => refresh());
   });
 
-  /** Seuls les jeux qui ont au moins un mod installé apparaissent ici. */
+  /** Seuls les jeux qui ont au moins un mod installé apparaissent ici (un chargeur de mods compte comme un mod). */
   const hasMods = (g: GameInstall) => Object.keys(g.mods).length > 0;
 
   const games = $derived(
@@ -66,14 +78,15 @@
 
   const nexusGames = $derived(
     Object.values(nexusStore.games)
-      .filter(hasMods)
+      .filter((g) => nexusStore.count(g) > 0)
       .sort((a, b) => a.gameName.localeCompare(b.gameName, "fr")),
   );
 
   const total = $derived(
-    [...games, ...nexusGames].reduce((n, g) => n + Object.keys(g.mods).length, 0),
+    games.reduce((n, g) => n + Object.keys(g.mods).length, 0) +
+      nexusGames.reduce((n, g) => n + nexusStore.count(g), 0),
   );
-  const withMods = $derived([...games, ...nexusGames].filter((g) => Object.keys(g.mods).length > 0).length);
+  const withMods = $derived(games.length + nexusGames.length);
   const loaded = $derived(installs.loaded && nexusStore.loaded);
 
   async function update(g: GameInstall, m: InstalledMod) {
@@ -239,6 +252,23 @@
 
   function nexusMods(g: GameInstall): InstalledMod[] {
     return mods(g);
+  }
+
+  /** Chargeurs de mods d'un jeu, affichés comme des mods : ceux de ModStudio, puis ceux installés à la main. */
+  type LoaderRow = { key: string; name: string; tool: InstalledTool | null; update: string | null };
+  function loaders(g: GameInstall): LoaderRow[] {
+    const q = query.trim().toLowerCase();
+    const offer = nexusStore.setups[g.gameId]?.tool;
+    const rows: LoaderRow[] = [
+      ...Object.values(g.tools ?? {}).map((t) => ({
+        key: `tool:${t.id}`,
+        name: t.name,
+        tool: t,
+        update: offer?.managed && offer.id === t.id ? offer.update : null,
+      })),
+      ...(nexusStore.found[g.gameId] ?? []).map((l) => ({ key: `found:${l.id}`, name: l.name, tool: null, update: null })),
+    ];
+    return rows.filter((r) => !q || r.name.toLowerCase().includes(q));
   }
 
   const ruleLabels: Record<string, string> = {
@@ -444,12 +474,13 @@
 
   {#each nexusGames as g (g.gameId)}
     {@const list = nexusMods(g)}
+    {@const loaderRows = loaders(g)}
     <section class="group">
       <div class="group-head">
         {#if g.icon}<img class="game-icon" src={g.icon} alt="" width="28" height="28" />{/if}
         <h2>{g.gameName}</h2>
         <span class="chip">Nexus Mods</span>
-        <span class="muted count">{Object.keys(g.mods).length}</span>
+        <span class="muted count">{nexusStore.count(g)}</span>
         <div class="group-actions">
           <button class="btn btn-ghost" onclick={() => nexusReveal(g.gameId, null)}>Ouvrir le dossier</button>
           <button class="btn btn-ghost" onclick={() => (nexusEditing = nexusEditing === g.gameId ? null : g.gameId)}>
@@ -482,29 +513,6 @@
         />
       {/if}
 
-      {#if g.tools && Object.keys(g.tools).length > 0}
-        <ul class="tool-list" aria-label="Outils de mods installés par ModStudio">
-          {#each Object.values(g.tools) as t (t.id)}
-            {@const k = `tool:${g.gameId}:${t.id}`}
-            <li class="tool-row">
-              <span class="chip chip-ok">{t.name}</span>
-              <span class="muted small">
-                outil de mods{t.version ? `, version ${t.version}` : ""}, installé {ago(t.installedAt)}
-              </span>
-              <button
-                class="btn"
-                class:btn-ghost={!nxConfirming.has(k)}
-                class:danger={nxConfirming.has(k)}
-                onclick={() => removeTool(g, t.id, t.name)}
-                disabled={nxRemoving.has(k)}
-              >
-                {nxRemoving.has(k) ? "…" : nxConfirming.has(k) ? "Confirmer" : "Retirer"}
-              </button>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-
       {#if nxNotes.get(g.gameId)}<p class="note">{nxNotes.get(g.gameId)}</p>{/if}
 
       {#if nxOrphans.get(g.gameId)}
@@ -522,11 +530,60 @@
         </div>
       {/if}
 
-      {#if list.length === 0}
+      {#if list.length === 0 && loaderRows.length === 0}
         <p class="muted small">Aucun mod installé ne correspond à « {query.trim()} ».</p>
       {/if}
 
       <ul class="rows">
+        {#each loaderRows as l (l.key)}
+          {@const k = `tool:${g.gameId}:${l.tool?.id}`}
+          <li class="row">
+            <button class="row-main" onclick={() => g.domain && nav.openNexusGame(nexusGameOf(g))}>
+              <span class="row-thumb"><Thumb src={null} label={l.name} /></span>
+              <span class="row-text">
+                <span class="row-name">{l.name}</span>
+                <span class="row-meta">
+                  <span>chargeur de mods</span>
+                  {#if l.tool}
+                    <span>{l.tool.version ? `version ${l.tool.version}` : "version sans numéro"}</span>
+                    <span>installé {ago(l.tool.installedAt)}</span>
+                  {:else}
+                    <span>installé hors de ModStudio</span>
+                  {/if}
+                </span>
+              </span>
+            </button>
+            {#if l.tool}
+              {@const tool = l.tool}
+              <div class="row-action">
+                {#if nexusStore.toolProgress[g.gameId]}
+                  <div class="row-progress">
+                    <ProgressBar
+                      progress={nexusStore.toolProgress[g.gameId]}
+                      oncancel={() => nexusStore.cancelTool(g.gameId)}
+                    />
+                  </div>
+                {:else}
+                  {#if l.update}
+                    <span class="chip chip-accent">Nouvelle version</span>
+                    <button class="btn btn-primary" onclick={() => g.domain && nav.openNexusGame(nexusGameOf(g))}>
+                      Mettre à jour
+                    </button>
+                  {/if}
+                  <button
+                    class="btn"
+                    class:btn-ghost={!nxConfirming.has(k)}
+                    class:danger={nxConfirming.has(k)}
+                    onclick={() => removeTool(g, tool.id, tool.name)}
+                    disabled={nxRemoving.has(k)}
+                  >
+                    {nxRemoving.has(k) ? "…" : nxConfirming.has(k) ? "Confirmer" : "Retirer"}
+                  </button>
+                {/if}
+              </div>
+            {/if}
+          </li>
+        {/each}
         {#each list as m (m.modId)}
           {@const k = nxKey(g, m)}
           {@const progress = nexusStore.progress[k]}
@@ -587,21 +644,6 @@
   .row.off .row-thumb,
   .row.off .row-name {
     opacity: 0.5;
-  }
-
-  .tool-list {
-    list-style: none;
-    margin: 0 0 0.9rem;
-    padding: 0;
-    display: grid;
-    gap: 0.4rem;
-  }
-
-  .tool-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.4rem 0.75rem;
   }
 
   .view {

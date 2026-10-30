@@ -83,6 +83,7 @@ pub fn run() {
             nexus::nexus_site_bounds,
             nexus::nexus_site_close,
             nexus::nexus_overview,
+            nexus::nexus_found_loaders,
             nexus::nexus_game_setup,
             nexus::nexus_detect_games,
             nexus::nexus_set_enabled,

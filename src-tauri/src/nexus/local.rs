@@ -1,6 +1,7 @@
 //! Jeux installés sur ce PC (Steam, Epic), reconnus parmi les jeux de Nexus
 //! Mods, et l'outil de mods dont chacun a besoin.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -88,6 +89,46 @@ impl ToolOffer {
     }
 }
 
+/// Chargeur de mods trouvé dans le dossier d'un jeu, installé sans ModStudio.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FoundLoader {
+    /// `ue4ss`, `bepinex`, `melonloader`, ou le préfixe d'un script extender (`skse64`).
+    pub id: String,
+    pub name: String,
+}
+
+/// Chargeurs de mods présents dans le dossier d'un jeu configuré, hors ceux
+/// déjà listés : outils installés par ModStudio, script extender installé
+/// comme un mod depuis sa page Nexus. Lecture rapide (pas d'exécutable lu).
+pub fn found_loaders(config: &GameInstall) -> Vec<FoundLoader> {
+    let Some(domain) = config.domain.as_deref() else {
+        return Vec::new();
+    };
+    let Some((_, root)) = tool_root(config).filter(|(_, r)| r.is_dir()) else {
+        return Vec::new();
+    };
+    let managed = |present: &str| config.tools.keys().any(|id| tools::tool(id).is_some_and(|d| d.present == present));
+    let project = engine::unreal_project(&root);
+    engine::present_tools(&root, project.as_deref(), domain)
+        .into_iter()
+        .filter(|t| !managed(t))
+        .filter_map(|t| {
+            if let Some(g) = engine::bethesda(domain).filter(|g| g.extender == t) {
+                let as_mod = g.extender_mod.is_some_and(|m| config.mods.contains_key(&m));
+                return (!as_mod).then(|| FoundLoader { id: t, name: g.extender_name.to_string() });
+            }
+            let name = match t.as_str() {
+                "ue4ss" => "UE4SS",
+                "bepinex" => "BepInEx",
+                "melonloader" => "MelonLoader",
+                _ => return None,
+            };
+            Some(FoundLoader { id: t, name: name.to_string() })
+        })
+        .collect()
+}
+
 fn now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
@@ -155,6 +196,16 @@ pub fn chosen_tool(game_id: i64, info: &EngineInfo, hints: &Hints) -> Option<&'s
 }
 
 impl NexusState {
+    /// Chargeurs de mods installés sans ModStudio, par jeu configuré.
+    pub fn found_loaders(&self) -> BTreeMap<i64, Vec<FoundLoader>> {
+        let games: Vec<GameInstall> = self.library.lock().expect("library").games.values().cloned().collect();
+        games
+            .iter()
+            .map(|g| (g.game_id, found_loaders(g)))
+            .filter(|(_, found)| !found.is_empty())
+            .collect()
+    }
+
     /// Règles d'installation d'un jeu configuré sur `folder` : règles propres
     /// au jeu, sinon d'après son moteur. Un jeu Unity sans chargeur est rangé
     /// pour BepInEx / MelonLoader si ses mods populaires en ont besoin.
@@ -400,6 +451,39 @@ mod tests {
         fs::create_dir_all(dir.join("BepInEx/core")).unwrap();
         fs::write(dir.join("BepInEx/core/BepInEx.dll"), b"").unwrap();
         assert_eq!(engine_rules(&dir, "valheim"), Some("unity"));
+    }
+
+    #[test]
+    fn loaders_installed_without_modstudio_are_found() {
+        use crate::installer::{InstalledMod, InstalledTool};
+        let dir = tempdir("found-loaders");
+        let names = |g: &GameInstall| found_loaders(g).into_iter().map(|l| l.name).collect::<Vec<_>>();
+
+        // Jeu Unity : MelonLoader installé à la main, BepInEx installé par ModStudio.
+        let unity = dir.join("unity");
+        fs::create_dir_all(unity.join("MelonLoader")).unwrap();
+        fs::write(unity.join("version.dll"), b"").unwrap();
+        fs::create_dir_all(unity.join("BepInEx/core")).unwrap();
+        fs::write(unity.join("BepInEx/core/BepInEx.Core.dll"), b"").unwrap();
+        let mut g = GameInstall { game_id: 1, folder: unity, domain: Some("moonsweepers".into()), ..Default::default() };
+        assert_eq!(names(&g), ["BepInEx", "MelonLoader"]);
+        g.tools.insert("bepinex6".into(), InstalledTool { id: "bepinex6".into(), ..Default::default() });
+        assert_eq!(names(&g), ["MelonLoader"], "l'outil de ModStudio est déjà listé");
+        g.domain = None;
+        assert!(found_loaders(&g).is_empty(), "jeu sans page Nexus");
+
+        // Script extender : listé, sauf s'il a été installé comme un mod depuis sa page.
+        let skyrim = dir.join("skyrim");
+        fs::create_dir_all(&skyrim).unwrap();
+        fs::write(skyrim.join("skse64_loader.exe"), b"MZ").unwrap();
+        let mut g = GameInstall { game_id: 1704, folder: skyrim, domain: Some("skyrimspecialedition".into()), ..Default::default() };
+        assert_eq!(found_loaders(&g), [FoundLoader { id: "skse64".into(), name: "SKSE64".into() }]);
+        g.mods.insert(30379, InstalledMod { mod_id: 30379, ..Default::default() });
+        assert!(found_loaders(&g).is_empty());
+
+        // Dossier absent : rien.
+        let gone = GameInstall { folder: dir.join("absent"), domain: Some("pilgrim".into()), ..Default::default() };
+        assert!(found_loaders(&gone).is_empty());
     }
 
     #[test]

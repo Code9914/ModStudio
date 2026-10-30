@@ -32,7 +32,7 @@
   });
 
   /** Jeux où des mods Nexus sont déjà installés : affichés en premier. */
-  const mine = $derived(Object.values(nexusStore.games).filter((g) => Object.keys(g.mods).length > 0));
+  const mine = $derived(Object.values(nexusStore.games).filter((g) => nexusStore.count(g) > 0));
 
   // Jeux installés sur ce PC (Steam, Epic) qui ont une page sur Nexus Mods.
   onMount(() => {
@@ -107,7 +107,7 @@
           >
             <img src={nexusGameImage(g.gameId, "thumbnail")} alt="" width="18" height="18" />
             {g.gameName}
-            <span class="muted">{Object.keys(g.mods).length}</span>
+            <span class="muted">{nexusStore.count(g)}</span>
           </button>
         {/each}
       </div>

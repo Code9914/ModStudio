@@ -535,6 +535,12 @@ export interface EngineInfo {
 }
 
 /** Outil de mods conseillé pour un jeu. */
+/** Chargeur de mods trouvé dans le dossier d'un jeu, installé sans ModStudio. */
+export interface FoundLoader {
+  id: string;
+  name: string;
+}
+
 export interface ToolOffer {
   id: string;
   name: string;
@@ -690,6 +696,7 @@ export const nexus = {
   siteClose: () => call<null>("nexus_site_close"),
 
   overview: () => call<GameInstall[]>("nexus_overview"),
+  foundLoaders: () => call<Record<number, FoundLoader[]>>("nexus_found_loaders"),
   gameSetup: (gameId: number, domain: string) => call<NexusGameSetup>("nexus_game_setup", { gameId, domain }),
   detectGames: (refresh = false) => call<DetectedGame[]>("nexus_detect_games", { refresh }),
   installTool: (gameId: number, tool: string, onProgress: (e: InstallEvent) => void) => {
