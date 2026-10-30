@@ -9,6 +9,7 @@ import {
   type LatestFile,
   type Layout,
   type ManagedByGame,
+  type ProfileEdit,
 } from "./api";
 import { bytes } from "./format";
 
@@ -111,6 +112,21 @@ class Installs {
 
   cancel(modId: number) {
     api.cancelInstall(modId).catch(() => {});
+  }
+
+  /** Active ou désactive un mod (ses fichiers sont mis de côté). */
+  async setEnabled(gameId: number, modId: number, enabled: boolean) {
+    this.games[gameId] = await api.setModEnabled(gameId, modId, enabled);
+  }
+
+  async applyProfile(gameId: number, name: string) {
+    const r = await api.applyModProfile(gameId, name);
+    this.games[gameId] = r.game;
+    return r.issues;
+  }
+
+  async editProfiles(gameId: number, edit: ProfileEdit) {
+    this.games[gameId] = await api.editModProfiles(gameId, edit);
   }
 
   async uninstall(gameId: number, modId: number) {

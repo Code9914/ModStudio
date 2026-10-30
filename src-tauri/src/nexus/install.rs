@@ -25,6 +25,7 @@ use crate::installer::{
     self, Batch, DownloadRequest, GameInstall, InstallEvent, InstalledMod, Layout, Library, ModPart, PlaceInput,
     STAGING_DIR,
 };
+use crate::toggle::{self, ProfileApplied, ProfileEdit};
 
 /// Ce que l'utilisateur a demandé d'installer.
 #[derive(Debug, Clone)]
@@ -327,7 +328,15 @@ impl NexusState {
             let lib = self.library.lock().expect("library");
             owned_by_others(&[&lib, other_library], req.game_id, mod_id)
         };
-        let old = config.mods.get(&mod_id).cloned();
+        let mut old = config.mods.get(&mod_id).cloned();
+        if let Some(o) = old.as_mut().filter(|o| o.disabled) {
+            // Nouvelle version d'un mod désactivé : l'ancienne, mise de côté, disparaît.
+            let root = self.disabled_root();
+            toggle::discard(&config, o, &toggle::Ctx { store_root: &root, source: "nexus" });
+            o.files.clear();
+            o.dirs.clear();
+            o.parts.clear();
+        }
         let mod_name = detail.summary.name.clone();
         let domain = req.game_domain.clone();
         // Jeux rangés selon leur moteur : le dossier configuré est celui du jeu.
@@ -545,9 +554,88 @@ impl NexusState {
                 game.extra_folders.entry(GAME_DIR.to_string()).or_insert(dir);
             }
             game.mods.insert(mod_id, record.clone());
+            toggle::sync_active(game);
         }
         self.save_library(&lib)?;
         Ok(NexusInstalled { record, notice, needs_tool })
+    }
+
+    /// Dossier des mods désactivés hors des dossiers des jeux.
+    pub fn disabled_root(&self) -> PathBuf {
+        self.library_path.with_file_name("disabled")
+    }
+
+    /// Plugins Bethesda d'un mod qu'on active ou désactive.
+    fn toggle_plugins(&self, domain: &str, record: &InstalledMod, enabled: bool) {
+        if record.plugins.is_empty() {
+            return;
+        }
+        let Some(g) = engine::bethesda(domain) else { return };
+        let Some(path) = self.plugins_path(g) else { return };
+        if enabled {
+            let _ = engine_rules::activate_plugins(&path, &record.plugins, g.star_format);
+        } else {
+            let _ = engine_rules::deactivate_plugins(&path, &record.plugins);
+        }
+    }
+
+    /// Active ou désactive un mod installé. `other_library` : mods installés
+    /// depuis mod.io, jamais écrasés.
+    pub fn set_enabled(&self, game_id: i64, mod_id: i64, enabled: bool, other_library: &Library) -> AppResult<GameInstall> {
+        if self.jobs.lock().expect("jobs").contains_key(&mod_id) {
+            return Err(AppError::InstallInProgress);
+        }
+        let root = self.disabled_root();
+        let ctx = toggle::Ctx { store_root: &root, source: "nexus" };
+        let mut lib = self.library.lock().expect("library");
+        let mut game = lib.games.remove(&game_id).ok_or(AppError::NotFound)?;
+        let record = game.mods.get(&mod_id).cloned().ok_or(AppError::NotFound);
+        let result = record.and_then(|record| {
+            if enabled {
+                let others = toggle::others_map(&game, mod_id, &[&lib, other_library]);
+                toggle::enable(&mut game, mod_id, &ctx, &others)?;
+            } else {
+                toggle::disable(&mut game, mod_id, &ctx)?;
+            }
+            self.toggle_plugins(game.domain.as_deref().unwrap_or_default(), &record, enabled);
+            Ok(())
+        });
+        let out = game.clone();
+        lib.games.insert(game_id, game);
+        self.save_library(&lib)?;
+        result.map(|()| out)
+    }
+
+    /// Passe à un profil de mods.
+    pub fn apply_profile(&self, game_id: i64, name: &str, other_library: &Library) -> AppResult<ProfileApplied> {
+        if !self.jobs.lock().expect("jobs").is_empty() {
+            return Err(AppError::InstallInProgress);
+        }
+        let root = self.disabled_root();
+        let ctx = toggle::Ctx { store_root: &root, source: "nexus" };
+        let mut lib = self.library.lock().expect("library");
+        let mut game = lib.games.remove(&game_id).ok_or(AppError::NotFound)?;
+        let domain = game.domain.clone().unwrap_or_default();
+        let result = {
+            let rest: &Library = &lib;
+            let others_for = |g: &GameInstall, id: i64| toggle::others_map(g, id, &[rest, other_library]);
+            let mut on_toggle = |m: &InstalledMod, on: bool| self.toggle_plugins(&domain, m, on);
+            toggle::apply_profile(&mut game, name, &ctx, &others_for, &mut on_toggle)
+        };
+        let out = game.clone();
+        lib.games.insert(game_id, game);
+        self.save_library(&lib)?;
+        result.map(|issues| ProfileApplied { game: out, issues })
+    }
+
+    /// Crée, renomme ou supprime un profil.
+    pub fn edit_profiles(&self, game_id: i64, edit: &ProfileEdit) -> AppResult<GameInstall> {
+        let mut lib = self.library.lock().expect("library");
+        let game = lib.games.get_mut(&game_id).ok_or(AppError::NotFound)?;
+        toggle::edit_profiles(game, edit)?;
+        let out = game.clone();
+        self.save_library(&lib)?;
+        Ok(out)
     }
 
     /// `plugins.txt` d'un jeu Bethesda.
@@ -623,8 +711,15 @@ impl NexusState {
         let mut lib = self.library.lock().expect("library");
         let game = lib.games.get_mut(&game_id).ok_or(AppError::NotFound)?;
         let record = game.mods.get(&mod_id).cloned().ok_or(AppError::NotFound)?;
-        let removal = installer::uninstall_all(game, &record);
-        if !record.plugins.is_empty() {
+        let removal = if record.disabled {
+            // Désactivé : seuls ses fichiers mis de côté sont supprimés.
+            let root = self.disabled_root();
+            toggle::discard(game, &record, &toggle::Ctx { store_root: &root, source: "nexus" });
+            installer::FullRemoval { remaining: Vec::new(), remaining_parts: Vec::new(), left_folder: None }
+        } else {
+            installer::uninstall_all(game, &record)
+        };
+        if !record.plugins.is_empty() && !record.disabled {
             let domain = game.domain.clone().unwrap_or_default();
             if let Some(path) = engine::bethesda(&domain).and_then(|g| self.plugins_path(g)) {
                 let _ = engine_rules::deactivate_plugins(&path, &record.plugins);
@@ -643,6 +738,7 @@ impl NexusState {
             )));
         }
         game.mods.remove(&mod_id);
+        toggle::forget_mod(game, mod_id);
 
         // Mods nécessaires installés avec lui et dont plus aucun mod n'a besoin.
         let mut orphans = Vec::new();
@@ -982,6 +1078,18 @@ mod tests {
         assert!(text.ends_with("*BetterLanterns.esp\r\n"), "{text:?}");
         assert!(text.contains("*Unofficial Skyrim Special Edition Patch.esp"));
         assert_eq!(out.needs_tool.map(|t| (t.id, t.nexus_mod)), Some(("skse64".to_string(), Some(30379))));
+
+        // Désactivé : fichiers mis de côté dans le dossier du jeu, plugin retiré.
+        let g = s.set_enabled(1704, 148, false, &Library::default()).unwrap();
+        assert!(g.mods[&148].disabled);
+        assert!(!game.join("Data/BetterLanterns.esp").exists());
+        assert!(game.join(".modstudio-disabled/nexus-148/Data/BetterLanterns.esp").is_file());
+        assert!(!fs::read_to_string(&plugins).unwrap().contains("BetterLanterns"));
+        // Réactivé : tout revient, le plugin aussi.
+        s.set_enabled(1704, 148, true, &Library::default()).unwrap();
+        assert!(game.join("Data/BetterLanterns.esp").is_file());
+        assert!(fs::read_to_string(&plugins).unwrap().contains("*BetterLanterns.esp"));
+        assert!(!game.join(".modstudio-disabled").exists());
 
         s.remove(1704, 148).unwrap();
         assert!(!game.join("Data/BetterLanterns.esp").exists());

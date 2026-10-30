@@ -10,6 +10,7 @@ mod installer;
 mod modio_sdk;
 mod nexus;
 mod settings;
+mod toggle;
 #[cfg(test)]
 mod testutil;
 
@@ -65,6 +66,9 @@ pub fn run() {
             install_commands::cancel_install,
             install_commands::uninstall_mod,
             install_commands::latest_installed_files,
+            install_commands::set_mod_enabled,
+            install_commands::apply_mod_profile,
+            install_commands::edit_mod_profiles,
             install_commands::reveal_install,
             nexus::nexus_status,
             nexus::nexus_set_key,
@@ -81,6 +85,9 @@ pub fn run() {
             nexus::nexus_overview,
             nexus::nexus_game_setup,
             nexus::nexus_detect_games,
+            nexus::nexus_set_enabled,
+            nexus::nexus_apply_profile,
+            nexus::nexus_edit_profiles,
             nexus::nexus_install_tool,
             nexus::nexus_cancel_tool,
             nexus::nexus_uninstall_tool,

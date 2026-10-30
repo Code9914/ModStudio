@@ -14,6 +14,7 @@ import {
   type NexusInstalled,
   type NexusUpdate,
   type NxmLink,
+  type ProfileEdit,
   type ToolOffer,
 } from "./api";
 import { describe, type Progress } from "./installs.svelte";
@@ -319,6 +320,21 @@ class NexusStore {
       layout: "subfolder",
     });
     await Promise.allSettled([this.load(), this.loadSetup(game.id, game.domainName)]);
+  }
+
+  /** Active ou désactive un mod (ses fichiers sont mis de côté). */
+  async setEnabled(gameId: number, modId: number, enabled: boolean) {
+    this.games[gameId] = await api.setEnabled(gameId, modId, enabled);
+  }
+
+  async applyProfile(gameId: number, name: string) {
+    const r = await api.applyProfile(gameId, name);
+    this.games[gameId] = r.game;
+    return r.issues;
+  }
+
+  async editProfiles(gameId: number, edit: ProfileEdit) {
+    this.games[gameId] = await api.editProfiles(gameId, edit);
   }
 
   /** Renvoie le dossier laissé en place et les mods nécessaires devenus inutiles. */

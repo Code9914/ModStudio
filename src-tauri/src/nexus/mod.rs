@@ -312,6 +312,26 @@ pub fn nexus_uninstall(
     state.nexus.remove(game_id, mod_id)
 }
 
+/// Active ou désactive un mod sans le désinstaller.
+#[tauri::command]
+pub fn nexus_set_enabled(state: State<'_, AppState>, game_id: i64, mod_id: i64, enabled: bool) -> AppResult<GameInstall> {
+    let modio = state.library.lock().expect("library").clone();
+    state.nexus.set_enabled(game_id, mod_id, enabled, &modio)
+}
+
+/// Passe à un profil de mods.
+#[tauri::command]
+pub fn nexus_apply_profile(state: State<'_, AppState>, game_id: i64, name: String) -> AppResult<crate::toggle::ProfileApplied> {
+    let modio = state.library.lock().expect("library").clone();
+    state.nexus.apply_profile(game_id, &name, &modio)
+}
+
+/// Crée, renomme ou supprime un profil.
+#[tauri::command]
+pub fn nexus_edit_profiles(state: State<'_, AppState>, game_id: i64, edit: crate::toggle::ProfileEdit) -> AppResult<GameInstall> {
+    state.nexus.edit_profiles(game_id, &edit)
+}
+
 #[tauri::command]
 pub async fn nexus_updates(state: State<'_, AppState>, game_id: i64) -> AppResult<Vec<UpdateInfo>> {
     state.nexus.updates(game_id).await

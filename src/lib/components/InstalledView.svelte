@@ -4,6 +4,8 @@
   import { api, asAppError, nexus, type AppError, type GameInstall, type InstalledMod } from "$lib/api";
   import { engineNames, nexusStore } from "$lib/nexus.svelte";
   import NexusFolderSetup from "./NexusFolderSetup.svelte";
+  import ModToggle from "./ModToggle.svelte";
+  import ProfileBar from "./ProfileBar.svelte";
   import { ago, bytes, exact } from "$lib/format";
   import { installs, layoutLabels } from "$lib/installs.svelte";
   import { nav } from "$lib/nav.svelte";
@@ -106,6 +108,26 @@
       rowErrors.set(m.modId, asAppError(e).message);
     } finally {
       removing.delete(m.modId);
+    }
+  }
+
+  // ------------------------------------------------------------ Activer / désactiver
+  const toggling = new SvelteSet<string>();
+
+  async function toggle(source: "modio" | "nexus", g: GameInstall, m: InstalledMod, enabled: boolean) {
+    const k = `${source}:${g.gameId}:${m.modId}`;
+    toggling.add(k);
+    if (source === "modio") rowErrors.delete(m.modId);
+    else nxErrors.delete(nexusStore.key(g.gameId, m.modId));
+    try {
+      if (source === "modio") await installs.setEnabled(g.gameId, m.modId, enabled);
+      else await nexusStore.setEnabled(g.gameId, m.modId, enabled);
+    } catch (e) {
+      const message = asAppError(e).message;
+      if (source === "modio") rowErrors.set(m.modId, message);
+      else nxErrors.set(nexusStore.key(g.gameId, m.modId), message);
+    } finally {
+      toggling.delete(k);
     }
   }
 
@@ -327,6 +349,14 @@
         </div>
       {/if}
 
+      {#if Object.keys(g.mods).length > 0}
+        <ProfileBar
+          game={g}
+          onapply={(name) => installs.applyProfile(g.gameId, name)}
+          onedit={(edit) => installs.editProfiles(g.gameId, edit)}
+        />
+      {/if}
+
       {#if notes.get(-g.gameId)}<p class="note">{notes.get(-g.gameId)}</p>{/if}
 
       {#if orphans.get(g.gameId)}
@@ -355,7 +385,7 @@
           {@const progress = installs.progress[m.modId]}
           {@const latest = installs.latest[m.modId]}
           {@const isOutdated = installs.outdated(g.gameId, m.modId)}
-          <li class="row">
+          <li class="row" class:off={m.disabled}>
             <button class="row-main" onclick={() => openMod(g, m)}>
               <span class="row-thumb"><Thumb src={m.logo} label={m.name} /></span>
               <span class="row-text">
@@ -364,6 +394,7 @@
                   <span>{m.version ? `version ${m.version}` : "version sans numéro"}</span>
                   <span>{bytes(m.size)}</span>
                   <span>installé {ago(m.installedAt)}</span>
+                  {#if m.disabled}<span class="chip">Désactivé</span>{/if}
                   {#if m.auto && m.requiredBy.length}
                     <span>nécessaire à « {parentNames(g, m).join(" », « ")} »</span>
                   {/if}
@@ -379,13 +410,19 @@
               {#if progress}
                 <div class="row-progress"><ProgressBar {progress} oncancel={() => installs.cancel(m.modId)} /></div>
               {:else}
+                <ModToggle
+                  enabled={!m.disabled}
+                  name={m.name}
+                  busy={toggling.has(`modio:${g.gameId}:${m.modId}`)}
+                  ontoggle={(on) => toggle("modio", g, m, on)}
+                />
                 {#if isOutdated}
                   <span class="chip chip-accent">{latest?.version ? `Version ${latest.version}` : "Nouvelle version"}</span>
                   <button class="btn btn-primary" onclick={() => update(g, m)}>Mettre à jour</button>
                 {:else if latest}
                   <span class="muted small">À jour</span>
                 {/if}
-                <button class="btn btn-ghost" onclick={() => reveal(g.gameId, m.modId)}>Ouvrir</button>
+                <button class="btn btn-ghost" onclick={() => reveal(g.gameId, m.modId)} disabled={m.disabled}>Ouvrir</button>
                 <button
                   class="btn"
                   class:btn-ghost={!confirming.has(m.modId)}
@@ -433,6 +470,14 @@
             oncancel={() => (nexusEditing = null)}
           />
         </div>
+      {/if}
+
+      {#if Object.keys(g.mods).length > 0}
+        <ProfileBar
+          game={g}
+          onapply={(name) => nexusStore.applyProfile(g.gameId, name)}
+          onedit={(edit) => nexusStore.editProfiles(g.gameId, edit)}
+        />
       {/if}
 
       {#if g.tools && Object.keys(g.tools).length > 0}
@@ -486,7 +531,7 @@
           {@const k = nxKey(g, m)}
           {@const progress = nexusStore.progress[k]}
           {@const isOutdated = nexusStore.outdated(g.gameId, m.modId)}
-          <li class="row">
+          <li class="row" class:off={m.disabled}>
             <button class="row-main" onclick={() => nexusOpen(g, m)}>
               <span class="row-thumb"><Thumb src={m.logo} label={m.name} /></span>
               <span class="row-text">
@@ -497,6 +542,7 @@
                   <span>{bytes(m.size)}</span>
                   <span>installé {ago(m.installedAt)}</span>
                   {#if m.parts?.length}<span>mod de code</span>{/if}
+                  {#if m.disabled}<span class="chip">Désactivé</span>{/if}
                   {#if m.auto && m.requiredBy.length}
                     <span>nécessaire à « {m.requiredBy.map((id) => g.mods[id]?.name ?? `mod ${id}`).join(" », « ")} »</span>
                   {/if}
@@ -508,11 +554,17 @@
               {#if progress}
                 <div class="row-progress"><ProgressBar {progress} oncancel={() => nexusStore.cancel(m.modId)} /></div>
               {:else}
+                <ModToggle
+                  enabled={!m.disabled}
+                  name={m.name}
+                  busy={toggling.has(`nexus:${g.gameId}:${m.modId}`)}
+                  ontoggle={(on) => toggle("nexus", g, m, on)}
+                />
                 {#if isOutdated}
                   <span class="chip chip-accent">Nouvelle version</span>
                   <button class="btn btn-primary" onclick={() => nexusOpen(g, m)}>Choisir</button>
                 {/if}
-                <button class="btn btn-ghost" onclick={() => nexusReveal(g.gameId, m.modId)}>Ouvrir</button>
+                <button class="btn btn-ghost" onclick={() => nexusReveal(g.gameId, m.modId)} disabled={m.disabled}>Ouvrir</button>
                 <button
                   class="btn"
                   class:btn-ghost={!nxConfirming.has(k)}
@@ -532,6 +584,11 @@
 </div>
 
 <style>
+  .row.off .row-thumb,
+  .row.off .row-name {
+    opacity: 0.5;
+  }
+
   .tool-list {
     list-style: none;
     margin: 0 0 0.9rem;

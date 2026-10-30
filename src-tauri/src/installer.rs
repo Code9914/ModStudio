@@ -78,6 +78,9 @@ pub struct InstalledMod {
     /// Plugins activés dans `plugins.txt` (jeux Bethesda), retirés à la désinstallation.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plugins: Vec<String>,
+    /// Mod désactivé : ses fichiers sont mis de côté (voir `toggle.rs`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disabled: bool,
 }
 
 /// Outil de mods (UE4SS, BepInEx, MelonLoader…) installé par ModStudio.
@@ -135,6 +138,11 @@ pub struct GameInstall {
     /// Outils de mods installés par ModStudio dans le dossier du jeu.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tools: BTreeMap<String, InstalledTool>,
+    /// Profils : ensembles de mods activés.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<crate::toggle::Profile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_profile: Option<String>,
 }
 
 impl GameInstall {
@@ -147,7 +155,7 @@ impl GameInstall {
         }
     }
 
-    /// Tous les fichiers installés par les autres mods (et les outils), par dossier absolu.
+    /// Tous les fichiers en place des autres mods activés (et des outils), par dossier absolu.
     pub fn owned_files(&self, except_mod: i64) -> Vec<(PathBuf, String, String)> {
         let mut out = Vec::new();
         for t in self.tools.values() {
@@ -156,7 +164,7 @@ impl GameInstall {
                 out.push((dir.to_path_buf(), f.clone(), t.name.clone()));
             }
         }
-        for m in self.mods.values().filter(|m| m.mod_id != except_mod) {
+        for m in self.mods.values().filter(|m| m.mod_id != except_mod && !m.disabled) {
             for f in &m.files {
                 out.push((self.folder.clone(), f.clone(), m.name.clone()));
             }
@@ -668,17 +676,21 @@ pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
 }
 
 fn move_file(src: &Path, dest: &Path) -> AppResult<()> {
+    move_file_io(src, dest).map_err(io_err)
+}
+
+/// Déplace un fichier (copie puis suppression s'il change de disque).
+pub(crate) fn move_file_io(src: &Path, dest: &Path) -> io::Result<()> {
     match fs::rename(src, dest) {
         Ok(()) => Ok(()),
         Err(_) => {
-            // Autre disque : copie puis suppression.
-            fs::copy(src, dest).map_err(io_err)?;
-            fs::remove_file(src).map_err(io_err)
+            fs::copy(src, dest)?;
+            fs::remove_file(src)
         }
     }
 }
 
-fn deepest_first(dirs: &[String]) -> Vec<String> {
+pub(crate) fn deepest_first(dirs: &[String]) -> Vec<String> {
     let mut v = dirs.to_vec();
     v.sort_by_key(|d| std::cmp::Reverse(d.matches('/').count()));
     v

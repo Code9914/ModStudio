@@ -312,6 +312,10 @@ export const api = {
   uninstallMod: (gameId: number, modId: number) => call<UninstallResult>("uninstall_mod", { gameId, modId }),
 
   latestInstalledFiles: (gameId: number) => call<LatestFile[]>("latest_installed_files", { gameId }),
+  setModEnabled: (gameId: number, modId: number, enabled: boolean) =>
+    call<GameInstall>("set_mod_enabled", { gameId, modId, enabled }),
+  applyModProfile: (gameId: number, name: string) => call<ProfileApplied>("apply_mod_profile", { gameId, name }),
+  editModProfiles: (gameId: number, edit: ProfileEdit) => call<GameInstall>("edit_mod_profiles", { gameId, edit }),
 
   revealInstall: (gameId: number, modId: number | null = null) => call<null>("reveal_install", { gameId, modId }),
 
@@ -348,6 +352,25 @@ export interface InstalledMod {
   fileUid?: string;
   /** Plugins activés dans `plugins.txt` (jeux Bethesda). */
   plugins?: string[];
+  /** Mod désactivé : ses fichiers sont mis de côté. */
+  disabled?: boolean;
+}
+
+/** Ensemble de mods activés d'un jeu. */
+export interface ModProfile {
+  name: string;
+  mods: number[];
+}
+
+export type ProfileEdit =
+  | { action: "create"; name: string }
+  | { action: "rename"; name: string; newName: string }
+  | { action: "delete"; name: string };
+
+export interface ProfileApplied {
+  game: GameInstall;
+  /** Mods qui n'ont pas pu changer d'état (conflit, fichier ouvert…). */
+  issues: { modId: number; name: string; message: string }[];
 }
 
 /** Outil de mods (UE4SS, BepInEx, MelonLoader) installé par ModStudio. */
@@ -387,6 +410,8 @@ export interface GameInstall {
   domain?: string;
   /** Outils de mods installés par ModStudio. */
   tools?: Record<string, InstalledTool>;
+  profiles?: ModProfile[];
+  activeProfile?: string;
 }
 
 // ------------------------------------------------------------------ Nexus Mods
@@ -658,6 +683,10 @@ export const nexus = {
   cancelInstall: (modId: number) => call<null>("nexus_cancel_install", { modId }),
   uninstall: (gameId: number, modId: number) => call<UninstallResult>("nexus_uninstall", { gameId, modId }),
   updates: (gameId: number) => call<NexusUpdate[]>("nexus_updates", { gameId }),
+  setEnabled: (gameId: number, modId: number, enabled: boolean) =>
+    call<GameInstall>("nexus_set_enabled", { gameId, modId, enabled }),
+  applyProfile: (gameId: number, name: string) => call<ProfileApplied>("nexus_apply_profile", { gameId, name }),
+  editProfiles: (gameId: number, edit: ProfileEdit) => call<GameInstall>("nexus_edit_profiles", { gameId, edit }),
   reveal: (gameId: number, modId: number | null = null) => call<null>("nexus_reveal", { gameId, modId }),
 };
 

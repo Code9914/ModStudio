@@ -169,6 +169,20 @@
   function icon() {
     return game.icon?.thumb_64x64 ?? null;
   }
+
+  let toggling = $state(false);
+
+  async function setEnabled(enabled: boolean) {
+    toggling = true;
+    error = null;
+    try {
+      await installs.setEnabled(game.id, mod.id, enabled);
+    } catch (e) {
+      error = asAppError(e);
+    } finally {
+      toggling = false;
+    }
+  }
 </script>
 
 <section class="panel" aria-label="Installation sur ce PC">
@@ -197,11 +211,14 @@
     <ProgressBar {progress} oncancel={cancel} />
   {:else if record}
     <p class="status">
-      <span class="chip chip-ok">Installé</span>
+      {#if record.disabled}<span class="chip">Désactivé</span>{:else}<span class="chip chip-ok">Installé</span>{/if}
       <span class="small muted">
         {record.version ? `version ${record.version}` : "version sans numéro"}, {bytes(record.size)}
       </span>
     </p>
+    {#if record.disabled}
+      <p class="small muted">Ses fichiers sont mis de côté : le jeu ne le charge plus.</p>
+    {/if}
     {#if record.auto && parents.length}
       <p class="small muted">Installé comme mod nécessaire de « {parents.join(" », « ")} ».</p>
     {/if}
@@ -215,7 +232,10 @@
       <p class="small muted folder" title={config.folder}>Dans {config.folder}</p>
     {/if}
     <div class="row">
-      <button class="btn" onclick={() => reveal(true)}>Ouvrir le dossier</button>
+      <button class="btn" onclick={() => setEnabled(!!record?.disabled)} disabled={toggling || removing}>
+        {toggling ? "…" : record.disabled ? "Réactiver" : "Désactiver"}
+      </button>
+      <button class="btn" onclick={() => reveal(true)} disabled={record.disabled}>Ouvrir le dossier</button>
       <button class="btn" class:danger={confirming} onclick={uninstall} disabled={removing}>
         {removing ? "Désinstallation…" : confirming ? "Confirmer" : "Désinstaller"}
       </button>

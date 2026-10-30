@@ -230,6 +230,22 @@
   function reveal() {
     nexus.reveal(game.id, mod.modId).catch((e) => (error = asAppError(e)));
   }
+
+  let toggling = $state(false);
+
+  async function setEnabled(enabled: boolean) {
+    toggling = true;
+    error = null;
+    note = null;
+    try {
+      await nexusStore.setEnabled(game.id, mod.modId, enabled);
+      note = enabled ? "Réactivé." : "Désactivé : ses fichiers sont mis de côté, le jeu ne le charge plus.";
+    } catch (e) {
+      error = asAppError(e);
+    } finally {
+      toggling = false;
+    }
+  }
 </script>
 
 <section class="panel" aria-label="Installation sur ce PC">
@@ -286,7 +302,7 @@
     <ProgressBar {progress} oncancel={cancel} />
   {:else if record}
     <p class="status">
-      <span class="chip chip-ok">Installé</span>
+      {#if record.disabled}<span class="chip">Désactivé</span>{:else}<span class="chip chip-ok">Installé</span>{/if}
       <span class="small muted">
         {record.version ? `version ${record.version}` : "version sans numéro"}, {bytes(record.size)}
       </span>
@@ -310,7 +326,10 @@
       {/if}
     {/if}
     <div class="row">
-      <button class="btn" onclick={reveal}>Ouvrir le dossier</button>
+      <button class="btn" onclick={() => setEnabled(!!record?.disabled)} disabled={toggling || removing}>
+        {toggling ? "…" : record.disabled ? "Réactiver" : "Désactiver"}
+      </button>
+      <button class="btn" onclick={reveal} disabled={record.disabled}>Ouvrir le dossier</button>
       <button class="btn" class:danger={confirming} onclick={uninstall} disabled={removing}>
         {removing ? "Désinstallation…" : confirming ? "Confirmer" : "Désinstaller"}
       </button>

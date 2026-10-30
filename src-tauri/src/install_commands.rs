@@ -81,6 +81,11 @@ impl AppState {
     fn save_library(&self, lib: &installer::Library) -> AppResult<()> {
         lib.save(&self.library_path)
     }
+
+    /// Dossier des mods mod.io désactivés hors des dossiers des jeux.
+    pub fn disabled_root(&self) -> std::path::PathBuf {
+        self.library_path.with_file_name("disabled")
+    }
 }
 
 // ---------------------------------------------------------------- Dossiers
@@ -172,10 +177,18 @@ pub async fn install(
         let others: BTreeMap<String, String> = game
             .mods
             .values()
-            .filter(|m| m.mod_id != mod_id)
+            .filter(|m| m.mod_id != mod_id && !m.disabled)
             .flat_map(|m| m.files.iter().map(move |f| (f.clone(), m.name.clone())))
             .collect();
-        (game.folder.clone(), game.layout, game.mods.get(&mod_id).cloned(), others)
+        let mut old = game.mods.get(&mod_id).cloned();
+        if let Some(o) = old.as_mut().filter(|o| o.disabled) {
+            // Nouvelle version d'un mod désactivé : l'ancienne, mise de côté, disparaît.
+            let root = state.disabled_root();
+            crate::toggle::discard(game, o, &crate::toggle::Ctx { store_root: &root, source: "modio" });
+            o.files.clear();
+            o.dirs.clear();
+        }
+        (game.folder.clone(), game.layout, old, others)
     };
     if !folder.is_dir() {
         return Err(AppError::Io(format!(
@@ -311,6 +324,7 @@ pub async fn install(
     let mut lib = state.library.lock().expect("library");
     if let Some(game) = lib.games.get_mut(&game_id) {
         game.mods.insert(mod_id, record.clone());
+        crate::toggle::sync_active(game);
     }
     state.save_library(&lib)?;
     Ok(record)
@@ -345,7 +359,14 @@ pub fn remove(state: &AppState, game_id: i64, mod_id: i64) -> AppResult<Uninstal
     let mut lib = state.library.lock().expect("library");
     let game = lib.games.get_mut(&game_id).ok_or(AppError::NotFound)?;
     let record = game.mods.get(&mod_id).cloned().ok_or(AppError::NotFound)?;
-    let removal = installer::uninstall(&game.folder, &record);
+    let removal = if record.disabled {
+        // Désactivé : seuls ses fichiers mis de côté sont supprimés.
+        let root = state.disabled_root();
+        crate::toggle::discard(game, &record, &crate::toggle::Ctx { store_root: &root, source: "modio" });
+        installer::Removal { remaining: Vec::new(), left_folder: None }
+    } else {
+        installer::uninstall(&game.folder, &record)
+    };
     if !removal.remaining.is_empty() {
         // On garde la trace des fichiers restants pour pouvoir réessayer.
         let n = removal.remaining.len();
@@ -359,6 +380,7 @@ pub fn remove(state: &AppState, game_id: i64, mod_id: i64) -> AppResult<Uninstal
         )));
     }
     game.mods.remove(&mod_id);
+    crate::toggle::forget_mod(game, mod_id);
 
     // Mods nécessaires installés avec lui et dont plus aucun mod n'a besoin.
     let mut orphans = Vec::new();
@@ -378,6 +400,50 @@ pub fn remove(state: &AppState, game_id: i64, mod_id: i64) -> AppResult<Uninstal
         left_folder: removal.left_folder,
         orphans,
     })
+}
+
+/// Active ou désactive un mod installé depuis mod.io.
+pub fn set_enabled(state: &AppState, game_id: i64, mod_id: i64, enabled: bool) -> AppResult<GameInstall> {
+    if state.jobs.lock().expect("jobs").contains_key(&mod_id) {
+        return Err(AppError::InstallInProgress);
+    }
+    let root = state.disabled_root();
+    let ctx = crate::toggle::Ctx { store_root: &root, source: "modio" };
+    // Les fichiers des mods Nexus ne sont jamais écrasés non plus.
+    let nexus = state.nexus.library.lock().expect("library").clone();
+    let mut lib = state.library.lock().expect("library");
+    let mut game = lib.games.remove(&game_id).ok_or(AppError::NotFound)?;
+    let result = if enabled {
+        let others = crate::toggle::others_map(&game, mod_id, &[&lib, &nexus]);
+        crate::toggle::enable(&mut game, mod_id, &ctx, &others)
+    } else {
+        crate::toggle::disable(&mut game, mod_id, &ctx)
+    };
+    let out = game.clone();
+    lib.games.insert(game_id, game);
+    state.save_library(&lib)?;
+    result.map(|()| out)
+}
+
+/// Passe à un profil de mods.
+pub fn apply_profile(state: &AppState, game_id: i64, name: &str) -> AppResult<crate::toggle::ProfileApplied> {
+    if !state.jobs.lock().expect("jobs").is_empty() {
+        return Err(AppError::InstallInProgress);
+    }
+    let root = state.disabled_root();
+    let ctx = crate::toggle::Ctx { store_root: &root, source: "modio" };
+    let nexus = state.nexus.library.lock().expect("library").clone();
+    let mut lib = state.library.lock().expect("library");
+    let mut game = lib.games.remove(&game_id).ok_or(AppError::NotFound)?;
+    let result = {
+        let rest: &installer::Library = &lib;
+        let others_for = |g: &GameInstall, id: i64| crate::toggle::others_map(g, id, &[rest, &nexus]);
+        crate::toggle::apply_profile(&mut game, name, &ctx, &others_for, &mut |_, _| {})
+    };
+    let out = game.clone();
+    lib.games.insert(game_id, game);
+    state.save_library(&lib)?;
+    result.map(|issues| crate::toggle::ProfileApplied { game: out, issues })
 }
 
 /// Version actuelle sur mod.io des mods installés d'un jeu.
@@ -476,6 +542,26 @@ pub fn cancel_install(state: State<'_, AppState>, mod_id: i64) {
 #[tauri::command]
 pub fn uninstall_mod(state: State<'_, AppState>, game_id: i64, mod_id: i64) -> AppResult<UninstallResult> {
     remove(&state, game_id, mod_id)
+}
+
+#[tauri::command]
+pub fn set_mod_enabled(state: State<'_, AppState>, game_id: i64, mod_id: i64, enabled: bool) -> AppResult<GameInstall> {
+    set_enabled(&state, game_id, mod_id, enabled)
+}
+
+#[tauri::command]
+pub fn apply_mod_profile(state: State<'_, AppState>, game_id: i64, name: String) -> AppResult<crate::toggle::ProfileApplied> {
+    apply_profile(&state, game_id, &name)
+}
+
+#[tauri::command]
+pub fn edit_mod_profiles(state: State<'_, AppState>, game_id: i64, edit: crate::toggle::ProfileEdit) -> AppResult<GameInstall> {
+    let mut lib = state.library.lock().expect("library");
+    let game = lib.games.get_mut(&game_id).ok_or(AppError::NotFound)?;
+    crate::toggle::edit_profiles(game, &edit)?;
+    let out = game.clone();
+    state.save_library(&lib)?;
+    Ok(out)
 }
 
 #[tauri::command]
