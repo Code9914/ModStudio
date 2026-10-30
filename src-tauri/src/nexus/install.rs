@@ -178,6 +178,8 @@ struct Finished {
     name: String,
     logo: Option<String>,
     old: Option<InstalledMod>,
+    /// Ancienne version désactivée, supprimée maintenant que la nouvelle est en place.
+    set_aside: Option<InstalledMod>,
     engine_info: Option<EngineInfo>,
     placed: Vec<installer::PlacedBatch>,
     root: Option<String>,
@@ -482,7 +484,7 @@ impl NexusState {
             let lib = self.library.lock().expect("library");
             owned_by_others(&[&lib, other_library], req.game_id, mod_id)
         };
-        let old = self.previous_version(&config, mod_id);
+        let (old, set_aside) = Self::previous_version(&config, mod_id);
         let mod_name = detail.summary.name.clone();
         let domain = req.game_domain.clone();
         let engine_info = self.engine_for(&config, &domain)?;
@@ -524,7 +526,7 @@ impl NexusState {
                     return Ok(Stage::Choices { installer: inst, root: froot });
                 }
                 // Pas de choix à faire : fichiers obligatoires et conditionnels.
-                let moves = fomod::expand(&froot, &fomod::resolve(&inst, &[])?)?;
+                let moves = fomod::expand(&froot, &fomod::resolve(&inst, &[])?, &job_b.join("fomod-copies"))?;
                 let (batches, plugins, root) = fomod_batches(&config_b, &domain_b, moves, &mod_name, mod_id, old_b.as_ref());
                 let placed = place_plan(&config_b, old_b.as_ref(), &others, batches, None)?;
                 return Ok(Stage::Placed { placed, root, detected_dir: None, plugins });
@@ -636,6 +638,7 @@ impl NexusState {
                         name: detail.summary.name.clone(),
                         logo: detail.summary.thumbnail_url.clone().or(detail.summary.picture_url.clone()),
                         old,
+                        set_aside,
                         engine_info,
                         placed,
                         root,
@@ -688,7 +691,7 @@ impl NexusState {
             let lib = self.library.lock().expect("library");
             owned_by_others(&[&lib, other_library], req.game_id, mod_id)
         };
-        let old = self.previous_version(&config, mod_id);
+        let (old, set_aside) = Self::previous_version(&config, mod_id);
         let domain = req.game_domain.clone();
         let engine_info = match self.engine_for(&config, &domain) {
             Ok(e) => e,
@@ -699,9 +702,10 @@ impl NexusState {
         };
         let (config_b, old_b, installer, root, name) =
             (config.clone(), old.clone(), session.installer.clone(), session.root.clone(), session.name.clone());
+        let scratch = session.job_dir.join("fomod-copies");
         let domain_b = domain.clone();
         let placed = tokio::task::spawn_blocking(move || -> AppResult<(Vec<installer::PlacedBatch>, Option<String>, Vec<String>)> {
-            let moves = fomod::expand(&root, &fomod::resolve(&installer, &selections)?)?;
+            let moves = fomod::expand(&root, &fomod::resolve(&installer, &selections)?, &scratch)?;
             let (batches, plugins, sub) = fomod_batches(&config_b, &domain_b, moves, &name, mod_id, old_b.as_ref());
             Ok((place_plan(&config_b, old_b.as_ref(), &others, batches, None)?, sub, plugins))
         })
@@ -728,6 +732,7 @@ impl NexusState {
             name: session.name,
             logo: session.logo,
             old,
+            set_aside,
             engine_info,
             placed,
             root: sub,
@@ -745,18 +750,20 @@ impl NexusState {
         }
     }
 
-    /// Version déjà installée du mod. Si elle est désactivée, ses fichiers mis
-    /// de côté disparaissent et elle n'a plus de fichiers en place.
-    fn previous_version(&self, config: &GameInstall, mod_id: i64) -> Option<InstalledMod> {
+    /// Version déjà installée du mod, telle qu'elle est dans le dossier du jeu.
+    /// Désactivée, elle n'a aucun fichier en place : la nouvelle version
+    /// s'installe à côté, et l'ancienne (mise de côté) est renvoyée à part pour
+    /// n'être supprimée qu'une fois la nouvelle installée.
+    fn previous_version(config: &GameInstall, mod_id: i64) -> (Option<InstalledMod>, Option<InstalledMod>) {
         let mut old = config.mods.get(&mod_id).cloned();
+        let mut set_aside = None;
         if let Some(o) = old.as_mut().filter(|o| o.disabled) {
-            let root = self.disabled_root();
-            toggle::discard(config, o, &toggle::Ctx { store_root: &root, source: "nexus" });
+            set_aside = Some(o.clone());
             o.files.clear();
             o.dirs.clear();
             o.parts.clear();
         }
-        old
+        (old, set_aside)
     }
 
     /// Moteur du jeu, pour les jeux rangés selon leur moteur (le dossier
@@ -798,7 +805,11 @@ impl NexusState {
 
     /// Enregistre un mod placé : plugins Bethesda, outil manquant, manifeste.
     async fn record_install(&self, f: Finished) -> AppResult<NexusInstalled> {
-        let Finished { req, config, file, name, logo, old, engine_info, placed, root, detected_dir, plugins } = f;
+        let Finished { req, config, file, name, logo, old, set_aside, engine_info, placed, root, detected_dir, plugins } = f;
+        if let Some(previous) = &set_aside {
+            let store_root = self.disabled_root();
+            toggle::discard(&config, previous, &toggle::Ctx { store_root: &store_root, source: "nexus" });
+        }
         let mod_id = req.mod_id;
         let domain = req.game_domain.clone();
         let (auto, required_by) = dependency_state(req.required_by, old.as_ref());
@@ -1454,6 +1465,44 @@ mod tests {
         assert!(fs::read_to_string(appdata.join("Skyrim Special Edition/plugins.txt")).unwrap().contains("*Lanterns.esp"));
         assert!(!game.join(STAGING_DIR).exists(), "fichiers extraits supprimés");
         assert!(s.fomods.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failed_update_keeps_the_disabled_version() {
+        let zip = make_zip(&[("BaBaCorp.711/BaBaCorp.711.pallet.json", b"{}")]);
+        let (_server, s) = nexus_with(zip, 200);
+        s.set_key("cle").await.unwrap();
+        let mods = tempdir("bl-upd");
+        s.configure(rules::BONELAB, "bonelab", "BONELAB".into(), None, mods.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+        // Le mod 148 est installé puis désactivé : ses fichiers sont de côté.
+        let kept = mods.join(".modstudio-disabled/nexus-148/BaBaCorp.711/BaBaCorp.711.pallet.json");
+        fs::create_dir_all(kept.parent().unwrap()).unwrap();
+        fs::write(&kept, b"ancienne version").unwrap();
+        s.library.lock().unwrap().games.get_mut(&rules::BONELAB).unwrap().mods.insert(
+            148,
+            InstalledMod {
+                mod_id: 148,
+                name: "7-11".into(),
+                files: vec!["BaBaCorp.711/BaBaCorp.711.pallet.json".into()],
+                disabled: true,
+                disabled_in: Some("game".into()),
+                ..Default::default()
+            },
+        );
+        // Un mod mod.io occupe maintenant le même chemin.
+        let mut modio = Library::default();
+        let mut g = GameInstall { game_id: 3809, game_name: "BONELAB".into(), folder: mods.clone(), layout: Layout::Flat, ..Default::default() };
+        g.mods.insert(5, InstalledMod { mod_id: 5, name: "7/11 Extra".into(), files: vec!["BaBaCorp.711/BaBaCorp.711.pallet.json".into()], ..Default::default() });
+        modio.games.insert(3809, g);
+        fs::create_dir_all(mods.join("BaBaCorp.711")).unwrap();
+        fs::write(mods.join("BaBaCorp.711/BaBaCorp.711.pallet.json"), b"mod.io").unwrap();
+
+        let err = s.install(request(None), &modio, quiet()).await.unwrap_err();
+        assert!(matches!(err, AppError::Conflict(_)), "{err}");
+        assert_eq!(fs::read(&kept).unwrap(), b"ancienne version", "l'ancienne version mise de côté est intacte");
+        assert!(s.library.lock().unwrap().games[&rules::BONELAB].mods[&148].disabled);
+        assert_eq!(fs::read(mods.join("BaBaCorp.711/BaBaCorp.711.pallet.json")).unwrap(), b"mod.io");
     }
 
     #[tokio::test]

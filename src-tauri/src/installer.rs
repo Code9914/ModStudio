@@ -81,6 +81,9 @@ pub struct InstalledMod {
     /// Mod désactivé : ses fichiers sont mis de côté (voir `toggle.rs`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub disabled: bool,
+    /// Où ils sont gardés : `game` (dossier du jeu) ou `app` (données de ModStudio).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled_in: Option<String>,
 }
 
 /// Outil de mods (UE4SS, BepInEx, MelonLoader…) installé par ModStudio.

@@ -155,10 +155,11 @@ pub fn find(extracted: &Path) -> Option<(PathBuf, PathBuf)> {
 }
 
 /// Chemin de l'archive sans tenir compte des majuscules ni du séparateur.
+/// Refuse tout ce qui sortirait du dossier de l'archive (`..`, lecteur `D:`).
 pub fn resolve_ci(root: &Path, rel: &str) -> Option<PathBuf> {
     let mut path = root.to_path_buf();
     for part in rel.split(['/', '\\']).filter(|p| !p.is_empty() && *p != ".") {
-        if part == ".." {
+        if part == ".." || part.contains(':') {
             return None;
         }
         let direct = path.join(part);
@@ -172,7 +173,7 @@ pub fn resolve_ci(root: &Path, rel: &str) -> Option<PathBuf> {
             .find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(part))?;
         path = found.path();
     }
-    Some(path)
+    path.starts_with(root).then_some(path)
 }
 
 /// Texte d'un fichier XML en UTF-8 ou UTF-16 (avec ou sans BOM).
@@ -333,10 +334,43 @@ impl Images<'_> {
     }
 }
 
+/// Profondeur d'imbrication des balises (estimation, avant la vraie lecture).
+fn nesting_depth(xml: &str) -> usize {
+    let bytes = xml.as_bytes();
+    let (mut depth, mut max, mut i) = (0usize, 0usize, 0usize);
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
+            match bytes.get(i + 1) {
+                Some(b'/') => depth = depth.saturating_sub(1),
+                Some(b'?') | Some(b'!') => {}
+                Some(_) => {
+                    // Balise ouvrante, sauf si elle se ferme elle-même (`<a/>`).
+                    let end = xml[i..].find('>').map(|e| i + e).unwrap_or(bytes.len());
+                    if end == 0 || bytes.get(end.saturating_sub(1)) != Some(&b'/') {
+                        depth += 1;
+                        max = max.max(depth);
+                    }
+                    i = end;
+                }
+                None => {}
+            }
+        }
+        i += 1;
+    }
+    max
+}
+
 /// Lit `ModuleConfig.xml`. `root` : dossier qui contient le dossier `fomod`.
 pub fn parse(root: &Path, config: &Path, game: &GameState) -> AppResult<Installer> {
     let raw = fs::read(config).map_err(installer::io_err)?;
+    if raw.len() > 8 * 1024 * 1024 {
+        return Err(AppError::UnknownLayout("L'installateur de ce mod (FOMOD) est démesuré.".into()));
+    }
     let xml = decode(&raw);
+    // Un fichier imbriqué à l'extrême ferait déborder la lecture.
+    if nesting_depth(&xml) > 256 {
+        return Err(AppError::UnknownLayout("L'installateur de ce mod (FOMOD) est illisible (imbrication anormale).".into()));
+    }
     let doc = Document::parse_with_options(
         &xml,
         roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() },
@@ -529,8 +563,10 @@ fn clean(path: &str) -> String {
 
 /// Fichiers réels à déplacer : (source dans l'archive, destination relative).
 /// Deux fichiers pour la même destination : la priorité la plus haute gagne,
-/// à égalité le dernier cité.
-pub fn expand(root: &Path, items: &[FileItem]) -> AppResult<Vec<(PathBuf, String)>> {
+/// à égalité le dernier cité. Un même fichier source installé à deux endroits
+/// est copié dans `scratch` pour ses autres destinations (chaque source n'est
+/// déplacée qu'une fois).
+pub fn expand(root: &Path, items: &[FileItem], scratch: &Path) -> AppResult<Vec<(PathBuf, String)>> {
     let mut chosen: HashMap<String, (i64, usize, PathBuf, String)> = HashMap::new();
     let mut order = 0usize;
     for item in items {
@@ -580,7 +616,19 @@ pub fn expand(root: &Path, items: &[FileItem]) -> AppResult<Vec<(PathBuf, String
     if out.is_empty() {
         return Err(AppError::UnknownLayout("Les options choisies n'installent aucun fichier.".into()));
     }
-    Ok(out.into_iter().map(|(_, s, d)| (s, d)).collect())
+    let mut used: HashSet<PathBuf> = HashSet::new();
+    let mut moves = Vec::with_capacity(out.len());
+    for (i, (_, src, dest)) in out.into_iter().enumerate() {
+        if used.insert(src.clone()) {
+            moves.push((src, dest));
+        } else {
+            fs::create_dir_all(scratch).map_err(installer::io_err)?;
+            let copy = scratch.join(i.to_string());
+            fs::copy(&src, &copy).map_err(installer::io_err)?;
+            moves.push((copy, dest));
+        }
+    }
+    Ok(moves)
 }
 
 #[cfg(test)]
@@ -721,7 +769,7 @@ mod tests {
 
         // Chaude + extra (+ patch demandé mais refusé) ; l'étape bleue est cachée.
         let files = resolve(&inst, &[vec![vec![0], vec![0, 1]]]).unwrap();
-        let moves = expand(&root, &files).unwrap();
+        let moves = expand(&root, &files, &dir.join("copies")).unwrap();
         let mut dests: Vec<String> = moves.iter().map(|(_, d)| d.clone()).collect();
         dests.sort();
         assert_eq!(dests, vec!["Lanterns.esp", "extra.esp", "meshes/lantern.nif", "scripts/lantern.pex"]);
@@ -730,11 +778,51 @@ mod tests {
 
         // Froide : l'étape suivante apparaît, ses choix comptent.
         let files = resolve(&inst, &[vec![vec![1], vec![]], vec![vec![0]]]).unwrap();
-        let dests: HashSet<String> = expand(&root, &files).unwrap().into_iter().map(|(_, d)| d).collect();
+        let dests: HashSet<String> = expand(&root, &files, &dir.join("copies")).unwrap().into_iter().map(|(_, d)| d).collect();
         assert!(dests.contains("strong.ini") && !dests.contains("meshes/lantern.nif"));
 
         // « Une option exactement » : rien de coché, refusé.
         assert!(matches!(resolve(&inst, &[vec![vec![], vec![]]]), Err(AppError::InvalidArgument(_))));
+    }
+
+    #[test]
+    fn stays_inside_the_archive_and_copies_shared_sources() {
+        let dir = archive();
+        let (root, _) = find(&dir).unwrap();
+        // Chemins qui sortiraient de l'archive : refusés.
+        assert!(resolve_ci(&root, "../outside.txt").is_none());
+        assert!(resolve_ci(&root, "C:\\Windows\\win.ini").is_none());
+        assert!(resolve_ci(&root, "D:Users").is_none());
+        let item = |source: &str, destination: Option<&str>, folder| FileItem {
+            source: source.into(),
+            destination: destination.map(str::to_string),
+            folder,
+            priority: 0,
+        };
+        assert!(expand(&root, &[item("C:\\Windows", Some(""), true)], &dir.join("c")).is_err());
+        // Même fichier pour deux destinations : la deuxième est une copie.
+        let moves = expand(
+            &root,
+            &[item("21 Extra", Some(""), true), item("21 Extra/extra.esp", Some("Optional/extra.esp"), false)],
+            &dir.join("copies"),
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 2);
+        assert_ne!(moves[0].0, moves[1].0);
+        assert!(moves[1].0.starts_with(dir.join("copies")));
+        assert_eq!(fs::read(&moves[0].0).unwrap(), fs::read(&moves[1].0).unwrap());
+    }
+
+    #[test]
+    fn refuses_absurdly_nested_files() {
+        let deep = format!("<config>{}{}</config>", "<a>".repeat(5000), "</a>".repeat(5000));
+        assert!(nesting_depth(&deep) > 256);
+        assert_eq!(nesting_depth("<config><a/><b x='1'><c/></b></config>"), 2);
+        let dir = tempdir("fomod-deep");
+        fs::create_dir_all(dir.join("fomod")).unwrap();
+        fs::write(dir.join("fomod/ModuleConfig.xml"), deep).unwrap();
+        let err = parse(&dir, &dir.join("fomod/ModuleConfig.xml"), &GameState::default()).unwrap_err();
+        assert!(matches!(err, AppError::UnknownLayout(_)));
     }
 
     #[test]

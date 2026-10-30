@@ -54,8 +54,9 @@
       .sort((a, b) => a.name.localeCompare(b.name, "fr"));
   }
 
+  /** Mods activés à mettre à jour (un mod désactivé ne se réactive pas tout seul). */
   function outdatedIn(g: GameInstall) {
-    return Object.values(g.mods).filter((m) => installs.outdated(g.gameId, m.modId));
+    return Object.values(g.mods).filter((m) => !m.disabled && installs.outdated(g.gameId, m.modId));
   }
 
   const nexusGames = $derived(

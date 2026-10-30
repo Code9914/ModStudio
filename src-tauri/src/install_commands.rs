@@ -171,7 +171,7 @@ pub async fn install(
     if game_id <= 0 || mod_id <= 0 {
         return Err(AppError::InvalidArgument(format!("identifiants {game_id}/{mod_id}")));
     }
-    let (folder, layout, old, others) = {
+    let (folder, layout, old, others, set_aside) = {
         let lib = state.library.lock().expect("library");
         let game = lib.games.get(&game_id).ok_or(AppError::NoGameFolder)?;
         let others: BTreeMap<String, String> = game
@@ -181,14 +181,15 @@ pub async fn install(
             .flat_map(|m| m.files.iter().map(move |f| (f.clone(), m.name.clone())))
             .collect();
         let mut old = game.mods.get(&mod_id).cloned();
+        let mut set_aside = None;
         if let Some(o) = old.as_mut().filter(|o| o.disabled) {
-            // Nouvelle version d'un mod désactivé : l'ancienne, mise de côté, disparaît.
-            let root = state.disabled_root();
-            crate::toggle::discard(game, o, &crate::toggle::Ctx { store_root: &root, source: "modio" });
+            // Mod désactivé : rien en place ; l'ancienne version mise de côté
+            // n'est supprimée qu'une fois la nouvelle installée.
+            set_aside = Some((game.clone(), o.clone()));
             o.files.clear();
             o.dirs.clear();
         }
-        (game.folder.clone(), game.layout, old, others)
+        (game.folder.clone(), game.layout, old, others, set_aside)
     };
     if !folder.is_dir() {
         return Err(AppError::Io(format!(
@@ -321,6 +322,10 @@ pub async fn install(
         required_by,
         ..Default::default()
     };
+    if let Some((game, previous)) = &set_aside {
+        let root = state.disabled_root();
+        crate::toggle::discard(game, previous, &crate::toggle::Ctx { store_root: &root, source: "modio" });
+    }
     let mut lib = state.library.lock().expect("library");
     if let Some(game) = lib.games.get_mut(&game_id) {
         game.mods.insert(mod_id, record.clone());

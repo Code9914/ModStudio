@@ -46,10 +46,21 @@ fn parts_of(record: &InstalledMod) -> Vec<(String, Vec<String>, Vec<String>)> {
     out
 }
 
+/// Les fichiers du mod désactivé sont-ils (ou seront-ils) gardés dans le
+/// dossier du jeu ? L'endroit choisi à la désactivation est mémorisé dans le
+/// mod : il ne change pas si les règles du jeu changent entre-temps.
+fn kept_in_game(game: &GameInstall, record: &InstalledMod) -> bool {
+    match record.disabled_in.as_deref() {
+        Some("game") => true,
+        Some("app") => false,
+        _ => game.rules.is_some(),
+    }
+}
+
 /// Dossier qui garde les fichiers d'un mod désactivé, pour un dossier du jeu.
-pub fn store_for(game: &GameInstall, key: &str, mod_id: i64, ctx: &Ctx) -> Option<PathBuf> {
+pub fn store_for(game: &GameInstall, key: &str, mod_id: i64, in_game: bool, ctx: &Ctx) -> Option<PathBuf> {
     let folder = game.folder_for(key)?;
-    Some(if game.rules.is_some() {
+    Some(if in_game {
         folder.join(DISABLED_DIR).join(format!("{}-{mod_id}", ctx.source))
     } else {
         ctx.store_root
@@ -58,6 +69,11 @@ pub fn store_for(game: &GameInstall, key: &str, mod_id: i64, ctx: &Ctx) -> Optio
             .join(mod_id.to_string())
             .join(if key.is_empty() { "main" } else { key })
     })
+}
+
+/// Limite des dossiers vides à retirer au-dessus d'un dossier de rangement.
+fn store_stop(folder: &Path, in_game: bool, ctx: &Ctx) -> PathBuf {
+    if in_game { folder.join(DISABLED_DIR) } else { ctx.store_root.to_path_buf() }
 }
 
 /// Déplace des fichiers ; en cas d'échec, remet ceux déjà déplacés.
@@ -102,21 +118,36 @@ fn remove_store(store: &Path, stop: &Path) {
     }
 }
 
+/// Le mod ne revendique plus que les fichiers `kept` (par clé de dossier) :
+/// un fichier qui n'a pas pu être mis de côté ou remis ne lui appartient plus,
+/// pour ne jamais supprimer celui d'un autre mod à sa place.
+fn keep_only(record: &mut InstalledMod, kept: &HashMap<String, Vec<String>>) {
+    let main: Vec<String> = kept.get("").cloned().unwrap_or_default();
+    record.files.retain(|f| main.contains(f));
+    for p in &mut record.parts {
+        let list = kept.get(&p.key).cloned().unwrap_or_default();
+        p.files.retain(|f| list.contains(f));
+    }
+}
+
 /// Désactive un mod : ses fichiers sont mis de côté.
 pub fn disable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx) -> AppResult<()> {
     let record = game.mods.get(&mod_id).cloned().ok_or(AppError::NotFound)?;
     if record.disabled {
         return Ok(());
     }
+    let in_game = game.rules.is_some();
     let mut moves = Vec::new();
+    let mut kept: HashMap<String, Vec<String>> = HashMap::new();
     for (key, files, _) in parts_of(&record) {
-        let (Some(folder), Some(store)) = (game.folder_for(&key), store_for(game, &key, mod_id, ctx)) else { continue };
+        let (Some(folder), Some(store)) = (game.folder_for(&key), store_for(game, &key, mod_id, in_game, ctx)) else { continue };
         for rel in files {
             let (Some(src), Some(dst)) = (installer::resolve_rel(folder, &rel), installer::resolve_rel(&store, &rel)) else {
                 continue;
             };
-            // Fichier déjà supprimé à la main : rien à mettre de côté.
+            // Fichier déjà supprimé à la main : rien à mettre de côté, le mod ne le revendique plus.
             if src.is_file() {
+                kept.entry(key.clone()).or_default().push(rel.clone());
                 moves.push((src, dst, rel));
             }
         }
@@ -128,7 +159,9 @@ pub fn disable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx) -> AppResult<()> 
         }
     }
     if let Some(m) = game.mods.get_mut(&mod_id) {
+        keep_only(m, &kept);
         m.disabled = true;
+        m.disabled_in = Some(if in_game { "game" } else { "app" }.to_string());
     }
     sync_active(game);
     Ok(())
@@ -141,16 +174,19 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
     if !record.disabled {
         return Ok(());
     }
+    let in_game = kept_in_game(game, &record);
     let mut moves = Vec::new();
     let mut conflicts = Vec::new();
     let mut stores = Vec::new();
+    let mut kept: HashMap<String, Vec<String>> = HashMap::new();
     for (key, files, _) in parts_of(&record) {
-        let (Some(folder), Some(store)) = (game.folder_for(&key), store_for(game, &key, mod_id, ctx)) else { continue };
+        let (Some(folder), Some(store)) = (game.folder_for(&key), store_for(game, &key, mod_id, in_game, ctx)) else { continue };
         let owned = others.get(folder);
         for rel in files {
             let (Some(dst), Some(src)) = (installer::resolve_rel(folder, &rel), installer::resolve_rel(&store, &rel)) else {
                 continue;
             };
+            // Absent des fichiers mis de côté : il ne revient pas, et le mod ne le revendique plus.
             if !src.is_file() {
                 continue;
             }
@@ -159,6 +195,7 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
             } else if dst.exists() {
                 conflicts.push(rel.clone());
             } else {
+                kept.entry(key.clone()).or_default().push(rel.clone());
                 moves.push((src, dst, rel));
             }
         }
@@ -174,28 +211,29 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
     }
     move_all(&moves)?;
     for (store, folder) in stores {
-        let stop = if game.rules.is_some() { folder.join(DISABLED_DIR) } else { ctx.store_root.to_path_buf() };
-        remove_store(&store, &stop);
-        if game.rules.is_some() {
+        remove_store(&store, &store_stop(&folder, in_game, ctx));
+        if in_game {
             let _ = fs::remove_dir(folder.join(DISABLED_DIR));
         }
     }
     if let Some(m) = game.mods.get_mut(&mod_id) {
+        keep_only(m, &kept);
         m.disabled = false;
+        m.disabled_in = None;
     }
     sync_active(game);
     Ok(())
 }
 
-/// Supprime les fichiers mis de côté d'un mod désactivé (désinstallation ou
-/// nouvelle version). Ses chemins dans le dossier du jeu ne sont pas touchés :
-/// un autre mod a pu les prendre.
+/// Supprime les fichiers mis de côté d'un mod désactivé (désinstallation, ou
+/// nouvelle version une fois installée). Ses chemins dans le dossier du jeu ne
+/// sont pas touchés : un autre mod a pu les prendre.
 pub fn discard(game: &GameInstall, record: &InstalledMod, ctx: &Ctx) {
+    let in_game = kept_in_game(game, record);
     for (key, _, _) in parts_of(record) {
-        let (Some(folder), Some(store)) = (game.folder_for(&key), store_for(game, &key, record.mod_id, ctx)) else { continue };
-        let stop = if game.rules.is_some() { folder.join(DISABLED_DIR) } else { ctx.store_root.to_path_buf() };
-        remove_store(&store, &stop);
-        if game.rules.is_some() {
+        let (Some(folder), Some(store)) = (game.folder_for(&key), store_for(game, &key, record.mod_id, in_game, ctx)) else { continue };
+        remove_store(&store, &store_stop(folder, in_game, ctx));
+        if in_game {
             let _ = fs::remove_dir(folder.join(DISABLED_DIR));
         }
     }
@@ -314,8 +352,10 @@ pub fn delete_profile(game: &mut GameInstall, name: &str) -> AppResult<()> {
     if game.profiles.len() == 1 {
         game.profiles.clear();
     }
+    // Profil actif supprimé : aucun profil ne suit plus les changements (en
+    // activer un autre sans l'appliquer écraserait sa liste de mods).
     if game.active_profile.as_deref() == Some(name) || game.profiles.is_empty() {
-        game.active_profile = game.profiles.first().map(|p| p.name.clone());
+        game.active_profile = None;
     }
     Ok(())
 }
@@ -479,6 +519,64 @@ mod tests {
         discard(&g, &rec, &ctx);
         assert!(!store.join("modio").exists());
         assert_eq!(fs::read(folder.join("a.pak")).unwrap(), b"B");
+    }
+
+    #[test]
+    fn files_that_could_not_be_restored_are_no_longer_claimed() {
+        let folder = tempdir("tg-lost");
+        let store = tempdir("tg-store5");
+        let ctx = Ctx { store_root: &store, source: "modio" };
+        let mut g = game(&folder, None);
+        put(&folder, "x.pak", b"A");
+        put(&folder, "y.pak", b"A");
+        g.mods.insert(1, record(1, "Mod A", &["x.pak", "y.pak"], &[]));
+        disable(&mut g, 1, &ctx).unwrap();
+        assert_eq!(g.mods[&1].disabled_in.as_deref(), Some("app"));
+        // Fichier mis de côté perdu, et un autre mod a pris sa place.
+        fs::remove_file(store.join("modio/7/1/main/x.pak")).unwrap();
+        put(&folder, "x.pak", b"B");
+        enable(&mut g, 1, &ctx, &HashMap::new()).unwrap();
+        assert_eq!(g.mods[&1].files, vec!["y.pak"], "x.pak n'appartient plus au mod A");
+        // Désinstaller A ne touche donc pas au fichier de B.
+        installer::uninstall(&folder, &g.mods[&1]);
+        assert_eq!(fs::read(folder.join("x.pak")).unwrap(), b"B");
+        assert!(!folder.join("y.pak").exists());
+    }
+
+    #[test]
+    fn the_store_location_survives_a_change_of_rules() {
+        let folder = tempdir("tg-rules");
+        let store = tempdir("tg-store6");
+        let ctx = Ctx { store_root: &store, source: "nexus" };
+        let mut g = game(&folder, None);
+        put(&folder, "a.dll", b"A");
+        g.mods.insert(1, record(1, "Mod A", &["a.dll"], &[]));
+        disable(&mut g, 1, &ctx).unwrap();
+        // Le jeu passe ensuite aux règles Unity (chargeur installé).
+        g.rules = Some("unity".into());
+        enable(&mut g, 1, &ctx, &HashMap::new()).unwrap();
+        assert_eq!(fs::read(folder.join("a.dll")).unwrap(), b"A");
+        assert_eq!(g.mods[&1].files, vec!["a.dll"]);
+    }
+
+    #[test]
+    fn deleting_the_active_profile_leaves_the_others_untouched() {
+        let folder = tempdir("tg-del");
+        let store = tempdir("tg-store7");
+        let ctx = Ctx { store_root: &store, source: "modio" };
+        let mut g = game(&folder, None);
+        for (id, f) in [(1, "a.pak"), (2, "b.pak"), (3, "c.pak"), (4, "d.pak")] {
+            put(&folder, f, b"x");
+            g.mods.insert(id, record(id, &format!("Mod {id}"), &[f], &[]));
+        }
+        create_profile(&mut g, "Coop").unwrap();
+        create_profile(&mut g, "Solo").unwrap();
+        disable(&mut g, 2, &ctx).unwrap();
+        delete_profile(&mut g, "Solo").unwrap();
+        assert_eq!(g.active_profile, None);
+        disable(&mut g, 3, &ctx).unwrap();
+        let principal = g.profiles.iter().find(|p| p.name == "Principal").unwrap();
+        assert_eq!(principal.mods.len(), 4, "« Principal » garde ses quatre mods");
     }
 
     #[test]
