@@ -1,0 +1,42 @@
+# Vérifie que ModStudio se compile et passe ses tests sous Windows à chaque
+# envoi sur la branche de développement (rien n'est publié).
+name: Vérification Windows
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier l'interface
+        run: npm run check
+
+      - name: Tests Rust
+        working-directory: src-tauri
+        run: cargo test --lib
