@@ -195,8 +195,31 @@ export function splitFullName(fileName: string | null | undefined): { namespace:
   return { namespace: fileName.slice(0, i), name: fileName.slice(i + 1) };
 }
 
-/** Le chargeur lui-même (`BepInExPack`, `BepInExPack_Valheim`, `MelonLoader`). */
-export function isLoaderName(name: string) {
+/** Chargeurs publiés sur Thunderstore (hors BepInExPack et MelonLoader, reconnus à leur nom). */
+const LOADER_PACKAGES = new Set(
+  [
+    "ResoniteModding-BepisLoader",
+    "northstar-Northstar",
+    "GodotModding-GodotModLoader",
+    "0xFFF7-votv_shimloader",
+    "Thunderstore-unreal_shimloader",
+    "Thunderstore-lovely",
+    "ReturnOfModding-ReturnOfModding",
+    "Hell2Modding-Hell2Modding",
+    "NotNet-GDWeave",
+    "UMM-UMM",
+    "ADOFAI_Modding-UMM_ADOFAI",
+    "ReDoIngMods-Rivet",
+    "xiaoye97-BepInEx",
+    "1F31A-BepInEx_Valheim_Full",
+    "bbepis-BepInEx_Rogue_Tower",
+    "HomeSafetyHotline_Modding-MelonLoader_HomeSafetyHotline",
+    "SHMCD_Modding-MelonLoader_SHMCD",
+  ].map((id) => id.toLowerCase()),
+);
+
+/** Le chargeur du jeu lui-même (`BepInExPack`, `MelonLoader`, `BepisLoader`…). */
+export function isLoaderName(name: string, namespace = "") {
   const n = name.toLowerCase();
-  return n.startsWith("bepinexpack") || n === "melonloader";
+  return n.startsWith("bepinexpack") || n === "melonloader" || LOADER_PACKAGES.has(`${namespace}-${name}`.toLowerCase());
 }

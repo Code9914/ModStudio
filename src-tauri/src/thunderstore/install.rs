@@ -318,9 +318,28 @@ fn loader_of(eco: &Ecosystem, full: &str) -> Option<LoaderPackage> {
     Some(LoaderPackage { package_id: full.to_string(), loader: loader.into(), root_folder: String::new() })
 }
 
-/// Mod installé qui est un chargeur (BepInExPack…).
+/// Paquet qui complète le chargeur du jeu au lieu de le remplacer : le
+/// BepInEx du moteur de rendu de Resonite, à côté de BepisLoader.
+fn is_companion(full: &str) -> bool {
+    full.eq_ignore_ascii_case("ResoniteModding-BepInExRenderer")
+}
+
+/// Ce paquet de chargeur est-il déjà en place dans le dossier du jeu ?
+fn loader_pack_ok(full: &str, game: &GameRules, folder: &Path) -> bool {
+    if is_companion(full) {
+        return folder.join("Renderer").join("BepInEx").join("core").join("BepInEx.Preloader.dll").is_file();
+    }
+    loader_ok(game, folder)
+}
+
+/// Le chargeur principal du jeu (pas un complément comme BepInExRenderer).
+fn is_main_loader(eco: &Ecosystem, full: &str) -> bool {
+    !is_companion(full) && loader_of(eco, full).is_some()
+}
+
+/// Mod installé qui est le chargeur du jeu (BepInExPack…).
 fn is_loader_record(m: &InstalledMod, eco: &Ecosystem) -> bool {
-    m.file_name.as_deref().is_some_and(|f| loader_of(eco, f).is_some())
+    m.file_name.as_deref().is_some_and(|f| is_main_loader(eco, f))
 }
 
 /// Le paquet BepInEx qui convient au jeu : celui que la communauté met en
@@ -1181,8 +1200,14 @@ impl ThunderstoreState {
                 if installed.contains_key(&id) || visited.contains(&id) {
                     continue;
                 }
-                if ready && loader_of(eco, &format!("{ns}-{name}")).is_some() {
+                let full = format!("{ns}-{name}");
+                if ready && is_main_loader(eco, &full) {
                     plan.kept_loader = true;
+                    visited.insert(id);
+                    continue;
+                }
+                // BepInExRenderer déjà installé à la main : gardé.
+                if is_companion(&full) && loader_pack_ok(&full, game, &config.folder) {
                     visited.insert(id);
                     continue;
                 }
@@ -1207,7 +1232,7 @@ impl ThunderstoreState {
             }
         }
         // Aucun mod n'a demandé le chargeur du jeu, absent : installé d'abord.
-        if !plan.order.iter().any(|p| loader_of(eco, &p.full()).is_some())
+        if !plan.order.iter().any(|p| is_main_loader(eco, &p.full()))
             && let Some(full) = needed_loader(game, eco, &config.folder, &community)
         {
             let (ns, name) = split_full(&full);
@@ -1273,9 +1298,10 @@ impl ThunderstoreState {
         };
         let target_id = target.id();
         // Le chargeur lui-même, déjà là sans ModStudio : rien à faire.
-        let target_loader = loader_of(&eco, &target.full());
-        if target_loader.is_some() && loader_ok(&game, &config.folder) && !config.mods.contains_key(&target_id) {
-            return Err(AppError::ToolPresent(required_label(&game, &config.folder)));
+        let target_full = target.full();
+        if loader_of(&eco, &target_full).is_some() && loader_pack_ok(&target_full, &game, &config.folder) && !config.mods.contains_key(&target_id) {
+            let label = if is_companion(&target_full) { display_name(name) } else { required_label(&game, &config.folder) };
+            return Err(AppError::ToolPresent(label));
         }
         let plan = self.plan(target, info.dependencies.clone(), &config, &game, &eco).await?;
         // Un BepInEx qui ne convient pas au jeu est en place : remplacé par le bon.
@@ -2228,6 +2254,51 @@ pub(crate) mod tests {
         assert_eq!(fs::read(game.join("LinuxBootstrap.sh")).unwrap(), b"original");
         assert!(!game.join("LinuxBootstrap.sh.modstudio-orig").exists());
         assert!(!game.join("hostfxr.dll").exists());
+    }
+
+    #[tokio::test]
+    async fn resonite_renderer_mods_get_bepinex_renderer_even_with_bepisloader_there() {
+        let game = tempdir("ts-resonite-renderer");
+        fs::write(game.join("Resonite.exe"), b"exe").unwrap();
+        fs::write(game.join("BepisLoader.dll"), b"loader").unwrap();
+        fs::write(game.join("hostfxr.dll"), b"hook").unwrap();
+        fs::create_dir_all(game.join("Renderer")).unwrap();
+        let renderer = make_zip(&[("BepInExPack/Renderer/BepInEx/core/BepInEx.Preloader.dll", b"bep5"), ("manifest.json", b"{}")]);
+        let lib = make_zip(&[
+            ("plugins/InterprocessLib.BepisLoader/InterprocessLib.FrooxEngine.dll", b"engine"),
+            ("Renderer/BepInEx/plugins/InterprocessLib.BepInEx/InterprocessLib.Unity.dll", b"unity"),
+            ("manifest.json", b"{}"),
+        ]);
+        let server = fake_server_with(move |_| {
+            vec![
+                latest("3.0.1", &["ResoniteModding-BepInExRenderer-5.4.233001", "ResoniteModding-BepisLoader-1.6.0"]),
+                latest("5.4.233001", &[]),
+                zip_response(&renderer),
+                zip_response(&lib),
+                latest("5.4.233001", &[]),
+            ]
+        });
+        let s = state_for(&server.base, "ts-resonite-renderer-state");
+        s.configure("resonite", "Resonite".into(), None, game.to_str().unwrap()).unwrap();
+        let out = s.install("resonite", "Nytra", "InterprocessLib", None, &[], quiet()).await.unwrap();
+        assert!(out.kept_loader, "BepisLoader, installé à la main, est gardé");
+        assert!(game.join("Renderer/BepInEx/core/BepInEx.Preloader.dll").is_file());
+        assert!(game.join("BepInEx/plugins/Nytra-InterprocessLib/InterprocessLib.BepisLoader/InterprocessLib.FrooxEngine.dll").is_file());
+        assert!(game.join("Renderer/BepInEx/plugins/Nytra-InterprocessLib/InterprocessLib.BepInEx/InterprocessLib.Unity.dll").is_file());
+        let config = &out.game;
+        assert!(config.mods.get(&stable_id("ResoniteModding-BepInExRenderer")).is_some_and(|m| m.auto));
+        // Le chargeur du jeu reste celui installé à la main : BepInExRenderer ne compte pas comme tel.
+        assert!(!s.loader(config.game_id).await.unwrap().managed);
+
+        // Déjà là : installé directement, il est refusé comme les autres chargeurs.
+        s.remove(config.game_id, stable_id("Nytra-InterprocessLib")).unwrap();
+        fs::create_dir_all(game.join("Renderer/BepInEx/core")).unwrap();
+        fs::write(game.join("Renderer/BepInEx/core/BepInEx.Preloader.dll"), b"bep5").unwrap();
+        let mut lib = s.library.lock().unwrap().clone();
+        lib.games.get_mut(&config.game_id).unwrap().mods.remove(&stable_id("ResoniteModding-BepInExRenderer"));
+        *s.library.lock().unwrap() = lib;
+        let err = s.install("resonite", "ResoniteModding", "BepInExRenderer", None, &[], quiet()).await.unwrap_err();
+        assert!(matches!(err, AppError::ToolPresent(ref l) if l == "BepInExRenderer"), "{err:?}");
     }
 
     #[tokio::test]

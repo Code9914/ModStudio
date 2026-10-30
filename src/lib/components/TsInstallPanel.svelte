@@ -27,10 +27,15 @@
   const missing = $derived.by(() => {
     const ready = !!loader?.suitable;
     const names = mod.dependencies
-      .filter((d) => !tsStore.installed(game.id, d.id) && !(isLoaderName(d.name) && ready))
-      .map((d) => (isLoaderName(d.name) && loader?.requiredLabel ? loader.requiredLabel : d.name.replaceAll("_", " ")));
+      .filter((d) => !tsStore.installed(game.id, d.id) && !(isLoaderName(d.name, d.namespace) && ready))
+      .map((d) => (isLoaderName(d.name, d.namespace) && loader?.requiredLabel ? loader.requiredLabel : d.name.replaceAll("_", " ")));
     // Aucun mod ne le demande, mais le jeu en a besoin : installé d'abord.
-    if (loader?.needed && !ready && !mod.dependencies.some((d) => isLoaderName(d.name)) && !isLoaderName(mod.name)) {
+    if (
+      loader?.needed &&
+      !ready &&
+      !mod.dependencies.some((d) => isLoaderName(d.name, d.namespace)) &&
+      !isLoaderName(mod.name, mod.namespace)
+    ) {
       names.unshift(loader.requiredLabel ?? loader.needed.name);
     }
     return [...new Set(names)];
