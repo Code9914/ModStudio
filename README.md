@@ -1,4 +1,4 @@
-# ModStudio — client de bureau pour mod.io, Nexus Mods et Thunderstore (v0.9)
+# ModStudio — client de bureau pour mod.io, Nexus Mods et Thunderstore (v0.10)
 
 ModStudio parcourt et installe les mods de [mod.io](https://mod.io), de
 [Nexus Mods](https://www.nexusmods.com) et de
@@ -329,7 +329,7 @@ l'appli pour le hors-ligne (`scripts/trim-thunderstore-ecosystem.py`).
 | GDWeave | WEBFISHING | `GDWeave/mods/<Équipe-Nom>` |
 | Return of Modding | Hades II, Risk of Rain Returns | à côté de l'exécutable : `ReturnOfModding/plugins` (et `config`) |
 | Lovely | Balatro | `%AppData%/Balatro/Mods` (dans le préfixe Proton sous Linux) |
-| BepisLoader | Resonite | `BepInEx/plugins` ; `hookfxr.ini` activé, `LinuxBootstrap.sh` remplacé (l'original gardé, remis à la désinstallation) |
+| BepisLoader | Resonite | `BepInEx/plugins`, `Renderer/BepInEx/plugins` (avec BepInExRenderer pour les mods du moteur de rendu) ; `hookfxr.ini` activé, `LinuxBootstrap.sh` remplacé (l'original gardé, remis à la désinstallation) |
 | Godot Mod Loader | Brotato, Dome Keeper… | chaque mod zippé dans `mods` ; option de lancement `--script res://addons/mod_loader/mod_loader_setup.gd` affichée |
 | Unity Mod Manager | Broforce, A Dance of Fire and Ice | `UMM/Mods` |
 | Rivet | Scrap Mechanic | `Release/Rivet/Mods`, `Rivet.ini` activé |
