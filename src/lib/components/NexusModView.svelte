@@ -360,6 +360,18 @@
     margin: 1.6em 0 0.5em;
   }
 
+  .prose :global(h4) {
+    font-family: var(--font-display);
+    font-size: var(--t-lg);
+    line-height: 1.25;
+    margin: 1.3em 0 0.4em;
+  }
+
+  .prose :global(h3:first-child),
+  .prose :global(h4:first-child) {
+    margin-top: 0;
+  }
+
   .prose :global(ul),
   .prose :global(ol),
   .prose :global(blockquote),
@@ -431,6 +443,12 @@
     border: 0;
     border-top: 1px solid var(--line);
     margin: 1.4em 0;
+  }
+
+  /* Spoilers : un trait sur le côté, pour voir où chacun finit (ils s'imbriquent souvent). */
+  .prose :global(details) {
+    padding-left: 0.9rem;
+    border-left: 2px solid var(--line);
   }
 
   .prose :global(summary) {
