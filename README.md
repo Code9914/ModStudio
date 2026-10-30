@@ -313,7 +313,9 @@ clé à ajouter.
 - **Installation comme un gestionnaire de mods** : les mods nécessaires d'abord
   (dernière version de chacun, ceux déjà installés sont gardés), puis le mod.
   BepInExPack va dans le dossier du jeu s'il manque (gardé tel quel si BepInEx
-  est déjà là) ; chaque mod est rangé dans `BepInEx/plugins/<Équipe-Nom>`
+  est déjà là et convient au jeu). Jeu Unity IL2CPP : BepInEx 6 IL2CPP, même si
+  le mod demande BepInEx 5 (erreur fréquente des auteurs) ; un BepInEx qui ne
+  convient pas est signalé, et remplacé s'il vient de ModStudio ; chaque mod est rangé dans `BepInEx/plugins/<Équipe-Nom>`
   (`patchers`, `core`, `monomod` de même). Les réglages par défaut
   (`BepInEx/config`) ne remplacent jamais ceux qui existent, et restent en
   place à la désinstallation. Jeux à MelonLoader : `Mods`, `Plugins`,

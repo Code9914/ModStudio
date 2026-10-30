@@ -44,10 +44,27 @@ pub struct TsInstalled {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TsLoader {
-    /// `BepInEx`, `MelonLoader`, ou rien.
+    /// `BepInEx 5`, `BepInEx 6 (IL2CPP)`, `MelonLoader`, ou rien.
     pub name: Option<&'static str>,
+    /// Le chargeur présent peut-il charger les mods de ce jeu ?
+    pub suitable: bool,
+    /// Jeu Unity `il2cpp` ou `mono` (inconnu sinon).
+    pub engine: Option<&'static str>,
+    /// Installé par ModStudio (depuis Thunderstore) : remplaçable sans risque.
+    pub managed: bool,
+    /// Paquet qui remplace un BepInEx qui ne convient pas.
+    pub fix: Option<TsRef>,
     /// Option de lancement Steam pour Proton (Linux seulement).
     pub launch_option: Option<String>,
+}
+
+/// Un paquet Thunderstore (`Équipe-Nom`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TsRef {
+    pub id: i64,
+    pub namespace: String,
+    pub name: String,
 }
 
 /// Nouvelle version d'un mod installé.
@@ -68,10 +85,106 @@ fn is_melon_pack(name: &str) -> bool {
     name.eq_ignore_ascii_case("MelonLoader")
 }
 
+/// Version de BepInEx installée dans le dossier du jeu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Flavor {
+    /// BepInEx 5 : jeux Unity Mono seulement.
+    Mono5,
+    /// BepInEx 6 pour Unity Mono.
+    Mono6,
+    /// BepInEx 6 pour Unity IL2CPP.
+    Il2cpp6,
+}
+
+impl Flavor {
+    pub fn il2cpp(self) -> bool {
+        self == Flavor::Il2cpp6
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Flavor::Mono5 => "BepInEx 5",
+            Flavor::Mono6 => "BepInEx 6",
+            Flavor::Il2cpp6 => "BepInEx 6 (IL2CPP)",
+        }
+    }
+}
+
+pub fn bepinex_flavor(folder: &Path) -> Option<Flavor> {
+    let core = folder.join("BepInEx").join("core");
+    if core.join("BepInEx.Unity.IL2CPP.dll").is_file() || core.join("BepInEx.IL2CPP.dll").is_file() {
+        Some(Flavor::Il2cpp6)
+    } else if core.join("BepInEx.Unity.Mono.dll").is_file() || core.join("BepInEx.Core.dll").is_file() {
+        Some(Flavor::Mono6)
+    } else if core.join("BepInEx.dll").is_file() {
+        Some(Flavor::Mono5)
+    } else {
+        None
+    }
+}
+
 /// BepInEx est-il déjà dans le dossier du jeu ?
 pub fn bepinex_present(folder: &Path) -> bool {
-    let core = folder.join("BepInEx").join("core");
-    core.join("BepInEx.dll").is_file() || core.join("BepInEx.Core.dll").is_file()
+    bepinex_flavor(folder).is_some()
+}
+
+/// Dossiers `<Jeu>_Data` du dossier du jeu.
+fn data_dirs(folder: &Path) -> Vec<PathBuf> {
+    fs::read_dir(folder)
+        .map(|it| {
+            it.flatten()
+                .filter(|e| e.file_name().to_string_lossy().ends_with("_Data") && e.path().is_dir())
+                .map(|e| e.path())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Jeu Unity compilé en IL2CPP : seul BepInEx 6 IL2CPP peut y charger des mods.
+pub fn game_is_il2cpp(folder: &Path) -> bool {
+    folder.join("GameAssembly.dll").is_file()
+        || folder.join("GameAssembly.so").is_file()
+        || data_dirs(folder).iter().any(|d| d.join("il2cpp_data").is_dir())
+}
+
+/// Jeu Unity Mono (le code du jeu est dans `<Jeu>_Data/Managed`).
+pub fn game_is_mono(folder: &Path) -> bool {
+    !game_is_il2cpp(folder) && data_dirs(folder).iter().any(|d| d.join("Managed").join("Assembly-CSharp.dll").is_file())
+}
+
+/// Le BepInEx en place peut-il charger les mods du jeu ? `None` : pas de BepInEx.
+pub fn bepinex_suits(folder: &Path) -> Option<bool> {
+    bepinex_flavor(folder).map(|f| f.il2cpp() == game_is_il2cpp(folder))
+}
+
+/// Le bon BepInEx pour ce jeu, quand un mod en demande un qui ne peut pas
+/// marcher (BepInEx 5 pour un jeu IL2CPP : erreur fréquente des auteurs).
+fn right_loader(namespace: &str, name: &str, folder: &Path) -> (String, String) {
+    match name.to_ascii_lowercase().as_str() {
+        "bepinexpack" | "bepinexpack_x86" if game_is_il2cpp(folder) => ("BepInEx".into(), "BepInExPack_IL2CPP".into()),
+        "bepinexpack_il2cpp" if game_is_mono(folder) => ("BepInEx".into(), "BepInExPack".into()),
+        _ => (namespace.into(), name.into()),
+    }
+}
+
+/// BepInEx à installer à la place de celui qui ne convient pas.
+fn fix_for(folder: &Path) -> Option<TsRef> {
+    let name = if game_is_il2cpp(folder) {
+        "BepInExPack_IL2CPP"
+    } else if game_is_mono(folder) {
+        "BepInExPack"
+    } else {
+        return None;
+    };
+    Some(TsRef { id: stable_id(&format!("BepInEx-{name}")), namespace: "BepInEx".into(), name: name.into() })
+}
+
+/// Mod installé qui est un chargeur (BepInExPack…).
+fn is_loader_record(m: &InstalledMod) -> bool {
+    m.file_name
+        .as_deref()
+        .and_then(|f| f.split_once('-'))
+        .is_some_and(|(_, name)| is_loader_pack(name) || is_melon_pack(name))
 }
 
 fn melon_present(folder: &Path) -> bool {
@@ -259,15 +372,73 @@ impl ThunderstoreState {
 
     /// Chargeur de mods présent dans le dossier du jeu.
     pub fn loader(&self, game_id: i64) -> AppResult<TsLoader> {
-        let folder = self.library.lock().expect("library").games.get(&game_id).map(|g| g.folder.clone()).ok_or(AppError::NotFound)?;
-        let (name, tool) = if bepinex_present(&folder) {
-            (Some("BepInEx"), "bepinex")
-        } else if melon_present(&folder) {
-            (Some("MelonLoader"), "melonloader")
-        } else {
-            (None, "")
+        let (folder, managed) = {
+            let lib = self.library.lock().expect("library");
+            let game = lib.games.get(&game_id).ok_or(AppError::NotFound)?;
+            (game.folder.clone(), game.mods.values().any(is_loader_record))
         };
-        Ok(TsLoader { name, launch_option: crate::games::proton::launch_option(tool) })
+        let engine = if game_is_il2cpp(&folder) {
+            Some("il2cpp")
+        } else if game_is_mono(&folder) {
+            Some("mono")
+        } else {
+            None
+        };
+        let (name, tool, suitable) = match bepinex_flavor(&folder) {
+            Some(f) => (Some(f.label()), "bepinex", bepinex_suits(&folder) == Some(true)),
+            None if melon_present(&folder) => (Some("MelonLoader"), "melonloader", true),
+            None => (None, "", false),
+        };
+        let fix = (name.is_some() && tool == "bepinex" && !suitable).then(|| fix_for(&folder)).flatten();
+        Ok(TsLoader { name, suitable, engine, managed, fix, launch_option: crate::games::proton::launch_option(tool) })
+    }
+
+    /// Retire le BepInEx installé par ModStudio qui ne convient pas au jeu ;
+    /// renvoie son statut (nécessaire ou non, et à quels mods) pour le nouveau.
+    fn drop_wrong_loader(&self, game_id: i64) -> AppResult<(bool, Vec<i64>)> {
+        let root = self.disabled_root();
+        let mut lib = self.library.lock().expect("library");
+        let game = lib.games.get_mut(&game_id).ok_or(AppError::NotFound)?;
+        let wrong: Vec<InstalledMod> = game.mods.values().filter(|m| is_loader_record(m)).cloned().collect();
+        if wrong.is_empty() {
+            let flavor = bepinex_flavor(&game.folder).map(Flavor::label).unwrap_or("BepInEx");
+            let kind = if game_is_il2cpp(&game.folder) { "IL2CPP" } else { "Mono" };
+            return Err(AppError::InvalidArgument(format!(
+                "{flavor}, installé dans ce jeu sans ModStudio, ne peut pas charger ses mods (le jeu est en {kind}). \
+                 Retire-le (dossier BepInEx\\core, winhttp.dll, doorstop_config.ini), puis réessaie."
+            )));
+        }
+        let (mut auto, mut required_by) = (true, Vec::new());
+        for rec in &wrong {
+            let removal = if rec.disabled {
+                toggle::discard(game, rec, &toggle::Ctx { store_root: &root, source: "thunderstore" });
+                installer::FullRemoval { remaining: Vec::new(), remaining_parts: Vec::new(), left_folder: None }
+            } else {
+                installer::uninstall_all(game, rec)
+            };
+            if !removal.complete() {
+                let first = removal.first_remaining().cloned().unwrap_or_default();
+                if let Some(r) = game.mods.get_mut(&rec.mod_id) {
+                    r.files = removal.remaining;
+                }
+                self.save_library(&lib)?;
+                return Err(AppError::Io(format!("{first} n'a pas pu être supprimé. Ferme le jeu puis réessaie.")));
+            }
+            auto &= rec.auto;
+            for p in &rec.required_by {
+                if !required_by.contains(p) {
+                    required_by.push(*p);
+                }
+            }
+            game.mods.remove(&rec.mod_id);
+            toggle::forget_mod(game, rec.mod_id);
+        }
+        // Ses réglages par défaut, jamais utilisés (BepInEx n'a pas tourné) : place à ceux du nouveau.
+        if !game.folder.join("BepInEx").join("LogOutput.log").exists() {
+            let _ = fs::remove_file(game.folder.join("BepInEx").join("config").join("BepInEx.cfg"));
+        }
+        self.save_library(&lib)?;
+        Ok((auto, required_by))
     }
 
     /// Dossier d'installation d'un jeu (là où se trouve son exécutable).
@@ -313,7 +484,8 @@ impl ThunderstoreState {
 
     /// Ce qu'il faut installer pour `target` : ses dépendances manquantes
     /// (dernière version), puis lui-même.
-    async fn plan(&self, target: Planned, deps: Vec<String>, installed: &BTreeMap<i64, InstalledMod>, loader_present: bool) -> AppResult<Plan> {
+    async fn plan(&self, target: Planned, deps: Vec<String>, config: &GameInstall, bepinex_ok: bool, melon_ok: bool) -> AppResult<Plan> {
+        let installed = &config.mods;
         let mut plan = Plan::default();
         let mut visited: HashSet<i64> = HashSet::new();
         visited.insert(target.id());
@@ -328,12 +500,13 @@ impl ThunderstoreState {
             let mut children = Vec::new();
             for dep in &deps {
                 let Some((ns, name, _)) = parse_dependency(dep) else { continue };
+                let (ns, name) = right_loader(&ns, &name, &config.folder);
                 let id = stable_id(&format!("{ns}-{name}"));
                 plan.parents.entry(id).or_default().push(parent);
                 if installed.contains_key(&id) || visited.contains(&id) {
                     continue;
                 }
-                if (is_loader_pack(&name) || is_melon_pack(&name)) && loader_present {
+                if (is_loader_pack(&name) && bepinex_ok) || (is_melon_pack(&name) && melon_ok) {
                     plan.kept_loader = true;
                     visited.insert(id);
                     continue;
@@ -398,12 +571,20 @@ impl ThunderstoreState {
             icon: info.icon.clone(),
         };
         let target_id = target.id();
-        let loader_present = bepinex_present(&config.folder) || melon_present(&config.folder);
+        let suits = bepinex_suits(&config.folder);
+        let (bepinex_ok, melon_ok) = (suits == Some(true), melon_present(&config.folder));
         // Le chargeur lui-même, déjà là sans ModStudio : rien à faire.
-        if (is_loader_pack(name) || is_melon_pack(name)) && loader_present && !config.mods.contains_key(&target_id) {
+        let already = (is_loader_pack(name) && bepinex_ok) || (is_melon_pack(name) && melon_ok);
+        if already && !config.mods.contains_key(&target_id) {
             return Err(AppError::ToolPresent(if is_melon_pack(name) { "MelonLoader".into() } else { "BepInEx".into() }));
         }
-        let plan = self.plan(target, info.dependencies.clone(), &config.mods, loader_present).await?;
+        let plan = self.plan(target, info.dependencies.clone(), &config, bepinex_ok, melon_ok).await?;
+        // Un BepInEx qui ne convient pas au jeu est en place : remplacé par le bon.
+        let inherited = if suits == Some(false) && plan.order.iter().any(|p| is_loader_pack(&p.name)) {
+            Some(self.drop_wrong_loader(game_id)?)
+        } else {
+            None
+        };
 
         let staging = config.folder.join(STAGING_DIR);
         let job_dir = staging.join(format!("thunderstore-{target_id}"));
@@ -420,7 +601,8 @@ impl ThunderstoreState {
                 return Err(AppError::Cancelled);
             }
             emit(InstallEvent::Step { name: display_name(&pkg.name), index: i as u32 + 1, total: total as u32 });
-            if let Err(e) = self.install_one(&config, pkg, pkg.id() == target_id, &plan, &job_dir, other_libraries, &cancel, &emit).await {
+            let inherit = inherited.as_ref().filter(|_| is_loader_pack(&pkg.name));
+            if let Err(e) = self.install_one(&config, pkg, pkg.id() == target_id, &plan, inherit, &job_dir, other_libraries, &cancel, &emit).await {
                 cleanup();
                 return Err(e);
             }
@@ -454,6 +636,7 @@ impl ThunderstoreState {
         pkg: &Planned,
         is_target: bool,
         plan: &Plan,
+        inherited: Option<&(bool, Vec<i64>)>,
         job_dir: &Path,
         other_libraries: &[Library],
         cancel: &Arc<AtomicBool>,
@@ -501,10 +684,23 @@ impl ThunderstoreState {
         let size = fs::metadata(&zip).map(|m| m.len() as i64).unwrap_or(0);
         let parent = (!is_target).then(|| plan.parents.get(&mod_id).and_then(|p| p.first().copied())).flatten();
         // Mise à jour d'un mod déjà là : il garde son statut (nécessaire ou non).
-        let (auto, mut required_by) = match (&old, is_target) {
+        let (mut auto, mut required_by) = match (&old, is_target) {
             (Some(o), true) => (o.auto, o.required_by.clone()),
             _ => dependency_state(parent, old.as_ref()),
         };
+        // Remplace un BepInEx qui ne convenait pas : il en reprend le statut.
+        if let Some((was_auto, was_needed_by)) = inherited {
+            auto = *was_auto;
+            if auto {
+                for p in was_needed_by {
+                    if !required_by.contains(p) {
+                        required_by.push(*p);
+                    }
+                }
+            } else {
+                required_by.clear();
+            }
+        }
         if auto {
             for p in plan.parents.get(&mod_id).into_iter().flatten() {
                 if !required_by.contains(p) {
@@ -868,6 +1064,120 @@ pub(crate) mod tests {
         s.configure("valheim", "Valheim".into(), None, other.to_str().unwrap()).unwrap();
         let err = s.install("valheim", "denikson", "BepInExPack_Valheim", None, &[], quiet()).await.unwrap_err();
         assert!(matches!(err, AppError::ToolPresent(_)), "{err:?}");
+    }
+
+    /// Jeu Unity IL2CPP (comme Roadside Research), sans chargeur.
+    fn il2cpp_game(tag: &str) -> PathBuf {
+        let game = tempdir(tag);
+        fs::write(game.join("GameAssembly.dll"), b"il2cpp").unwrap();
+        fs::create_dir_all(game.join("Game_Data/il2cpp_data")).unwrap();
+        game
+    }
+
+    fn mono_pack() -> Vec<u8> {
+        make_zip(&[
+            ("BepInExPack/BepInEx/core/BepInEx.dll", b"bep5"),
+            ("BepInExPack/BepInEx/config/BepInEx.cfg", b"cfg5"),
+            ("BepInExPack/winhttp.dll", b"proxy5"),
+            ("BepInExPack/doorstop_config.ini", b"ini5"),
+        ])
+    }
+
+    fn il2cpp_pack() -> Vec<u8> {
+        make_zip(&[
+            ("BepInExPack/BepInEx/core/BepInEx.Unity.IL2CPP.dll", b"bep6"),
+            ("BepInExPack/BepInEx/config/BepInEx.cfg", b"cfg6"),
+            ("BepInExPack/dotnet/coreclr.dll", b"clr"),
+            ("BepInExPack/winhttp.dll", b"proxy6"),
+            ("BepInExPack/doorstop_config.ini", b"ini6"),
+        ])
+    }
+
+    #[tokio::test]
+    async fn il2cpp_games_get_bepinex_6_even_when_the_mod_asks_for_bepinex_5() {
+        let game = il2cpp_game("ts-il2cpp");
+        let server = fake_server_with(|_| {
+            vec![
+                latest("1.0.0", &["BepInEx-BepInExPack-5.4.2100"]),
+                latest("6.0.788", &[]),
+                zip_response(&il2cpp_pack()),
+                zip_response(&make_zip(&[("HighJump.dll", b"jump")])),
+            ]
+        });
+        let s = state_for(&server.base, "ts-il2cpp-state");
+        s.configure("roadside-research", "Roadside Research".into(), None, game.to_str().unwrap()).unwrap();
+        let out = s.install("roadside-research", "Deja", "HighJump", None, &[], quiet()).await.unwrap();
+        assert_eq!(out.installed, ["BepInExPack IL2CPP", "HighJump"]);
+        assert_eq!(server.request(1).line, "GET /api/experimental/package/BepInEx/BepInExPack_IL2CPP/ HTTP/1.1");
+        assert_eq!(bepinex_flavor(&game), Some(Flavor::Il2cpp6));
+        assert!(game.join("dotnet/coreclr.dll").is_file());
+        assert!(game.join("BepInEx/plugins/Deja-HighJump/HighJump.dll").is_file());
+        let pack = &out.game.mods[&stable_id("BepInEx-BepInExPack_IL2CPP")];
+        assert_eq!(pack.required_by, [stable_id("Deja-HighJump")]);
+        let l = s.loader(out.game.game_id).unwrap();
+        assert!(l.suitable && l.fix.is_none());
+        assert_eq!(l.engine, Some("il2cpp"));
+    }
+
+    #[tokio::test]
+    async fn replaces_a_wrong_bepinex_installed_by_modstudio() {
+        let game = il2cpp_game("ts-wrong");
+        let server = fake_server_with(|_| {
+            vec![
+                // Ancienne version de ModStudio : BepInEx 5 installé tel quel.
+                latest("5.4.2305", &[]),
+                zip_response(&mono_pack()),
+                latest("1.0.0", &[]),
+                zip_response(&make_zip(&[("HighJump.dll", b"jump")])),
+                // Réparation.
+                latest("6.0.788", &[]),
+                zip_response(&il2cpp_pack()),
+            ]
+        });
+        let s = state_for(&server.base, "ts-wrong-state");
+        let g = s.configure("roadside-research", "Roadside Research".into(), None, game.to_str().unwrap()).unwrap();
+        s.install("roadside-research", "BepInEx", "BepInExPack", None, &[], quiet()).await.unwrap();
+        s.install("roadside-research", "Deja", "HighJump", None, &[], quiet()).await.unwrap();
+        {
+            // Comme avant la correction : le mod comptait sur BepInEx 5.
+            let mut lib = s.library.lock().unwrap();
+            let m = lib.games.get_mut(&g.game_id).unwrap().mods.get_mut(&stable_id("BepInEx-BepInExPack")).unwrap();
+            m.auto = true;
+            m.required_by = vec![stable_id("Deja-HighJump")];
+        }
+        let l = s.loader(g.game_id).unwrap();
+        assert_eq!(l.name, Some("BepInEx 5"));
+        assert!(!l.suitable && l.managed);
+        let fix = l.fix.unwrap();
+        assert_eq!((fix.namespace.as_str(), fix.name.as_str()), ("BepInEx", "BepInExPack_IL2CPP"));
+
+        let out = s.install("roadside-research", &fix.namespace, &fix.name, None, &[], quiet()).await.unwrap();
+        assert_eq!(bepinex_flavor(&game), Some(Flavor::Il2cpp6));
+        assert!(!game.join("BepInEx/core/BepInEx.dll").exists(), "BepInEx 5 retiré");
+        assert_eq!(fs::read(game.join("winhttp.dll")).unwrap(), b"proxy6");
+        assert_eq!(fs::read(game.join("BepInEx/config/BepInEx.cfg")).unwrap(), b"cfg6", "réglages de BepInEx 6");
+        assert!(game.join("BepInEx/plugins/Deja-HighJump/HighJump.dll").is_file(), "les mods restent");
+        assert!(!out.game.mods.contains_key(&stable_id("BepInEx-BepInExPack")));
+        let pack = &out.game.mods[&stable_id("BepInEx-BepInExPack_IL2CPP")];
+        assert!(pack.auto, "toujours un mod nécessaire");
+        assert_eq!(pack.required_by, [stable_id("Deja-HighJump")]);
+        assert!(s.loader(g.game_id).unwrap().suitable);
+    }
+
+    #[tokio::test]
+    async fn never_removes_a_wrong_bepinex_installed_by_hand() {
+        let game = il2cpp_game("ts-hand");
+        fs::create_dir_all(game.join("BepInEx/core")).unwrap();
+        fs::write(game.join("BepInEx/core/BepInEx.dll"), b"bep5").unwrap();
+        let server = fake_server_with(|_| vec![latest("1.0.0", &["BepInEx-BepInExPack-5.4.2100"]), latest("6.0.788", &[])]);
+        let s = state_for(&server.base, "ts-hand-state");
+        let g = s.configure("roadside-research", "Roadside Research".into(), None, game.to_str().unwrap()).unwrap();
+        let l = s.loader(g.game_id).unwrap();
+        assert!(!l.suitable && !l.managed);
+        let err = s.install("roadside-research", "Deja", "HighJump", None, &[], quiet()).await.unwrap_err();
+        assert!(matches!(err, AppError::InvalidArgument(ref m) if m.contains("BepInEx 5")), "{err:?}");
+        assert!(game.join("BepInEx/core/BepInEx.dll").is_file());
+        assert!(!game.join("BepInEx/plugins").exists());
     }
 
     #[test]

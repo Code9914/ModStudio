@@ -25,7 +25,7 @@
 
   /** Mods nécessaires qui seront installés avec celui-ci. */
   const missing = $derived(
-    mod.dependencies.filter((d) => !tsStore.installed(game.id, d.id) && !(isLoaderName(d.name) && loader?.name)),
+    mod.dependencies.filter((d) => !tsStore.installed(game.id, d.id) && !(isLoaderName(d.name) && loader?.suitable)),
   );
 
   /** Installé, et dont d'autres mods installés ont besoin. */

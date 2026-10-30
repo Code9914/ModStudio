@@ -910,7 +910,15 @@ export interface TsUpdate {
 }
 
 export interface TsLoader {
-  name: "BepInEx" | "MelonLoader" | null;
+  /** « BepInEx 5 », « BepInEx 6 (IL2CPP) », « MelonLoader »… */
+  name: string | null;
+  /** Le chargeur présent peut charger les mods de ce jeu. */
+  suitable: boolean;
+  engine: "il2cpp" | "mono" | null;
+  /** Installé par ModStudio : remplaçable sans risque. */
+  managed: boolean;
+  /** Paquet qui remplace un BepInEx qui ne convient pas. */
+  fix: { id: number; namespace: string; name: string } | null;
   launchOption: string | null;
 }
 

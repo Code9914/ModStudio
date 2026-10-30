@@ -210,7 +210,7 @@
                       <span class="dep-name">{d.name.replaceAll("_", " ")}</span>
                       <span class="muted dep-ns">{d.namespace}</span>
                     </span>
-                    {#if tsStore.installed(game.id, d.id) || (isLoaderName(d.name) && tsStore.loaders[game.id]?.name)}
+                    {#if tsStore.installed(game.id, d.id) || (isLoaderName(d.name) && tsStore.loaders[game.id]?.suitable)}
                       <span class="dep-ok">Installé</span>
                     {/if}
                   </button>

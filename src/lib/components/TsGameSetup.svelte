@@ -7,6 +7,7 @@
   import { tsStore } from "$lib/thunderstore.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
+  import ProgressBar from "./ProgressBar.svelte";
 
   let { game }: { game: TsCommunity } = $props();
 
@@ -18,6 +19,21 @@
   const detected = $derived(tsStore.detectedFor(game));
   const hasMods = $derived(config ? tsStore.count(config) > 0 : false);
   const loader = $derived(tsStore.loaders[game.id] ?? null);
+  const job = $derived(tsStore.progress[game.id] ?? null);
+  const fixing = $derived(!!job && !!loader?.fix && job.modId === loader.fix.id);
+
+  /** Remplace le BepInEx qui ne convient pas par le bon. */
+  async function fixLoader() {
+    const fix = loader?.fix;
+    if (!fix) return;
+    error = null;
+    try {
+      await tsStore.install(game, fix.namespace, fix.name, fix.id);
+    } catch (e) {
+      const err = asAppError(e);
+      if (err.kind !== "cancelled") error = err;
+    }
+  }
 
   $effect(() => {
     const id = game.id;
@@ -94,12 +110,41 @@
   </div>
 
   {#if config && loader}
-    <div class="loader" class:ready={!!loader.name}>
-      {#if loader.name}
+    <div class="loader" class:ready={!!loader.name && loader.suitable} class:wrong={!!loader.name && !loader.suitable}>
+      {#if loader.name && !loader.suitable}
+        <p class="small bad">
+          <Icon name="warning" size={15} />
+          <span>
+            <span class="strong">{loader.name}</span> est installé, mais {game.name} est un jeu Unity
+            {loader.engine === "il2cpp" ? "IL2CPP" : "Mono"} : il lui faut
+            {loader.engine === "il2cpp" ? "BepInEx 6 (IL2CPP)" : "BepInEx pour Mono"}. Les mods ne se chargent pas.
+          </span>
+        </p>
+        {#if fixing && job}
+          <ProgressBar progress={job} oncancel={() => tsStore.cancel(game)} />
+        {:else if loader.fix && loader.managed}
+          <div>
+            <button class="btn btn-primary" onclick={fixLoader} disabled={!!job}>
+              Installer {loader.engine === "il2cpp" ? "BepInEx 6 (IL2CPP)" : "le bon BepInEx"} à la place
+            </button>
+          </div>
+        {:else if !loader.managed}
+          <p class="small muted">
+            Il a été installé sans ModStudio : retire-le (dossier BepInEx\core, winhttp.dll, doorstop_config.ini), puis
+            réinstalle un mod.
+          </p>
+        {/if}
+      {:else if loader.name}
         <p class="small ok">
           <Icon name="check" size={15} />
           <span><span class="strong">{loader.name}</span> est installé : les mods se chargeront au lancement du jeu.</span>
         </p>
+        {#if loader.engine === "il2cpp"}
+          <p class="small muted">
+            Le premier lancement après son installation est plus long : BepInEx prépare le jeu (une fenêtre de console
+            s'ouvre), puis les suivants sont normaux.
+          </p>
+        {/if}
       {:else}
         <p class="small">
           BepInEx n'est pas encore installé : il le sera avec le premier mod qui en a besoin (presque tous).
@@ -184,6 +229,22 @@
     border-radius: var(--r-md);
     background: var(--raise);
     border-left: 3px solid var(--accent-fill);
+  }
+
+  .loader.wrong {
+    border-left-color: var(--danger);
+  }
+
+  .bad {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+  }
+
+  .bad :global(svg) {
+    flex: none;
+    color: var(--danger);
+    margin-top: 0.15rem;
   }
 
   .loader.ready {
