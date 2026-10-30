@@ -150,6 +150,9 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
 - Parcourir les jeux (plus de 5 600), chercher et trier les mods d'un jeu,
   fiche complète (description BBCode, fichiers par catégorie, mods nécessaires).
   Aucun compte n'est nécessaire pour parcourir.
+- **Premier lancement** : ModStudio propose de se connecter à Nexus Mods dans sa
+  fenêtre intégrée (la session y reste ouverte pour les téléchargements) puis
+  de coller la clé API (bouton « Plus tard » pour passer).
 - **Clé API personnelle** (page « Compte Nexus ») pour installer : elle se crée
   sur <https://www.nexusmods.com/settings/api-keys>. Elle est vérifiée puis
   rangée dans le trousseau du système, et n'est envoyée qu'à `api.nexusmods.com`.

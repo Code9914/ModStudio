@@ -127,6 +127,13 @@ pub async fn nexus_open_download(app: AppHandle, domain: String, mod_id: i64, fi
     window::open(&app, &domain, mod_id, file_id)
 }
 
+/// Première connexion au site, dans la fenêtre Nexus : la session y reste
+/// ouverte pour les téléchargements suivants, et la clé API s'y copie.
+#[tauri::command]
+pub async fn nexus_open_login(app: AppHandle) -> AppResult<()> {
+    window::open_page(&app, window::LOGIN_PAGE, "Connexion à Nexus Mods")
+}
+
 // ---------------------------------------------------------------- Installation
 
 #[tauri::command]

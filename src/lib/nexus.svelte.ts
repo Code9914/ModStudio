@@ -197,6 +197,25 @@ class NexusStore {
 
 export const nexusStore = new NexusStore();
 
+const WELCOME_KEY = "modstudio.nexusWelcomeDone";
+
+/** L'accueil Nexus du premier lancement a déjà été vu (clé ajoutée ou « Plus tard »). */
+export function welcomeDone(): boolean {
+  try {
+    return localStorage.getItem(WELCOME_KEY) === "1";
+  } catch {
+    return true;
+  }
+}
+
+export function markWelcomeDone() {
+  try {
+    localStorage.setItem(WELCOME_KEY, "1");
+  } catch {
+    /* stockage indisponible : l'accueil reviendra, sans gravité */
+  }
+}
+
 /** Libellés des catégories de fichiers Nexus. */
 export const fileCategories: Record<string, string> = {
   MAIN: "Fichiers principaux",

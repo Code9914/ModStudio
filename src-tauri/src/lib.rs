@@ -68,6 +68,7 @@ pub fn run() {
             nexus::nexus_get_mod,
             nexus::nexus_list_files,
             nexus::nexus_open_download,
+            nexus::nexus_open_login,
             nexus::nexus_overview,
             nexus::nexus_game_setup,
             nexus::nexus_configure_game,

@@ -69,15 +69,33 @@ fn allowed_navigation(url: &Url) -> bool {
     matches!(url.scheme(), "https" | "about" | "blob" | "data")
 }
 
+/// Page de connexion / clés API du site, pour la première connexion : la
+/// session ouverte dans la fenêtre sert ensuite à chaque téléchargement.
+pub const LOGIN_PAGE: &str = "https://www.nexusmods.com/settings/api-keys";
+
 pub fn open(app: &AppHandle, domain: &str, mod_id: i64, file_id: i64) -> AppResult<()> {
     check_domain(domain)?;
     if mod_id <= 0 || file_id <= 0 {
         return Err(AppError::InvalidArgument("fichier inconnu".into()));
     }
-    let page = Url::parse(&download_page(domain, mod_id, file_id)).map_err(|e| AppError::InvalidArgument(e.to_string()))?;
+    open_page(app, &download_page(domain, mod_id, file_id), "Télécharger sur Nexus Mods")
+}
+
+/// N'accepte que des pages du site Nexus Mods, en HTTPS.
+fn nexus_page(url: &str) -> Option<Url> {
+    let page = Url::parse(url.trim()).ok()?;
+    let host = page.host_str()?.to_ascii_lowercase();
+    (page.scheme() == "https" && (host == "nexusmods.com" || host.ends_with(".nexusmods.com"))).then_some(page)
+}
+
+/// Ouvre (ou réutilise) la fenêtre Nexus sur une page du site.
+pub fn open_page(app: &AppHandle, url: &str, title: &str) -> AppResult<()> {
+    let page = nexus_page(url)
+        .ok_or_else(|| AppError::InvalidArgument("seules les pages de Nexus Mods peuvent s'ouvrir ici.".into()))?;
 
     if let Some(window) = app.get_webview_window(NEXUS_WINDOW) {
         window.navigate(page).map_err(|e| AppError::Io(e.to_string()))?;
+        let _ = window.set_title(title);
         let _ = window.unminimize();
         let _ = window.set_focus();
         return Ok(());
@@ -85,7 +103,7 @@ pub fn open(app: &AppHandle, domain: &str, mod_id: i64, file_id: i64) -> AppResu
 
     let handle = app.clone();
     WebviewWindowBuilder::new(app, NEXUS_WINDOW, WebviewUrl::External(page))
-        .title("Télécharger sur Nexus Mods")
+        .title(title)
         .inner_size(1200.0, 860.0)
         .min_inner_size(800.0, 600.0)
         .on_navigation(move |url| {
@@ -150,5 +168,14 @@ mod tests {
         assert!(!allowed_navigation(&url("http://www.nexusmods.com/")));
         assert!(!allowed_navigation(&url("file:///C:/Windows")));
         assert!(!allowed_navigation(&url("ms-settings:privacy")));
+    }
+
+    #[test]
+    fn the_window_only_opens_nexus_pages() {
+        assert!(nexus_page(LOGIN_PAGE).is_some());
+        assert!(nexus_page(&download_page("bonelab", 1, 2)).is_some());
+        assert!(nexus_page("http://www.nexusmods.com/").is_none());
+        assert!(nexus_page("https://nexusmods.com.evil.example/").is_none());
+        assert!(nexus_page("https://evil.example/?nexusmods.com").is_none());
     }
 }

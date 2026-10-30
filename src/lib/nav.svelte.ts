@@ -39,6 +39,8 @@ class Nav {
   nexusOrigin = $state<NexusOrigin>("nexusMods");
   /** Vue où revenir après avoir ajouté la clé Nexus. */
   afterNexusKey = $state<View | null>(null);
+  /** Page du compte Nexus affichée comme accueil du premier lancement. */
+  nexusWelcome = $state(false);
 
   /** Mods suivis dans le jeu ouvert. */
   subs = new SvelteSet<number>();
@@ -105,6 +107,14 @@ class Nav {
 
   openNexusAccount(returnTo: View | null = null) {
     this.afterNexusKey = returnTo;
+    this.nexusWelcome = false;
+    this.view = { name: "nexusAccount" };
+  }
+
+  /** Accueil du premier lancement : connexion à Nexus Mods. */
+  openNexusWelcome() {
+    this.afterNexusKey = null;
+    this.nexusWelcome = true;
     this.view = { name: "nexusAccount" };
   }
 

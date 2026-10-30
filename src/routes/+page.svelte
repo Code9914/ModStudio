@@ -17,7 +17,7 @@
   import NexusModView from "$lib/components/NexusModView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
   import { nexusGameImage } from "$lib/api";
-  import { nexusStore } from "$lib/nexus.svelte";
+  import { nexusStore, welcomeDone } from "$lib/nexus.svelte";
 
   let startError = $state<AppError | null>(null);
 
@@ -25,12 +25,18 @@
     startError = null;
     // Nexus Mods fonctionne même sans clé mod.io.
     nexusStore.listenNxm();
-    nexusStore.refreshAuth();
     checkNexus();
     try {
-      nav.settings = await api.getSettings();
-      if (!nav.settings.hasApiKey) nav.openSettings();
-      else {
+      const [settings] = await Promise.all([api.getSettings(), nexusStore.refreshAuth()]);
+      nav.settings = settings;
+      if (!nexusStore.ready && !welcomeDone()) {
+        // Premier lancement : connexion à Nexus Mods d'abord.
+        nav.openNexusWelcome();
+      } else if (!settings.hasApiKey) {
+        if (nexusStore.ready) nav.openNexusGames();
+        else nav.openSettings();
+      }
+      if (settings.hasApiKey) {
         nav.refreshAuth();
         checkInstalled();
       }

@@ -520,6 +520,8 @@ export const nexus = {
   listFiles: (gameId: number, modId: number) => call<NexusFile[]>("nexus_list_files", { gameId, modId }),
   openDownload: (domain: string, modId: number, fileId: number) =>
     call<null>("nexus_open_download", { domain, modId, fileId }),
+  /** Fenêtre Nexus sur la page de connexion / clés API. */
+  openLogin: () => call<null>("nexus_open_login"),
 
   overview: () => call<GameInstall[]>("nexus_overview"),
   gameSetup: (gameId: number) => call<NexusGameSetup>("nexus_game_setup", { gameId }),
