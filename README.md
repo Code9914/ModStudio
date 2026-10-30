@@ -1,4 +1,4 @@
-# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.4)
+# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.5)
 
 ModStudio parcourt et installe les mods de [mod.io](https://mod.io) et de
 [Nexus Mods](https://www.nexusmods.com) depuis une appli de bureau
@@ -179,6 +179,39 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
 - Les fichiers des mods installés depuis mod.io ne sont jamais écrasés, et
   inversement.
 
+## Jeux installés et outils de mods (v0.5)
+
+- **Jeux détectés** : ModStudio lit les bibliothèques Steam (`libraryfolders.vdf`,
+  `appmanifest_*.acf`, dossier de Steam lu dans le registre) et les manifestes
+  d'Epic Games (`%PROGRAMDATA%\Epic\EpicGamesLauncher\Data\Manifests`). Les
+  jeux qui ont une page sur Nexus Mods (liste publiée par Nexus sur
+  `data.nexusmods.com`, gardée une semaine dans `nexus-games.json`) apparaissent
+  dans « Installés sur ce PC », en tête de la liste des jeux Nexus.
+- **Dossier du jeu en un clic** : sur la page d'un jeu trouvé, « Installer les
+  mods dans ce dossier ». ModStudio reconnaît alors le moteur et range chaque
+  mod au bon endroit :
+  - **Unreal Engine** : `.pak` / `.ucas` / `.utoc` dans `Content/Paks/~mods`,
+    mods UE4SS (`Scripts/main.lua`, `dlls/main.dll`) dans le dossier `Mods`
+    d'UE4SS avec leur `enabled.txt`, mods Blueprint dans `Content/Paks/LogicMods`.
+  - **Unity** : plugins BepInEx dans `BepInEx/plugins/<mod>`, mods MelonLoader
+    dans `Mods`, `Plugins`, `UserLibs`, `UserData`.
+  - **Jeux Bethesda** (Skyrim, Fallout, Starfield, Oblivion) : contenu dans
+    `Data`, plugins `.esp/.esm/.esl` ajoutés à la fin de `plugins.txt` (copie
+    de sécurité faite une fois) et retirés à la désinstallation ; script
+    extender à la racine du jeu. Les installateurs à options (FOMOD) sont
+    refusés avec une explication.
+- **Outils de mods**, installés après confirmation, depuis leur page GitHub
+  officielle (empreinte SHA-256 vérifiée) : **UE4SS** (version expérimentale,
+  compatible Unreal 5.4+), **BepInEx 5** (Unity Mono), **BepInEx 6** (Unity
+  IL2CPP), **MelonLoader**. L'outil conseillé dépend du moteur, du chargeur
+  déjà présent, et des mods nécessaires indiqués par les mods les plus
+  recommandés du jeu. Il se retire depuis la page du jeu ou « Installés ».
+  Les **script extenders** (SKSE64, F4SE, SFSE, xNVSE, FOSE, xOBSE) s'installent
+  depuis leur page Nexus Mods, comme un mod ; ModStudio indique la version du
+  jeu à laquelle le fichier doit correspondre.
+- Après l'installation d'un mod qui a besoin d'un outil absent (UE4SS,
+  MelonLoader…), ModStudio le signale et propose de l'installer.
+
 ## Obtenir ta clé API
 
 1. Ouvre <https://mod.io/me/access> et connecte-toi.
@@ -206,6 +239,14 @@ src-tauri/src/
     window.rs     page Nexus intégrée (ou fenêtre de repli), capture des liens nxm://
     install.rs    installation, désinstallation, mises à jour
     rules.rs      règles de Bonelab (pallets, MelonLoader, versions Quest)
+    engine_rules.rs  rangement Unreal / Unity / Bethesda, plugins.txt
+    tools.rs      outils de mods depuis GitHub (UE4SS, BepInEx, MelonLoader)
+    local.rs      jeux installés reconnus, moteur, outil conseillé
+  games/          jeux installés sur ce PC :
+    steam.rs      bibliothèques et jeux Steam
+    epic.rs       jeux Epic Games
+    engine.rs     moteur (Unreal, Unity Mono/IL2CPP, Bethesda), outils présents
+    catalog.rs    liste des jeux Nexus et correspondance par nom
   auth.rs         jeton de connexion et trousseau du système
   settings.rs     réglages (clé, chemin d'API), vérification des domaines
   error.rs        erreurs envoyées à l'interface ({ kind, message, retryAfter })
@@ -252,6 +293,12 @@ démesurée, annulation), règles de Bonelab (pallets, versions Quest, mods de
 code, dossiers d'emballage, sauvegardes, MelonLoader), et refus d'écraser les
 fichiers d'un mod mod.io.
 
+Pour les jeux installés : lecture des bibliothèques Steam et des manifestes
+Epic, correspondance avec la liste des jeux Nexus (éditions, noms Steam
+différents), moteur reconnu (en-tête PE, version de l'exécutable), rangement
+Unreal / Unity / Bethesda, `plugins.txt` activé puis restauré, et installation
+d'UE4SS contre un faux GitHub (empreinte, fichiers du jeu jamais touchés).
+
 ## Sécurité
 
 - La clé API ne quitte l'appli que vers un domaine mod.io
@@ -274,6 +321,8 @@ fichiers d'un mod mod.io.
 ## Idées pour la suite
 
 - Archives RAR pour Nexus Mods.
+- Installateurs à options (FOMOD) des jeux Bethesda.
+- Jeux GOG et Xbox (Game Pass).
 - Suivre ses mods Nexus (« Track ») et les recommander depuis l'appli.
 - Noter les mods (pouce haut / bas).
 - Profils de mods (activer ou désactiver un ensemble de mods d'un coup).

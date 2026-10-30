@@ -9,6 +9,7 @@
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
   import LoadMore from "./LoadMore.svelte";
+  import NexusGameTools from "./NexusGameTools.svelte";
   import Thumb from "./Thumb.svelte";
 
   let { game }: { game: NexusGame } = $props();
@@ -96,6 +97,8 @@
   </section>
 
   <div class="body">
+    {#key game.id}<NexusGameTools {game} />{/key}
+
     <div class="toolbar">
       <label class="search">
         <span class="visually-hidden">Rechercher dans les mods de {game.name}</span>

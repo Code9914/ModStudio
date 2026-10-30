@@ -246,7 +246,7 @@
           {/if}
         </span>
       </button>
-      <p class="version muted">Version 0.4, client non officiel</p>
+      <p class="version muted">Version 0.5, client non officiel</p>
     </div>
   </nav>
 
@@ -330,6 +330,7 @@
     margin: 0;
     padding: 0;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.2rem;
   }
 
@@ -392,6 +393,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
   }
 
   .rail-foot {

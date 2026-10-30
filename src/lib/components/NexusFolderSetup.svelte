@@ -1,10 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { openUrl } from "@tauri-apps/plugin-opener";
   import { api, asAppError, nexus, nexusGameImage, type AppError, type Layout, type NexusGameSetup } from "$lib/api";
   import { layoutLabels } from "$lib/installs.svelte";
-  import { nexusStore } from "$lib/nexus.svelte";
+  import { engineNames, launcherNames, nexusStore } from "$lib/nexus.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
 
@@ -34,16 +33,21 @@
   const rules = $derived(setup?.rules ?? null);
   const locked = $derived(setup?.config ? Object.keys(setup.config.mods).length > 0 : false);
   const usingSuggestion = $derived(!!setup?.suggestedFolder && folder === setup.suggestedFolder);
+  /** Dossier du jeu trouvé dans Steam ou Epic, dont le moteur est reconnu. */
+  const usingInstalled = $derived(!!setup?.installed && folder === setup.installed.path);
+  const engineKnown = $derived(usingInstalled && !!setup?.engine && !!setup?.autoRules);
 
   onMount(async () => {
     try {
-      const s = await nexus.gameSetup(gameId);
+      const s = await nexusStore.loadSetup(gameId, domain);
       setup = s;
       folder = s.config?.folder ?? "";
       layout = s.config?.layout ?? (s.rules ? "flat" : "subfolder");
       gameDir = s.gameDir ?? "";
       // Jeu à règles : le dossier habituel est choisi d'office.
       if (!folder && s.rules && s.suggestedFolder) folder = s.suggestedFolder;
+      // Jeu installé trouvé dans Steam ou Epic : son dossier est proposé.
+      if (!folder && !s.rules && s.installed && s.engine && s.autoRules) folder = s.installed.path;
     } catch (e) {
       loadError = asAppError(e);
     }
@@ -53,7 +57,7 @@
   $effect(() => {
     const f = folder;
     gameRoot = false;
-    if (!f || rules) return;
+    if (!f || rules || f === setup?.installed?.path) return;
     api
       .inspectFolder(f)
       .then((info) => {
@@ -85,11 +89,12 @@
         gameName,
         icon: nexusGameImage(gameId, "thumbnail"),
         folder,
-        layout: rules ? "flat" : layout,
+        layout: rules || engineKnown ? "flat" : layout,
         create: usingSuggestion && !setup?.suggestedFolderExists,
         gameDir: gameDir || null,
       });
       await nexusStore.load();
+      nexusStore.loadSetup(gameId, domain).catch(() => {});
       onsaved();
     } catch (e) {
       error = asAppError(e);
@@ -142,10 +147,8 @@
         <p class="small warning">
           <Icon name="warning" size={16} />
           <span>
-            MelonLoader n'est pas installé dans ce dossier : les mods de code en ont besoin.
-            <button class="link" type="button" onclick={() => openUrl("https://github.com/LavaGang/MelonLoader#readme")}
-              >Installer MelonLoader <Icon name="external" size={12} /></button
-            >
+            MelonLoader n'est pas installé dans ce dossier : les mods de code en ont besoin. Une fois ce réglage
+            enregistré, ModStudio pourra l'installer pour toi depuis la page du jeu.
           </span>
         </p>
       {/if}
@@ -168,6 +171,20 @@
       <button class="btn" type="button" onclick={() => pick("mods")} disabled={locked}>Choisir…</button>
     </div>
 
+    {#if engineKnown && setup.installed && setup.engine}
+      <p class="small found">
+        <Icon name="check" size={15} />
+        <span>
+          Dossier du jeu trouvé dans {launcherNames[setup.installed.launcher] ?? setup.installed.launcher}. Le jeu utilise
+          {engineNames[setup.engine.engine] ?? setup.engine.engine} : ModStudio range chaque mod au bon endroit.
+        </span>
+      </p>
+    {:else if setup.installed && !locked}
+      <button class="link small" type="button" onclick={() => (folder = setup!.installed!.path)}>
+        Utiliser le dossier du jeu trouvé dans {launcherNames[setup.installed.launcher] ?? setup.installed.launcher}
+      </button>
+    {/if}
+
     {#if gameRoot && !locked}
       <p class="warning small" role="alert">
         <Icon name="warning" size={16} />
@@ -178,6 +195,7 @@
       </p>
     {/if}
 
+    {#if !engineKnown}
     <fieldset class="layouts">
       <legend class="small strong">Rangement des fichiers</legend>
       {#each Object.entries(layoutLabels) as [value, label] (value)}
@@ -190,6 +208,7 @@
         </label>
       {/each}
     </fieldset>
+    {/if}
   {/if}
 
   {#if locked}
@@ -266,6 +285,18 @@
     text-decoration: underline;
     text-underline-offset: 3px;
     font-size: inherit;
+  }
+
+  .found {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .found :global(svg) {
+    flex: none;
+    color: var(--ok);
+    margin-top: 0.15rem;
   }
 
   .warning {

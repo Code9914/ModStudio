@@ -6,13 +6,19 @@
 //!   (voir `window.rs`), comme le veut Nexus Mods.
 //! - Les mods installés sont suivis dans `installed-nexus.json`, séparé du
 //!   manifeste mod.io.
+//! - Les jeux installés (Steam, Epic) sont reconnus d'après la liste des jeux
+//!   de Nexus (`local.rs`), et les outils de mods qu'il leur faut (UE4SS,
+//!   BepInEx, MelonLoader) s'installent depuis ModStudio (`tools.rs`).
 
 pub mod account;
 pub mod browse;
 pub mod client;
+pub mod engine_rules;
 pub mod install;
+pub mod local;
 pub mod models;
 pub mod rules;
+pub mod tools;
 pub mod window;
 
 use std::collections::HashMap;
@@ -28,7 +34,9 @@ use crate::api::models::Page;
 use crate::auth::SecretStore;
 use crate::commands::AppState;
 use crate::error::{AppError, AppResult};
-use crate::installer::{GameInstall, InstallEvent, Layout, Library};
+use crate::games::catalog::{Catalog, CATALOG_URL};
+use crate::games::{DetectedGame, InstalledGame};
+use crate::installer::{GameInstall, InstallEvent, InstalledTool, Layout, Library};
 use account::{NexusAuth, NexusAuthView};
 use client::NexusClient;
 use install::{GameSetup, InstallRequest, NexusInstalled, UpdateInfo};
@@ -43,8 +51,25 @@ pub struct NexusState {
     pub auth: RwLock<NexusAuth>,
     pub library: Mutex<Library>,
     pub library_path: PathBuf,
-    /// Installations en cours : drapeau d'annulation par mod.
+    /// Installations en cours : drapeau d'annulation par mod (par jeu, en
+    /// négatif, pour les outils de mods).
     pub jobs: Mutex<HashMap<i64, Arc<AtomicBool>>>,
+    /// API GitHub (versions des outils de mods).
+    pub github_api: String,
+    /// Liste des jeux de Nexus Mods, et son cache sur le disque.
+    pub catalog_url: String,
+    pub catalog_path: PathBuf,
+    pub catalog: Mutex<Option<Catalog>>,
+    /// Jeux installés trouvés au dernier examen des launchers.
+    pub detected: Mutex<Option<Vec<DetectedGame>>>,
+    /// Un seul examen des launchers à la fois.
+    pub detect_lock: tokio::sync::Mutex<()>,
+    /// Recherche des jeux installés (remplacée dans les tests).
+    pub scanner: Arc<dyn Fn() -> Vec<InstalledGame> + Send + Sync>,
+    /// Outils demandés par les mods populaires de chaque jeu.
+    pub hints: Mutex<HashMap<String, tools::Hints>>,
+    /// `%LOCALAPPDATA%` (où les jeux Bethesda gardent `plugins.txt`).
+    pub local_appdata: Option<PathBuf>,
 }
 
 impl NexusState {
@@ -54,8 +79,17 @@ impl NexusState {
             secrets,
             auth: RwLock::new(NexusAuth::default()),
             library: Mutex::new(Library::load(&library_path)),
+            catalog_path: library_path.with_file_name("nexus-games.json"),
             library_path,
             jobs: Mutex::new(HashMap::new()),
+            github_api: tools::GITHUB_API.to_string(),
+            catalog_url: CATALOG_URL.to_string(),
+            catalog: Mutex::new(None),
+            detected: Mutex::new(None),
+            detect_lock: tokio::sync::Mutex::new(()),
+            scanner: Arc::new(crate::games::installed_games),
+            hints: Mutex::new(HashMap::new()),
+            local_appdata: std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
         }
     }
 }
@@ -162,9 +196,41 @@ pub fn nexus_overview(state: State<'_, AppState>) -> Vec<GameInstall> {
     state.nexus.overview()
 }
 
+/// Dossiers, moteur et outil de mods d'un jeu.
 #[tauri::command]
-pub fn nexus_game_setup(state: State<'_, AppState>, game_id: i64) -> GameSetup {
-    state.nexus.setup(game_id)
+pub async fn nexus_game_setup(state: State<'_, AppState>, game_id: i64, domain: String) -> AppResult<GameSetup> {
+    state.nexus.game_setup(game_id, &domain).await
+}
+
+/// Jeux installés sur ce PC (Steam, Epic), avec leur page Nexus.
+#[tauri::command]
+pub async fn nexus_detect_games(state: State<'_, AppState>, refresh: Option<bool>) -> AppResult<Vec<DetectedGame>> {
+    Ok(state.nexus.detect_games(refresh.unwrap_or(false)).await)
+}
+
+/// Installe un outil de mods (UE4SS, BepInEx, MelonLoader) dans le dossier du jeu.
+#[tauri::command]
+pub async fn nexus_install_tool(
+    state: State<'_, AppState>,
+    game_id: i64,
+    tool: String,
+    on_event: Channel<InstallEvent>,
+) -> AppResult<InstalledTool> {
+    let emit: Arc<dyn Fn(InstallEvent) + Send + Sync> = Arc::new(move |e| {
+        let _ = on_event.send(e);
+    });
+    state.nexus.install_tool(game_id, &tool, emit).await
+}
+
+#[tauri::command]
+pub fn nexus_cancel_tool(state: State<'_, AppState>, game_id: i64) {
+    state.nexus.cancel(-game_id)
+}
+
+/// Retire un outil installé par ModStudio ; renvoie le dossier laissé en place s'il en reste un.
+#[tauri::command]
+pub fn nexus_uninstall_tool(state: State<'_, AppState>, game_id: i64, tool: String) -> AppResult<Option<String>> {
+    state.nexus.remove_tool(game_id, &tool)
 }
 
 #[tauri::command]

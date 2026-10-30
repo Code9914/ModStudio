@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { api, asAppError, nexus, type AppError, type GameInstall, type InstalledMod } from "$lib/api";
-  import { nexusStore } from "$lib/nexus.svelte";
+  import { engineNames, nexusStore } from "$lib/nexus.svelte";
   import NexusFolderSetup from "./NexusFolderSetup.svelte";
   import { ago, bytes, exact } from "$lib/format";
   import { installs, layoutLabels } from "$lib/installs.svelte";
@@ -193,6 +193,35 @@
   function nexusMods(g: GameInstall): InstalledMod[] {
     return mods(g);
   }
+
+  const ruleLabels: Record<string, string> = {
+    bonelab: "rangement automatique Bonelab",
+    unreal: `rangement automatique (${engineNames.unreal})`,
+    unity: "rangement automatique (Unity)",
+    bethesda: `rangement automatique (${engineNames.bethesda})`,
+  };
+
+  async function removeTool(g: GameInstall, toolId: string, name: string) {
+    const k = `tool:${g.gameId}:${toolId}`;
+    if (!nxConfirming.has(k)) {
+      nxConfirming.add(k);
+      setTimeout(() => nxConfirming.delete(k), 4000);
+      return;
+    }
+    nxConfirming.delete(k);
+    nxRemoving.add(k);
+    try {
+      const left = await nexusStore.uninstallTool(g.gameId, g.domain ?? "", toolId);
+      nxNotes.set(
+        g.gameId,
+        left ? `${name} retiré. Le dossier « ${left} » contient des fichiers créés depuis, il a été laissé en place.` : `${name} retiré.`,
+      );
+    } catch (e) {
+      nxNotes.set(g.gameId, asAppError(e).message);
+    } finally {
+      nxRemoving.delete(k);
+    }
+  }
 </script>
 
 <div class="view">
@@ -369,7 +398,7 @@
         </div>
       </div>
       <p class="folder muted">
-        {g.folder}, {g.rules === "bonelab" ? "rangement automatique Bonelab" : layoutLabels[g.layout].title.toLowerCase()}
+        {g.folder}, {g.rules ? (ruleLabels[g.rules] ?? "rangement automatique") : layoutLabels[g.layout].title.toLowerCase()}
         {#if g.extraFolders?.game}<br />Mods de code : {g.extraFolders.game}{/if}
       </p>
 
@@ -383,6 +412,29 @@
             oncancel={() => (nexusEditing = null)}
           />
         </div>
+      {/if}
+
+      {#if g.tools && Object.keys(g.tools).length > 0}
+        <ul class="tool-list" aria-label="Outils de mods installés par ModStudio">
+          {#each Object.values(g.tools) as t (t.id)}
+            {@const k = `tool:${g.gameId}:${t.id}`}
+            <li class="tool-row">
+              <span class="chip chip-ok">{t.name}</span>
+              <span class="muted small">
+                outil de mods{t.version ? `, version ${t.version}` : ""}, installé {ago(t.installedAt)}
+              </span>
+              <button
+                class="btn"
+                class:btn-ghost={!nxConfirming.has(k)}
+                class:danger={nxConfirming.has(k)}
+                onclick={() => removeTool(g, t.id, t.name)}
+                disabled={nxRemoving.has(k)}
+              >
+                {nxRemoving.has(k) ? "…" : nxConfirming.has(k) ? "Confirmer" : "Retirer"}
+              </button>
+            </li>
+          {/each}
+        </ul>
       {/if}
 
       {#if nxNotes.get(g.gameId)}<p class="note">{nxNotes.get(g.gameId)}</p>{/if}
@@ -441,6 +493,21 @@
 </div>
 
 <style>
+  .tool-list {
+    list-style: none;
+    margin: 0 0 0.9rem;
+    padding: 0;
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  .tool-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.75rem;
+  }
+
   .view {
     height: 100%;
     overflow-y: auto;

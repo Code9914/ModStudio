@@ -4,12 +4,16 @@ import {
   asAppError,
   nexus as api,
   type AppError,
+  type DetectedGame,
   type GameInstall,
   type InstalledMod,
   type NexusAuthView,
+  type NexusGame,
+  type NexusGameSetup,
   type NexusInstalled,
   type NexusUpdate,
   type NxmLink,
+  type ToolOffer,
 } from "./api";
 import { describe, type Progress } from "./installs.svelte";
 
@@ -44,6 +48,14 @@ class NexusStore {
   updates = $state<Record<string, NexusUpdate>>({});
   /** Page Nexus affichée par-dessus le contenu (téléchargement ou connexion). */
   site = $state<SiteRequest | null>(null);
+  /** Jeux Steam et Epic installés sur ce PC (`null` : pas encore cherchés). */
+  detected = $state<DetectedGame[] | null>(null);
+  detecting = $state(false);
+  detectError = $state<AppError | null>(null);
+  /** Dossiers, moteur et outil conseillé, par jeu. */
+  setups = $state<Record<number, NexusGameSetup>>({});
+  /** Installations d'outils en cours, par jeu. */
+  toolProgress = $state<Record<number, Progress>>({});
 
   #pending = new Map<string, Pending>();
   #listening = false;
@@ -221,6 +233,84 @@ class NexusStore {
     api.cancelInstall(modId).catch(() => {});
   }
 
+  /** Cherche les jeux installés (Steam, Epic). */
+  async detectGames(refresh = false) {
+    if (this.detecting) return;
+    this.detecting = true;
+    this.detectError = null;
+    try {
+      this.detected = await api.detectGames(refresh);
+      // Les réglages en cache dépendent des jeux trouvés.
+      if (refresh) this.setups = {};
+    } catch (e) {
+      this.detectError = asAppError(e);
+      this.detected ??= [];
+    } finally {
+      this.detecting = false;
+    }
+  }
+
+  /** Jeux installés qui ont une page sur Nexus Mods. */
+  get installedGames(): (DetectedGame & { nexus: NonNullable<DetectedGame["nexus"]> })[] {
+    const seen = new Set<number>();
+    return (this.detected ?? []).filter((g): g is DetectedGame & { nexus: NonNullable<DetectedGame["nexus"]> } => {
+      if (!g.nexus || seen.has(g.nexus.id)) return false;
+      seen.add(g.nexus.id);
+      return true;
+    });
+  }
+
+  /** Le jeu installé sur ce PC qui correspond à un jeu Nexus. */
+  installedCopy(gameId: number): DetectedGame | null {
+    return this.detected?.find((g) => g.nexus?.id === gameId) ?? null;
+  }
+
+  async loadSetup(gameId: number, domain: string): Promise<NexusGameSetup> {
+    const s = await api.gameSetup(gameId, domain);
+    this.setups[gameId] = s;
+    return s;
+  }
+
+  /** Installe l'outil de mods d'un jeu (UE4SS, BepInEx, MelonLoader). */
+  async installTool(gameId: number, domain: string, tool: string) {
+    this.toolProgress[gameId] = { label: "Préparation…", ratio: null };
+    try {
+      await api.installTool(gameId, tool, (e) => {
+        this.toolProgress[gameId] = describe(e);
+      });
+    } catch (e) {
+      throw asAppError(e);
+    } finally {
+      delete this.toolProgress[gameId];
+      await Promise.allSettled([this.load(), this.loadSetup(gameId, domain)]);
+    }
+  }
+
+  cancelTool(gameId: number) {
+    api.cancelTool(gameId).catch(() => {});
+  }
+
+  async uninstallTool(gameId: number, domain: string, tool: string) {
+    try {
+      return await api.uninstallTool(gameId, tool);
+    } finally {
+      await Promise.allSettled([this.load(), this.loadSetup(gameId, domain)]);
+    }
+  }
+
+  /** Utilise le dossier d'installation trouvé dans Steam ou Epic pour un jeu. */
+  async useInstalledFolder(game: NexusGame, path: string) {
+    await api.configureGame({
+      gameId: game.id,
+      domain: game.domainName,
+      gameName: game.name,
+      icon: `https://images.nexusmods.com/images/games/v2/${game.id}/thumbnail.jpg`,
+      folder: path,
+      layout: "subfolder",
+    });
+    await Promise.allSettled([this.load(), this.loadSetup(game.id, game.domainName)]);
+  }
+
   /** Renvoie le dossier laissé en place s'il contient des fichiers ajoutés depuis. */
   async uninstall(gameId: number, modId: number) {
     const left = await api.uninstall(gameId, modId);
@@ -259,6 +349,25 @@ export function markWelcomeDone() {
   } catch {
     /* stockage indisponible : l'accueil reviendra, sans gravité */
   }
+}
+
+/** Noms des moteurs de jeu. */
+export const engineNames: Record<string, string> = {
+  unreal: "Unreal Engine",
+  "unity-mono": "Unity",
+  "unity-il2cpp": "Unity (IL2CPP)",
+  bethesda: "Creation Engine",
+};
+
+export const launcherNames: Record<string, string> = { steam: "Steam", epic: "Epic Games" };
+
+/** L'outil correspond-il à un mod nécessaire indiqué sur la page d'un mod ? */
+export function requirementMatches(tool: ToolOffer, requirementName: string): boolean {
+  const n = requirementName.toLowerCase();
+  if (tool.id === "ue4ss") return n.includes("ue4ss");
+  if (tool.id.startsWith("bepinex")) return n.includes("bepinex");
+  if (tool.id === "melonloader") return n.includes("melonloader") || n.includes("melon loader");
+  return n.includes(tool.id.replace(/\d+$/, "")) || n.includes(tool.name.toLowerCase());
 }
 
 /** Libellés des catégories de fichiers Nexus. */

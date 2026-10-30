@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { nexus, nexusGameImage, type NexusGame, type NexusGameSort } from "$lib/api";
   import { count, exact } from "$lib/format";
   import { nav } from "$lib/nav.svelte";
-  import { nexusStore } from "$lib/nexus.svelte";
+  import { launcherNames, nexusStore } from "$lib/nexus.svelte";
   import { PagedList } from "$lib/paged.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -33,6 +33,29 @@
 
   /** Jeux où des mods Nexus sont déjà installés : affichés en premier. */
   const mine = $derived(Object.values(nexusStore.games).filter((g) => Object.keys(g.mods).length > 0));
+
+  // Jeux installés sur ce PC (Steam, Epic) qui ont une page sur Nexus Mods.
+  onMount(() => {
+    if (nexusStore.detected === null) nexusStore.detectGames();
+  });
+  const onPc = $derived(
+    [...nexusStore.installedGames].sort((a, b) => a.nexus.name.localeCompare(b.nexus.name, "fr")),
+  );
+  let showAllPc = $state(false);
+  const PC_PREVIEW = 12;
+  const pcShown = $derived(showAllPc ? onPc : onPc.slice(0, PC_PREVIEW));
+
+  function openInstalled(g: (typeof onPc)[number]) {
+    nav.openNexusGame({
+      id: g.nexus.id,
+      name: g.nexus.name,
+      domainName: g.nexus.domain_name,
+      // Chiffres chargés par la page du jeu.
+      modCount: 0,
+      downloadCount: 0,
+      genre: null,
+    });
+  }
 </script>
 
 <div class="view">
@@ -95,6 +118,57 @@
         {/each}
       </div>
     </section>
+  {/if}
+
+  {#if !search && (onPc.length > 0 || (nexusStore.detecting && nexusStore.detected === null))}
+    <section class="on-pc" aria-label="Jeux installés sur ce PC">
+      <div class="section-head">
+        <h2>Installés sur ce PC</h2>
+        {#if onPc.length > 0}<span class="muted">{onPc.length}</span>{/if}
+        <button
+          class="btn btn-ghost"
+          onclick={() => nexusStore.detectGames(true)}
+          disabled={nexusStore.detecting}
+          title="Chercher de nouveau les jeux Steam et Epic Games"
+        >
+          <Icon name="refresh" size={15} />{nexusStore.detecting ? "Recherche…" : "Actualiser"}
+        </button>
+      </div>
+      {#if onPc.length === 0}
+        <ul class="card-grid posters" aria-busy="true" aria-label="Recherche des jeux installés">
+          {#each Array(6) as _, i (i)}
+            <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
+          {/each}
+        </ul>
+      {:else}
+        <ul class="card-grid posters">
+          {#each pcShown as g (g.nexus.id)}
+            {@const config = nexusStore.game(g.nexus.id)}
+            {@const n = config ? Object.keys(config.mods).length : 0}
+            <li>
+              <button class="card" onclick={() => openInstalled(g)}>
+                <Thumb
+                  src={nexusGameImage(g.nexus.id, "tile")}
+                  label={g.nexus.name}
+                  badges={[
+                    { text: launcherNames[g.launcher] ?? g.launcher, tone: "neutral" as const },
+                    ...(n > 0 ? [{ text: `${n} ${n > 1 ? "mods" : "mod"}`, tone: "ok" as const }] : []),
+                  ]}
+                />
+                <span class="card-title">{g.nexus.name}</span>
+                <span class="card-meta"><span>{exact(g.nexus.mods)} mods sur Nexus</span></span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+        {#if onPc.length > PC_PREVIEW}
+          <button class="btn more" onclick={() => (showAllPc = !showAllPc)}>
+            {showAllPc ? "Afficher moins" : `Afficher les ${onPc.length} jeux`}
+          </button>
+        {/if}
+      {/if}
+    </section>
+    <h2 class="all-title">Tous les jeux</h2>
   {/if}
 
   {#if list.error && list.items.length === 0}
@@ -218,6 +292,33 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+  }
+
+  .on-pc {
+    margin-bottom: 2.25rem;
+  }
+
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .section-head h2 {
+    margin-bottom: 0;
+  }
+
+  .section-head .btn {
+    margin-left: auto;
+  }
+
+  .more {
+    margin-top: 1rem;
+  }
+
+  .all-title {
+    margin-bottom: 0.9rem;
   }
 
   .mine-chip {

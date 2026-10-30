@@ -4,6 +4,7 @@ mod archive;
 mod auth;
 mod commands;
 mod error;
+mod games;
 mod install_commands;
 mod installer;
 mod modio_sdk;
@@ -73,6 +74,10 @@ pub fn run() {
             nexus::nexus_site_close,
             nexus::nexus_overview,
             nexus::nexus_game_setup,
+            nexus::nexus_detect_games,
+            nexus::nexus_install_tool,
+            nexus::nexus_cancel_tool,
+            nexus::nexus_uninstall_tool,
             nexus::nexus_configure_game,
             nexus::nexus_install,
             nexus::nexus_cancel_install,

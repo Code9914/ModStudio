@@ -11,11 +11,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use super::browse::check_domain;
+use super::engine_rules::{self, UnityLoader};
+use super::local::{self, ToolOffer};
 use super::models::{DownloadLink, NexusFile};
-use super::rules::{self, GAME_DIR};
+use super::rules::{self, RulePlan, GAME_DIR};
 use super::NexusState;
 use crate::archive;
 use crate::error::{AppError, AppResult};
+use crate::games::engine::{self, Engine, EngineInfo};
+use crate::games::InstalledGame;
 use crate::installer::{
     self, Batch, DownloadRequest, GameInstall, InstallEvent, InstalledMod, Layout, Library, ModPart, PlaceInput,
     STAGING_DIR,
@@ -36,8 +40,10 @@ pub struct InstallRequest {
 #[serde(rename_all = "camelCase")]
 pub struct NexusInstalled {
     pub record: InstalledMod,
-    /// Remarque à afficher (MelonLoader absent…).
+    /// Remarque à afficher (plugins non activés…).
     pub notice: Option<String>,
+    /// Outil de mods absent du jeu, sans lequel ce mod ne se chargera pas.
+    pub needs_tool: Option<ToolOffer>,
 }
 
 /// Dossiers et règles d'un jeu, pour l'interface.
@@ -54,6 +60,15 @@ pub struct GameSetup {
     pub game_dir_detected: bool,
     /// MelonLoader est installé dans le dossier du jeu.
     pub melonloader: bool,
+    /// Le jeu, trouvé dans Steam ou Epic.
+    pub installed: Option<InstalledGame>,
+    /// Moteur du jeu et outils déjà présents dans son dossier.
+    pub engine: Option<EngineInfo>,
+    /// Outil de mods conseillé pour ce jeu.
+    pub tool: Option<ToolOffer>,
+    /// Rangement automatique (`unreal`, `unity`, `bethesda`…) qu'aurait le jeu
+    /// configuré sur son dossier d'installation trouvé (sinon celui du jeu configuré).
+    pub auto_rules: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -126,6 +141,10 @@ impl NexusState {
             suggested_folder_exists: suggested_exists,
             game_dir_detected: detected && game_dir.is_some(),
             game_dir: game_dir.map(|d| d.to_string_lossy().into_owned()),
+            installed: None,
+            engine: None,
+            tool: None,
+            auto_rules: None,
         }
     }
 
@@ -186,7 +205,9 @@ impl NexusState {
         entry.layout = layout;
         entry.game_name = game_name;
         entry.domain = Some(domain.to_string());
-        entry.rules = rules::rules_for(game_id).map(str::to_string);
+        // Règles propres au jeu, sinon d'après son moteur (dossier d'installation choisi).
+        let folder_rules = self.folder_rules(game_id, &entry.folder, domain);
+        entry.rules = folder_rules.map(str::to_string);
         if icon.is_some() {
             entry.icon = icon;
         }
@@ -305,13 +326,38 @@ impl NexusState {
         };
         let old = config.mods.get(&mod_id).cloned();
         let mod_name = detail.summary.name.clone();
+        let domain = req.game_domain.clone();
+        // Jeux rangés selon leur moteur : le dossier configuré est celui du jeu.
+        let engine_info = match config.rules.as_deref() {
+            Some("unreal" | "unity" | "bethesda") => Some(
+                local::detect_engine(&config.folder, &domain).ok_or_else(|| {
+                    AppError::UnknownLayout(format!(
+                        "ModStudio ne reconnaît plus le jeu dans {}. Vérifie le dossier du jeu.",
+                        config.folder.display()
+                    ))
+                })?,
+            ),
+            _ => None,
+        };
+        let loader = match &engine_info {
+            Some(info) if config.rules.as_deref() == Some("unity") => {
+                let hints = if info.tools.is_empty() { self.hints(&domain).await } else { Default::default() };
+                Some(match local::chosen_tool(req.game_id, info, &hints) {
+                    Some("melonloader") => UnityLoader::MelonLoader,
+                    _ => UnityLoader::BepInEx,
+                })
+            }
+            _ => None,
+        };
         let file_name = file.uri.clone().unwrap_or_else(|| format!("{}.zip", file.name));
         let limit = installer::extraction_limit(file.bytes().max(0) as u64, 0);
         let blocking_emit = emit.clone();
         let blocking_cancel = cancel.clone();
         let (config_b, archive_b, job_b, old_b) = (config.clone(), archive_path.clone(), job_dir.clone(), old.clone());
+        let (engine_b, domain_b) = (engine_info.clone(), domain.clone());
 
-        let placed = tokio::task::spawn_blocking(move || -> AppResult<(Vec<installer::PlacedBatch>, Option<String>, Option<PathBuf>)> {
+        type Outcome = (Vec<installer::PlacedBatch>, Option<String>, Option<PathBuf>, Vec<String>);
+        let placed = tokio::task::spawn_blocking(move || -> AppResult<Outcome> {
             let extracted = job_b.join("extracted");
             let needs_extract = config_b.rules.is_some() || config_b.layout != Layout::Archive;
             if needs_extract {
@@ -325,15 +371,31 @@ impl NexusState {
 
             let mut root = None;
             let mut detected_dir = None;
+            let mut plugins = Vec::new();
             let mut new_batches: BTreeMap<String, Vec<(PathBuf, String)>> = BTreeMap::new();
-            match config_b.rules.as_deref() {
-                Some("bonelab") => {
+            let mut ruled: Option<RulePlan> = None;
+            match (config_b.rules.as_deref(), &engine_b) {
+                (Some("bonelab"), _) => {
                     let plan = rules::bonelab_plan(&extracted, &mod_name)?;
                     if plan.needs_game_dir() && !config_b.extra_folders.contains_key(GAME_DIR) {
                         // Dossier du jeu pas encore indiqué : on le cherche.
                         detected_dir = Some(rules::detect_bonelab_dir().ok_or_else(|| AppError::NeedGameDir(config_b.game_name.clone()))?);
                     }
-                    new_batches = plan.batches;
+                    ruled = Some(plan);
+                }
+                (Some("unreal"), Some(info)) => {
+                    let project = info.project.clone().unwrap_or_default();
+                    ruled = Some(engine_rules::unreal_plan(&extracted, &config_b.folder, &project, &mod_name)?.0);
+                }
+                (Some("unity"), Some(_)) => {
+                    let loader = loader.unwrap_or(UnityLoader::BepInEx);
+                    ruled = Some(engine_rules::unity_plan(&extracted, loader, &mod_name)?.0);
+                }
+                (Some("bethesda"), Some(_)) => {
+                    let game = engine::bethesda(&domain_b).ok_or_else(|| AppError::UnknownLayout("jeu Bethesda inconnu".into()))?;
+                    let (plan, p) = engine_rules::bethesda_plan(&extracted, game)?;
+                    plugins = p;
+                    ruled = Some(plan);
                 }
                 _ => {
                     let empty = BTreeMap::new();
@@ -351,6 +413,26 @@ impl NexusState {
                     root = r;
                     new_batches.insert(String::new(), moves);
                 }
+            }
+            if let Some(mut plan) = ruled {
+                // Fichiers vides à créer (`enabled.txt` d'UE4SS), sauf s'ils sont dans l'archive.
+                let generated = std::mem::take(&mut plan.generated);
+                let present: BTreeSet<String> = plan
+                    .batches
+                    .get("")
+                    .map(|m| m.iter().map(|(_, d)| d.to_ascii_lowercase()).collect())
+                    .unwrap_or_default();
+                let gen_dir = job_b.join("generated");
+                for (i, rel) in generated.into_iter().enumerate() {
+                    if present.contains(&rel.to_ascii_lowercase()) {
+                        continue;
+                    }
+                    fs::create_dir_all(&gen_dir).map_err(installer::io_err)?;
+                    let src = gen_dir.join(i.to_string());
+                    fs::write(&src, b"").map_err(installer::io_err)?;
+                    plan.push_root(src, rel);
+                }
+                new_batches = plan.batches;
             }
 
             // Un lot par dossier touché (nouvelle version ou ancienne).
@@ -385,13 +467,13 @@ impl NexusState {
                     old_dirs,
                 });
             }
-            Ok((installer::place_batches(batches)?, root, detected_dir))
+            Ok((installer::place_batches(batches)?, root, detected_dir, plugins))
         })
         .await
         .map_err(|e| AppError::Io(e.to_string()))
         .and_then(|r| r);
         cleanup();
-        let (placed, root, detected_dir) = placed?;
+        let (placed, root, detected_dir, plugins) = placed?;
 
         let mut record = InstalledMod {
             mod_id,
@@ -421,12 +503,35 @@ impl NexusState {
         }
 
         let game_dir = detected_dir.clone().or_else(|| config.extra_folders.get(GAME_DIR).cloned());
-        let notice = (record.parts.iter().any(|p| p.key == GAME_DIR)
-            && config.rules.as_deref() == Some("bonelab")
-            && !game_dir.as_deref().is_some_and(rules::has_melonloader))
-        .then(|| {
-            "MelonLoader n'est pas installé dans le dossier du jeu : ce mod de code ne se chargera pas tant qu'il ne l'est pas.".to_string()
-        });
+        let mut notice = None;
+
+        // Plugins des jeux Bethesda : activés à la fin de l'ordre de chargement.
+        let old_plugins = old.as_ref().map(|o| o.plugins.clone()).unwrap_or_default();
+        let kept: Vec<String> = old_plugins
+            .iter()
+            .filter(|p| plugins.iter().any(|n| n.eq_ignore_ascii_case(p)))
+            .cloned()
+            .collect();
+        let dropped: Vec<String> = old_plugins.iter().filter(|p| !kept.contains(p)).cloned().collect();
+        if let Some(path) = engine::bethesda(&domain).and_then(|g| self.plugins_path(g).map(|p| (p, g.star_format))) {
+            if !dropped.is_empty() {
+                let _ = engine_rules::deactivate_plugins(&path.0, &dropped);
+            }
+            if !plugins.is_empty() {
+                match engine_rules::activate_plugins(&path.0, &plugins, path.1) {
+                    Ok(added) => record.plugins = kept.into_iter().chain(added).collect(),
+                    Err(e) => {
+                        record.plugins = kept;
+                        notice = Some(format!(
+                            "Les plugins de ce mod n'ont pas pu être activés ({e}). Active-les depuis le menu Mods du jeu."
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Outil de mods dont ce mod a besoin, s'il manque.
+        let needs_tool = self.missing_tool(&req, &config, engine_info.as_ref(), &record, game_dir.as_deref()).await;
 
         let mut lib = self.library.lock().expect("library");
         if let Some(game) = lib.games.get_mut(&req.game_id) {
@@ -436,7 +541,66 @@ impl NexusState {
             game.mods.insert(mod_id, record.clone());
         }
         self.save_library(&lib)?;
-        Ok(NexusInstalled { record, notice })
+        Ok(NexusInstalled { record, notice, needs_tool })
+    }
+
+    /// `plugins.txt` d'un jeu Bethesda.
+    pub fn plugins_path(&self, game: &engine::BethesdaGame) -> Option<PathBuf> {
+        self.local_appdata.as_ref().map(|base| engine_rules::plugins_file(base, game))
+    }
+
+    /// L'outil qui manque au jeu pour charger ce mod, d'après les fichiers installés.
+    async fn missing_tool(
+        &self,
+        req: &InstallRequest,
+        config: &GameInstall,
+        info: Option<&EngineInfo>,
+        record: &InstalledMod,
+        game_dir: Option<&Path>,
+    ) -> Option<ToolOffer> {
+        let lower: Vec<String> = record
+            .files
+            .iter()
+            .chain(record.parts.iter().flat_map(|p| p.files.iter()))
+            .map(|f| f.to_ascii_lowercase())
+            .collect();
+        let has = |needle: &str| lower.iter().any(|f| f.contains(needle));
+        match config.rules.as_deref() {
+            Some("bonelab") => {
+                let code = record.parts.iter().any(|p| p.key == GAME_DIR && !p.files.is_empty());
+                let melon = game_dir.is_some_and(rules::has_melonloader);
+                (code && !melon).then(|| ToolOffer::github("melonloader", Some(config), None, &Default::default()))?
+            }
+            Some("unreal") => {
+                let info = info?;
+                let now = engine::present_tools(&config.folder, info.project.as_deref(), &req.game_domain);
+                let needed = has("/ue4ss/mods/") || has("/win64/mods/") || has("/paks/logicmods/");
+                (needed && !now.iter().any(|t| t == "ue4ss")).then(|| ToolOffer::github("ue4ss", Some(config), Some(info), &Default::default()))?
+            }
+            Some("unity") => {
+                let info = info?;
+                let now = engine::present_tools(&config.folder, None, &req.game_domain);
+                let id = if has("bepinex/") {
+                    (!now.iter().any(|t| t == "bepinex")).then_some(if info.engine == Engine::UnityIl2cpp { "bepinex6" } else { "bepinex5" })
+                } else {
+                    (!now.iter().any(|t| t == "melonloader")).then_some("melonloader")
+                }?;
+                // Le jeu a déjà l'autre chargeur : rien à proposer.
+                if !now.is_empty() {
+                    return None;
+                }
+                let hints = self.hints(&req.game_domain).await;
+                ToolOffer::github(id, Some(config), Some(info), &hints)
+            }
+            Some("bethesda") => {
+                let g = engine::bethesda(&req.game_domain)?;
+                let now = engine::present_tools(&config.folder, None, &req.game_domain);
+                // Plugins du script extender : `Data/SKSE/Plugins` pour `skse64`.
+                let needed = has(&format!("data/{}/plugins/", g.extender.trim_end_matches(|c: char| c.is_ascii_digit())));
+                (needed && !now.iter().any(|t| t == g.extender)).then(|| ToolOffer::extender(&req.game_domain, info))?
+            }
+            _ => None,
+        }
     }
 
     pub fn cancel(&self, mod_id: i64) {
@@ -453,6 +617,12 @@ impl NexusState {
         let game = lib.games.get_mut(&game_id).ok_or(AppError::NotFound)?;
         let record = game.mods.get(&mod_id).cloned().ok_or(AppError::NotFound)?;
         let removal = installer::uninstall_all(game, &record);
+        if !record.plugins.is_empty() {
+            let domain = game.domain.clone().unwrap_or_default();
+            if let Some(path) = engine::bethesda(&domain).and_then(|g| self.plugins_path(g)) {
+                let _ = engine_rules::deactivate_plugins(&path, &record.plugins);
+            }
+        }
         if !removal.complete() {
             let n = removal.remaining_count();
             let first = removal.first_remaining().cloned().unwrap_or_default();
@@ -607,7 +777,7 @@ mod tests {
         let out = s.install(request(None), &Library::default(), emit).await.unwrap();
         assert_eq!(out.record.modfile_id, 316);
         assert_eq!(out.record.file_uid.as_deref(), Some("u316"));
-        assert!(out.notice.is_none());
+        assert!(out.notice.is_none() && out.needs_tool.is_none());
         assert_eq!(fs::read(mods.join("BaBaCorp.711/levels/711.bundle")).unwrap(), b"carte");
         assert!(!mods.join(STAGING_DIR).exists());
         assert_eq!(*events.lock().unwrap(), vec!["preparing", "downloading", "verifying", "extracting", "finishing"]);
@@ -647,7 +817,7 @@ mod tests {
         .unwrap();
         let out = s.install(request(None), &Library::default(), quiet()).await.unwrap();
         assert_eq!(out.record.parts, vec![ModPart { key: "game".into(), files: vec!["Mods/LabFusion.dll".into()], dirs: vec![] }]);
-        assert!(out.notice.unwrap().contains("MelonLoader"));
+        assert_eq!(out.needs_tool.map(|t| t.id).as_deref(), Some("melonloader"));
         assert_eq!(fs::read(game.join("Mods/LabFusion.dll")).unwrap(), b"dll");
         assert_eq!(s.reveal_path(rules::BONELAB, Some(148)).unwrap(), game.join("Mods/LabFusion.dll"));
 
@@ -711,6 +881,87 @@ mod tests {
         let AppError::Conflict(text) = err else { panic!("conflit attendu : {err}") };
         assert!(text.contains("7/11 Extra Content"), "{text}");
         assert_eq!(fs::read(mods.join("BaBaCorp.711/BaBaCorp.711.pallet.json")).unwrap(), b"mod.io");
+    }
+
+    fn request_for(game_id: i64, domain: &str) -> InstallRequest {
+        InstallRequest {
+            game_id,
+            game_domain: domain.into(),
+            mod_id: 148,
+            file_id: 316,
+            nxm: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn unreal_mods_go_where_ue4ss_and_the_game_load_them() {
+        let zip = make_zip(&[
+            ("PushToCharge/Scripts/main.lua", b"print('hi')"),
+            ("PushToCharge.pak", b"pak"),
+            ("readme.txt", b"lis-moi"),
+        ]);
+        let (_server, s) = nexus_with(zip, 200);
+        s.set_key("cle").await.unwrap();
+        let game = tempdir("ue-game");
+        fs::create_dir_all(game.join("Pilgrim/Binaries/Win64")).unwrap();
+        fs::create_dir_all(game.join("Pilgrim/Content/Paks")).unwrap();
+        let g = s
+            .configure(6534, "pilgrim", "PILGRIM".into(), None, game.to_string_lossy().into_owned(), Layout::Subfolder, false, None)
+            .unwrap();
+        assert_eq!(g.rules.as_deref(), Some("unreal"));
+
+        let out = s.install(request_for(6534, "pilgrim"), &Library::default(), quiet()).await.unwrap();
+        let mods = game.join("Pilgrim/Binaries/Win64/ue4ss/Mods/PushToCharge");
+        assert_eq!(fs::read(mods.join("Scripts/main.lua")).unwrap(), b"print('hi')");
+        assert!(mods.join("enabled.txt").is_file(), "UE4SS ne charge que les mods activés");
+        assert_eq!(fs::read(game.join("Pilgrim/Content/Paks/~mods/PushToCharge.pak")).unwrap(), b"pak");
+        assert!(!game.join("readme.txt").exists());
+        assert_eq!(out.needs_tool.map(|t| t.id).as_deref(), Some("ue4ss"));
+
+        s.remove(6534, 148).unwrap();
+        assert!(!mods.exists());
+        assert!(!game.join("Pilgrim/Content/Paks/~mods").exists());
+        assert!(game.join("Pilgrim/Content/Paks").exists());
+    }
+
+    #[tokio::test]
+    async fn bethesda_mods_go_to_data_and_get_activated() {
+        let zip = make_zip(&[
+            ("Better Lanterns/BetterLanterns.esp", b"esp"),
+            ("Better Lanterns/textures/lantern.dds", b"dds"),
+            ("Better Lanterns/SKSE/Plugins/lanterns.dll", b"dll"),
+        ]);
+        let (_server, mut s) = nexus_with(zip, 200);
+        let appdata = tempdir("beth-appdata");
+        s.local_appdata = Some(appdata.clone());
+        let plugins = appdata.join("Skyrim Special Edition/plugins.txt");
+        fs::create_dir_all(plugins.parent().unwrap()).unwrap();
+        fs::write(&plugins, "# Ordre de chargement\r\n*Unofficial Skyrim Special Edition Patch.esp\r\n").unwrap();
+        s.set_key("cle").await.unwrap();
+        let game = tempdir("beth-game");
+        fs::write(game.join("SkyrimSE.exe"), b"MZ").unwrap();
+        fs::create_dir_all(game.join("Data")).unwrap();
+        fs::write(game.join("Data/Skyrim.esm"), b"jeu").unwrap();
+        let g = s
+            .configure(1704, "skyrimspecialedition", "Skyrim SE".into(), None, game.to_string_lossy().into_owned(), Layout::Subfolder, false, None)
+            .unwrap();
+        assert_eq!(g.rules.as_deref(), Some("bethesda"));
+
+        let out = s.install(request_for(1704, "skyrimspecialedition"), &Library::default(), quiet()).await.unwrap();
+        assert_eq!(fs::read(game.join("Data/BetterLanterns.esp")).unwrap(), b"esp");
+        assert!(game.join("Data/textures/lantern.dds").is_file());
+        assert!(game.join("Data/SKSE/Plugins/lanterns.dll").is_file());
+        assert_eq!(out.record.plugins, vec!["BetterLanterns.esp"]);
+        let text = fs::read_to_string(&plugins).unwrap();
+        assert!(text.ends_with("*BetterLanterns.esp\r\n"), "{text:?}");
+        assert!(text.contains("*Unofficial Skyrim Special Edition Patch.esp"));
+        assert_eq!(out.needs_tool.map(|t| (t.id, t.nexus_mod)), Some(("skse64".to_string(), Some(30379))));
+
+        s.remove(1704, 148).unwrap();
+        assert!(!game.join("Data/BetterLanterns.esp").exists());
+        assert!(game.join("Data/Skyrim.esm").exists(), "les fichiers du jeu restent");
+        let text = fs::read_to_string(&plugins).unwrap();
+        assert!(!text.contains("BetterLanterns") && text.contains("Unofficial"), "{text:?}");
     }
 
     #[test]

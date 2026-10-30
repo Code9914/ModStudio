@@ -1,11 +1,20 @@
 <script lang="ts">
-  import { asAppError, nexus, type AppError, type NexusFile, type NexusGame, type NexusModDetail } from "$lib/api";
+  import {
+    asAppError,
+    nexus,
+    type AppError,
+    type NexusFile,
+    type NexusGame,
+    type NexusModDetail,
+    type ToolOffer,
+  } from "$lib/api";
   import { bytes } from "$lib/format";
   import { nav } from "$lib/nav.svelte";
-  import { nexusStore, questFile } from "$lib/nexus.svelte";
+  import { nexusStore, questFile, requirementMatches } from "$lib/nexus.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
   import NexusFolderSetup from "./NexusFolderSetup.svelte";
+  import NexusToolPrompt from "./NexusToolPrompt.svelte";
   import ProgressBar from "./ProgressBar.svelte";
 
   let {
@@ -22,6 +31,28 @@
   const outdated = $derived(nexusStore.outdated(game.id, mod.modId));
   const busy = $derived(progress !== null || waiting !== null);
   const gameDir = $derived(config?.extraFolders?.game ?? null);
+
+  // Outil de mods du jeu (UE4SS…) : proposé si ce mod en a besoin et qu'il manque.
+  const gameTool = $derived(nexusStore.setups[game.id]?.tool ?? null);
+  const requiredTool = $derived(
+    gameTool && !gameTool.present && mod.requirements.some((r) => requirementMatches(gameTool, r.modName))
+      ? gameTool
+      : null,
+  );
+  /** Signalé par l'installation : le mod ne se chargera pas sans cet outil. */
+  let neededTool = $state<ToolOffer | null>(null);
+  /** Outil proposé, gardé affiché jusqu'à la fin (même une fois installé). */
+  let shownTool = $state<ToolOffer | null>(null);
+  $effect(() => {
+    const t = neededTool ?? requiredTool;
+    if (t && !shownTool) shownTool = t;
+  });
+  $effect(() => {
+    const id = game.id;
+    const domain = game.domainName;
+    if (domain && !nexusStore.setups[id]) nexusStore.loadSetup(id, domain).catch(() => {});
+  });
+  const toolFolder = $derived(config?.rules === "bonelab" ? gameDir : (config?.folder ?? null));
 
   /** Fichier conseillé : le plus récent des fichiers principaux (version PC). */
   const recommended = $derived.by(() => {
@@ -63,6 +94,7 @@
     try {
       const r = await nexusStore.request(game.id, game.domainName, mod.modId, file.fileId, file.name);
       note = [updating ? "Mis à jour." : "Installé.", r.notice].filter(Boolean).join(" ");
+      if (r.needsTool) neededTool = r.needsTool;
     } catch (e) {
       const err = asAppError(e);
       if (err.kind === "cancelled") note = "Téléchargement annulé.";
@@ -209,6 +241,17 @@
 
   {#if error}<ErrorNotice {error} />{/if}
   {#if note}<p class="note small" role="status">{note}</p>{/if}
+
+  {#if shownTool && config && !setupOpen}
+    <div class="needs">
+      <NexusToolPrompt
+        {game}
+        tool={shownTool}
+        folder={toolFolder}
+        reason={record ? `Ce mod ne se chargera pas sans ${shownTool.name}.` : `Ce mod a besoin de ${shownTool.name}.`}
+      />
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -276,6 +319,13 @@
 
   .note {
     color: var(--ok);
+  }
+
+  .needs {
+    padding: 0.8rem 0.9rem;
+    border-radius: var(--r-md);
+    background: var(--raise);
+    border-left: 3px solid var(--accent-fill);
   }
 
   .waiting {

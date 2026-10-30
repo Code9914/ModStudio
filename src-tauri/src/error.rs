@@ -72,7 +72,7 @@ pub enum AppError {
     #[error("Installation bloquée : l'antivirus de mod.io a signalé ce fichier.")]
     VirusFlagged,
 
-    #[error("Le fichier téléchargé est abîmé (somme de contrôle MD5 différente). Réessaie.")]
+    #[error("Le fichier téléchargé est abîmé (somme de contrôle différente). Réessaie.")]
     Corrupted,
 
     #[error("Installation annulée.")]
@@ -107,6 +107,17 @@ pub enum AppError {
 
     #[error("Ce mod s'installe dans le dossier du jeu. Indique où {0} est installé.")]
     NeedGameDir(String),
+
+    // ------------------------------------------------------------ Outils de mods
+
+    #[error("Impossible de récupérer {0}. Vérifie ta connexion internet puis réessaie.")]
+    ToolUnavailable(String),
+
+    #[error("{0}")]
+    ToolMismatch(String),
+
+    #[error("{0} est déjà installé dans le dossier de ce jeu.")]
+    ToolPresent(String),
 
     // ------------------------------------------------------------ Nexus Mods
 
@@ -173,6 +184,9 @@ impl AppError {
             AppError::UnknownLayout(_) => "unknown_layout",
             AppError::WrongPlatform(_) => "wrong_platform",
             AppError::NeedGameDir(_) => "need_game_dir",
+            AppError::ToolUnavailable(_) => "tool_unavailable",
+            AppError::ToolMismatch(_) => "tool_mismatch",
+            AppError::ToolPresent(_) => "tool_present",
             AppError::NexusKeyMissing => "nexus_key_missing",
             AppError::NexusKeyInvalid => "nexus_key_invalid",
             AppError::NexusPremiumRequired => "nexus_premium_required",

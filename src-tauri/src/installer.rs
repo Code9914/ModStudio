@@ -75,6 +75,29 @@ pub struct InstalledMod {
     /// Identifiant unique du fichier sur Nexus Mods (suivi des mises à jour).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_uid: Option<String>,
+    /// Plugins activés dans `plugins.txt` (jeux Bethesda), retirés à la désinstallation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plugins: Vec<String>,
+}
+
+/// Outil de mods (UE4SS, BepInEx, MelonLoader…) installé par ModStudio.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledTool {
+    pub id: String,
+    pub name: String,
+    /// Dossier où l'outil est installé : `""` (dossier du jeu configuré) ou
+    /// clé d'un dossier supplémentaire (`game` pour BONELAB).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key: String,
+    #[serde(default)]
+    pub version: Option<String>,
+    pub installed_at: i64,
+    /// Fichiers et dossiers créés, relatifs au dossier du jeu.
+    #[serde(default)]
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub dirs: Vec<String>,
 }
 
 /// Fichiers d'un mod rangés dans un dossier supplémentaire du jeu.
@@ -109,6 +132,9 @@ pub struct GameInstall {
     /// Identifiant texte du jeu sur Nexus Mods (`bonelab`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain: Option<String>,
+    /// Outils de mods installés par ModStudio dans le dossier du jeu.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tools: BTreeMap<String, InstalledTool>,
 }
 
 impl GameInstall {
@@ -121,9 +147,15 @@ impl GameInstall {
         }
     }
 
-    /// Tous les fichiers installés par les autres mods, par dossier absolu.
+    /// Tous les fichiers installés par les autres mods (et les outils), par dossier absolu.
     pub fn owned_files(&self, except_mod: i64) -> Vec<(PathBuf, String, String)> {
         let mut out = Vec::new();
+        for t in self.tools.values() {
+            let Some(dir) = self.folder_for(&t.key) else { continue };
+            for f in &t.files {
+                out.push((dir.to_path_buf(), f.clone(), t.name.clone()));
+            }
+        }
         for m in self.mods.values().filter(|m| m.mod_id != except_mod) {
             for f in &m.files {
                 out.push((self.folder.clone(), f.clone(), m.name.clone()));

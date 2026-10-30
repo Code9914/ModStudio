@@ -39,6 +39,8 @@ pub fn content_folder(game_id: i64) -> Option<String> {
 #[derive(Debug, Default)]
 pub struct RulePlan {
     pub batches: BTreeMap<String, Vec<(PathBuf, String)>>,
+    /// Fichiers vides à créer dans le dossier principal (`enabled.txt` d'UE4SS…).
+    pub generated: Vec<String>,
 }
 
 impl RulePlan {
@@ -48,6 +50,24 @@ impl RulePlan {
 
     fn push(&mut self, key: &str, src: PathBuf, dest: String) {
         self.batches.entry(key.to_string()).or_default().push((src, dest));
+    }
+
+    /// Fichier pour le dossier principal du jeu.
+    pub fn push_root(&mut self, src: PathBuf, dest: String) {
+        self.push("", src, dest);
+    }
+
+    pub fn add_generated(&mut self, rel: String) {
+        self.generated.push(rel);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.batches.values().all(Vec::is_empty)
+    }
+
+    #[cfg(test)]
+    pub fn root_destinations(&self) -> Vec<String> {
+        self.batches.get("").map(|m| m.iter().map(|(_, d)| d.clone()).collect()).unwrap_or_default()
     }
 }
 
@@ -232,44 +252,13 @@ fn code_moves(extracted: &Path, files: &[&Vec<String>]) -> AppResult<Vec<(PathBu
 
 // ---------------------------------------------------------------- Dossier du jeu
 
-/// Dossiers de bibliothèques Steam déclarés dans `libraryfolders.vdf`.
-pub fn parse_library_folders(vdf: &str) -> Vec<PathBuf> {
-    vdf.lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            let rest = line.strip_prefix("\"path\"")?.trim();
-            let value = rest.strip_prefix('"')?.strip_suffix('"')?;
-            Some(PathBuf::from(value.replace("\\\\", "\\")))
-        })
-        .collect()
-}
-
-fn steam_roots() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    for var in ["ProgramFiles(x86)", "ProgramFiles"] {
-        if let Ok(p) = std::env::var(var) {
-            roots.push(PathBuf::from(p).join("Steam"));
-        }
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        roots.push(PathBuf::from(&home).join(".steam/steam"));
-        roots.push(PathBuf::from(&home).join(".local/share/Steam"));
-    }
-    roots
-}
-
 /// Cherche le dossier d'installation de Bonelab (Steam, puis application Meta).
 pub fn detect_bonelab_dir() -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-    for root in steam_roots() {
-        let mut libraries = vec![root.clone()];
-        if let Ok(vdf) = std::fs::read_to_string(root.join("steamapps").join("libraryfolders.vdf")) {
-            libraries.extend(parse_library_folders(&vdf));
-        }
-        for lib in libraries {
-            candidates.push(lib.join("steamapps").join("common").join("BONELAB"));
-        }
-    }
+    let roots = crate::games::steam::steam_roots();
+    let mut candidates: Vec<PathBuf> = crate::games::steam::libraries(&roots)
+        .into_iter()
+        .map(|lib| lib.join("steamapps").join("common").join("BONELAB"))
+        .collect();
     if let Ok(p) = std::env::var("ProgramFiles") {
         candidates.push(
             PathBuf::from(p)
@@ -392,24 +381,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_steam_library_folders() {
-        let vdf = r#""libraryfolders"
-{
-	"0"
-	{
-		"path"		"C:\\Program Files (x86)\\Steam"
-		"label"		""
-	}
-	"1"
-	{
-		"path"		"D:\\SteamLibrary"
-		"apps"		{ "1592190"		"20000000000" }
-	}
-}"#;
-        assert_eq!(
-            parse_library_folders(vdf),
-            vec![PathBuf::from(r"C:\Program Files (x86)\Steam"), PathBuf::from(r"D:\SteamLibrary")]
-        );
+    fn knows_which_games_have_rules() {
         assert_eq!(rules_for(BONELAB), Some("bonelab"));
         assert_eq!(rules_for(1704), None);
     }

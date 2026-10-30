@@ -43,6 +43,9 @@ export interface AppError {
     | "nexus_link_expired"
     | "nexus_not_found"
     | "nexus_api"
+    | "tool_unavailable"
+    | "tool_mismatch"
+    | "tool_present"
     | "unknown";
   message: string;
   retryAfter: number | null;
@@ -343,6 +346,19 @@ export interface InstalledMod {
   /** Nom du fichier choisi (Nexus Mods). */
   fileName?: string;
   fileUid?: string;
+  /** Plugins activés dans `plugins.txt` (jeux Bethesda). */
+  plugins?: string[];
+}
+
+/** Outil de mods (UE4SS, BepInEx, MelonLoader) installé par ModStudio. */
+export interface InstalledTool {
+  id: string;
+  name: string;
+  key?: string;
+  version: string | null;
+  installedAt: number;
+  files: string[];
+  dirs: string[];
 }
 
 export interface FolderSuggestion {
@@ -369,6 +385,8 @@ export interface GameInstall {
   extraFolders?: Record<string, string>;
   /** Identifiant texte du jeu sur Nexus Mods. */
   domain?: string;
+  /** Outils de mods installés par ModStudio. */
+  tools?: Record<string, InstalledTool>;
 }
 
 // ------------------------------------------------------------------ Nexus Mods
@@ -458,6 +476,55 @@ export interface NexusAuthView {
   rejected: boolean;
 }
 
+export type Launcher = "steam" | "epic";
+
+/** Jeu trouvé dans un launcher (Steam, Epic). */
+export interface InstalledGame {
+  launcher: Launcher;
+  appId: string;
+  name: string;
+  path: string;
+}
+
+/** Jeu de la liste publiée par Nexus Mods. */
+export interface CatalogGame {
+  id: number;
+  name: string;
+  domain_name: string;
+  mods: number;
+}
+
+export interface DetectedGame extends InstalledGame {
+  nexus: CatalogGame | null;
+}
+
+export type GameEngine = "unreal" | "unity-mono" | "unity-il2cpp" | "bethesda" | "unknown";
+
+export interface EngineInfo {
+  engine: GameEngine;
+  project: string | null;
+  arch: "x64" | "x86";
+  exeVersion: string | null;
+  /** Outils présents dans le dossier du jeu (`ue4ss`, `bepinex`, `melonloader`, `skse64`…). */
+  tools: string[];
+}
+
+/** Outil de mods conseillé pour un jeu. */
+export interface ToolOffer {
+  id: string;
+  name: string;
+  description: string;
+  present: boolean;
+  /** Installé par ModStudio : peut être retiré depuis ModStudio. */
+  managed: boolean;
+  /** Script extender : sa page Nexus (il s'installe comme un mod). */
+  nexusMod: number | null;
+  gameVersion: string | null;
+  /** Mods populaires du jeu qui en ont besoin, sur `sampled` examinés. */
+  popular: number;
+  sampled: number;
+}
+
 export interface NexusGameSetup {
   config: GameInstall | null;
   rules: string | null;
@@ -466,11 +533,19 @@ export interface NexusGameSetup {
   gameDir: string | null;
   gameDirDetected: boolean;
   melonloader: boolean;
+  /** Le jeu trouvé dans Steam ou Epic. */
+  installed: InstalledGame | null;
+  engine: EngineInfo | null;
+  tool: ToolOffer | null;
+  /** Rangement automatique qu'aurait le jeu dans son dossier d'installation trouvé (sinon celui du jeu configuré). */
+  autoRules: string | null;
 }
 
 export interface NexusInstalled {
   record: InstalledMod;
   notice: string | null;
+  /** Outil absent sans lequel ce mod ne se chargera pas. */
+  needsTool: ToolOffer | null;
 }
 
 export interface NexusUpdate {
@@ -538,7 +613,15 @@ export const nexus = {
   siteClose: () => call<null>("nexus_site_close"),
 
   overview: () => call<GameInstall[]>("nexus_overview"),
-  gameSetup: (gameId: number) => call<NexusGameSetup>("nexus_game_setup", { gameId }),
+  gameSetup: (gameId: number, domain: string) => call<NexusGameSetup>("nexus_game_setup", { gameId, domain }),
+  detectGames: (refresh = false) => call<DetectedGame[]>("nexus_detect_games", { refresh }),
+  installTool: (gameId: number, tool: string, onProgress: (e: InstallEvent) => void) => {
+    const onEvent = new Channel<InstallEvent>();
+    onEvent.onmessage = onProgress;
+    return call<InstalledTool>("nexus_install_tool", { gameId, tool, onEvent });
+  },
+  cancelTool: (gameId: number) => call<null>("nexus_cancel_tool", { gameId }),
+  uninstallTool: (gameId: number, tool: string) => call<string | null>("nexus_uninstall_tool", { gameId, tool }),
   configureGame: (p: {
     gameId: number;
     domain: string;

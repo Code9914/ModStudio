@@ -127,6 +127,28 @@ impl NexusClient {
         }
     }
 
+    /// GET d'un fichier public (catalogue des jeux Nexus, versions GitHub).
+    /// L'erreur est un texte court, sans l'adresse.
+    pub async fn fetch_bytes(&self, url: &str) -> Result<Vec<u8>, String> {
+        let response = self
+            .http
+            .get(url)
+            .header(ACCEPT, "application/json")
+            .send()
+            .await
+            .map_err(|e| e.without_url().to_string())?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("erreur {}", status.as_u16()));
+        }
+        response.bytes().await.map(|b| b.to_vec()).map_err(|e| e.without_url().to_string())
+    }
+
+    pub async fn fetch_json<T: DeserializeOwned>(&self, url: &str) -> Result<T, String> {
+        let raw = self.fetch_bytes(url).await?;
+        serde_json::from_slice(&raw).map_err(|e| format!("réponse illisible ({e})"))
+    }
+
     /// GET sur l'API REST v1 avec la clé API de l'utilisateur.
     pub async fn rest<T: DeserializeOwned>(&self, path: &str, key: &str, query: &[(&str, String)]) -> AppResult<T> {
         if key.trim().is_empty() {
