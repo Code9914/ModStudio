@@ -147,6 +147,10 @@ pub enum AppError {
 
     #[error("Réponse inattendue de Nexus Mods : {0}")]
     NexusDecode(String),
+
+    /// Refus expliqué de Nexus (recommandation impossible…).
+    #[error("{0}")]
+    NexusRefused(String),
 }
 
 impl AppError {
@@ -196,6 +200,7 @@ impl AppError {
             AppError::NexusApi { .. } => "nexus_api",
             AppError::NexusNetwork(_) => "network",
             AppError::NexusDecode(_) => "decode",
+            AppError::NexusRefused(_) => "nexus_refused",
         }
     }
 

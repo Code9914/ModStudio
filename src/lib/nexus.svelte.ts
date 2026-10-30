@@ -21,6 +21,7 @@ import {
   type ProfileEdit,
   type ToolOffer,
 } from "./api";
+import { SvelteSet } from "svelte/reactivity";
 import { describe, type Progress } from "./installs.svelte";
 
 /** Page Nexus à afficher dans ModStudio. */
@@ -40,6 +41,8 @@ const cancelled = (): AppError => ({ kind: "cancelled", message: "Téléchargeme
 
 /** Les identifiants de mods Nexus sont propres à chaque jeu. */
 const keyOf = (gameId: number, modId: number) => `${gameId}:${modId}`;
+/** Suivis et recommandations : désignés par le domaine du jeu. */
+const socialKey = (domain: string, modId: number) => `${domain}:${modId}`;
 
 class NexusStore {
   auth = $state<NexusAuthView | null>(null);
@@ -48,6 +51,12 @@ class NexusStore {
   games = $state<Record<number, GameInstall>>({});
   /** Chargeurs de mods installés sans ModStudio, par jeu configuré. */
   found = $state<Record<number, FoundLoader[]>>({});
+  /** Mods suivis et recommandés (clés `jeu:mod`, jeu = domaine Nexus). */
+  tracked = new SvelteSet<string>();
+  endorsed = new SvelteSet<string>();
+  abstained = new SvelteSet<string>();
+  socialLoaded = $state(false);
+  #socialLoading = false;
   loaded = $state(false);
   /** Installations en cours (clé `jeu:mod`). */
   progress = $state<Record<string, Progress>>({});
@@ -104,6 +113,54 @@ class NexusStore {
     this.games = Object.fromEntries(list.map((g) => [g.gameId, g]));
     this.loaded = true;
     this.loadFound();
+  }
+
+  // ---------------------------------------------------------- Suivis et recommandations
+
+  /** Mods suivis et recommandés (avec une clé API). */
+  async loadSocial(force = false) {
+    if (!this.ready || this.#socialLoading || (this.socialLoaded && !force)) return;
+    this.#socialLoading = true;
+    try {
+      const s = await api.social();
+      const fill = (set: SvelteSet<string>, refs: { domain: string; modId: number }[]) => {
+        set.clear();
+        for (const r of refs) set.add(socialKey(r.domain, r.modId));
+      };
+      fill(this.tracked, s.tracked);
+      fill(this.endorsed, s.endorsed);
+      fill(this.abstained, s.abstained);
+      this.socialLoaded = true;
+    } catch {
+      /* hors ligne : les boutons gardent leur état connu */
+    } finally {
+      this.#socialLoading = false;
+    }
+  }
+
+  isTracked(domain: string, modId: number) {
+    return this.tracked.has(socialKey(domain, modId));
+  }
+
+  isEndorsed(domain: string, modId: number) {
+    return this.endorsed.has(socialKey(domain, modId));
+  }
+
+  async setTracked(domain: string, modId: number, on: boolean) {
+    await api.setTracked(domain, modId, on);
+    const k = socialKey(domain, modId);
+    if (on) this.tracked.add(k);
+    else this.tracked.delete(k);
+  }
+
+  /** Recommande le mod, ou retire la recommandation (« ne pas recommander » pour Nexus). */
+  async endorse(domain: string, modId: number, version: string | null, on: boolean) {
+    const status = await api.endorse(domain, modId, version, on);
+    const k = socialKey(domain, modId);
+    this.endorsed.delete(k);
+    this.abstained.delete(k);
+    if (status === "Endorsed") this.endorsed.add(k);
+    else if (status === "Abstained") this.abstained.add(k);
   }
 
   /** Relit les chargeurs de mods installés à la main (dossiers des jeux configurés). */

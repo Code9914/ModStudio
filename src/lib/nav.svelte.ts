@@ -13,10 +13,11 @@ export type View =
   | { name: "nexusGames" }
   | { name: "nexusMods" }
   | { name: "nexusMod"; modId: number }
-  | { name: "nexusAccount" };
+  | { name: "nexusAccount" }
+  | { name: "nexusTracked" };
 
 export type ModOrigin = "mods" | "library" | "installed";
-export type NexusOrigin = "nexusMods" | "installed";
+export type NexusOrigin = "nexusMods" | "installed" | "nexusTracked";
 
 class Nav {
   view = $state<View>({ name: "games" });
@@ -99,10 +100,20 @@ class Nav {
 
   /** Fiche d'un mod Nexus ouverte depuis « Installés ». */
   openNexusModFromInstalled(game: NexusGame, modId: number) {
+    this.openNexusModFrom(game, modId, "installed");
+  }
+
+  /** Fiche d'un mod Nexus ouverte depuis une autre liste que celle de son jeu. */
+  openNexusModFrom(game: NexusGame, modId: number, origin: NexusOrigin) {
     if (this.nexusGame?.id !== game.id) this.nexusGame = game;
-    this.nexusOrigin = "installed";
+    this.nexusOrigin = origin;
     this.nexusModStack = [modId];
     this.view = { name: "nexusMod", modId };
+  }
+
+  /** Mods suivis sur Nexus Mods. */
+  openNexusTracked() {
+    this.view = { name: "nexusTracked" };
   }
 
   openNexusAccount(returnTo: View | null = null) {

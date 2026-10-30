@@ -535,6 +535,20 @@ export interface EngineInfo {
 }
 
 /** Outil de mods conseillé pour un jeu. */
+/** Un mod Nexus désigné par son jeu (`skyrimspecialedition`) et son numéro. */
+export interface ModRef {
+  domain: string;
+  modId: number;
+}
+
+/** Mods suivis et avis donnés sur Nexus Mods. */
+export interface NexusSocial {
+  tracked: ModRef[];
+  endorsed: ModRef[];
+  /** « Ne pas recommander ». */
+  abstained: ModRef[];
+}
+
 /** Chargeur de mods trouvé dans le dossier d'un jeu, installé sans ModStudio. */
 export interface FoundLoader {
   id: string;
@@ -696,6 +710,13 @@ export const nexus = {
   siteClose: () => call<null>("nexus_site_close"),
 
   overview: () => call<GameInstall[]>("nexus_overview"),
+  social: () => call<NexusSocial>("nexus_social"),
+  setTracked: (domain: string, modId: number, tracked: boolean) =>
+    call<null>("nexus_set_tracked", { domain, modId, tracked }),
+  /** Recommande (`endorse`) ou « ne pas recommander » ; renvoie `Endorsed` / `Abstained`. */
+  endorse: (domain: string, modId: number, version: string | null, endorse: boolean) =>
+    call<string>("nexus_endorse", { domain, modId, version, endorse }),
+  trackedMods: () => call<NexusMod[]>("nexus_tracked_mods"),
   foundLoaders: () => call<Record<number, FoundLoader[]>>("nexus_found_loaders"),
   gameSetup: (gameId: number, domain: string) => call<NexusGameSetup>("nexus_game_setup", { gameId, domain }),
   detectGames: (refresh = false) => call<DetectedGame[]>("nexus_detect_games", { refresh }),

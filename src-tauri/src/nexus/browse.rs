@@ -153,6 +153,23 @@ impl NexusState {
         Ok(page(data.mods, offset, limit))
     }
 
+    /// Fiches de plusieurs mods, d'après (jeu, mod), par lots de 50.
+    pub async fn mods_by_ids(&self, ids: &[(i64, i64)]) -> AppResult<Vec<NexusMod>> {
+        let gql = format!("query Mods($ids: [CompositeIdInput!]!) {{ legacyMods(ids: $ids) {{ nodes {{ {MOD_FIELDS} }} }} }}");
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Data {
+            legacy_mods: Nodes<NexusMod>,
+        }
+        let mut out = Vec::new();
+        for chunk in ids.chunks(50) {
+            let list: Vec<Value> = chunk.iter().map(|(g, m)| json!({ "gameId": g, "modId": m })).collect();
+            let data: Data = self.client.graphql(&gql, json!({ "ids": list })).await?;
+            out.extend(data.legacy_mods.nodes);
+        }
+        Ok(out)
+    }
+
     pub async fn get_mod(&self, game_id: i64, mod_id: i64) -> AppResult<NexusModDetail> {
         check_id(game_id)?;
         check_id(mod_id)?;

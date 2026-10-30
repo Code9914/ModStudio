@@ -269,6 +269,9 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
   sombre / comme Windows, taille du texte, des vignettes, coins, raccourcis
   des jeux dans la barre latérale. Gardée sur l'ordinateur et appliquée avant
   le premier affichage.
+- **Suivre et recommander** (Nexus) : boutons « Suivre » et « Recommander »
+  sur la fiche d'un mod (refus de Nexus expliqués : mod pas encore
+  téléchargé…), vue « Mods suivis » de tous les jeux.
 - **Descriptions Nexus** (v0.7) : balises `[/*]`, entités HTML (`&#92;`…),
   listes imbriquées ; un `[code]` d'une ligne reste dans la phrase.
 
@@ -383,6 +386,4 @@ d'UE4SS contre un faux GitHub (empreinte, fichiers du jeu jamais touchés).
 ## Idées pour la suite
 
 - Jeux GOG et Xbox (Game Pass).
-- Suivre ses mods Nexus (« Track ») et les recommander depuis l'appli.
-- Noter les mods (pouce haut / bas).
 - Build Linux (.AppImage, .deb) dans GitHub Actions.

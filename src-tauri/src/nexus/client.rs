@@ -151,14 +151,38 @@ impl NexusClient {
 
     /// GET sur l'API REST v1 avec la clé API de l'utilisateur.
     pub async fn rest<T: DeserializeOwned>(&self, path: &str, key: &str, query: &[(&str, String)]) -> AppResult<T> {
+        self.rest_with(Method::GET, path, key, query, &[]).await
+    }
+
+    /// POST / DELETE sur l'API REST v1 (formulaire `form`), avec la clé API.
+    pub async fn rest_write<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        key: &str,
+        query: &[(&str, String)],
+        form: &[(&str, String)],
+    ) -> AppResult<T> {
+        self.rest_with(method, path, key, query, form).await
+    }
+
+    async fn rest_with<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        key: &str,
+        query: &[(&str, String)],
+        form: &[(&str, String)],
+    ) -> AppResult<T> {
         if key.trim().is_empty() {
             return Err(AppError::NexusKeyMissing);
         }
         let url = format!("{}/v1{}", self.base, path);
-        let response = self
-            .request(Method::GET, &url)
-            .header("apikey", key)
-            .query(query)
+        let mut request = self.request(method, &url).header("apikey", key).query(query);
+        if !form.is_empty() {
+            request = request.form(form);
+        }
+        let response = request
             .send()
             .await
             // L'URL peut contenir la clé d'un lien nxm : jamais dans un message.

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import DOMPurify from "dompurify";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { asAppError, nexus, nexusModUrl, type AppError, type NexusFile, type NexusGame, type NexusModDetail } from "$lib/api";
@@ -19,6 +20,31 @@
   let filesError = $state<AppError | null>(null);
   let attempt = $state(0);
   let panel = $state<ReturnType<typeof NexusInstallPanel> | null>(null);
+
+  // ------------------------------------------------------------ Suivre, recommander
+  let socialBusy = $state(false);
+  let socialError = $state<string | null>(null);
+  const tracked = $derived(mod ? nexusStore.isTracked(game.domainName, mod.modId) : false);
+  const endorsed = $derived(mod ? nexusStore.isEndorsed(game.domainName, mod.modId) : false);
+
+  $effect(() => {
+    if (nexusStore.ready) untrack(() => nexusStore.loadSocial());
+  });
+
+  async function social(action: () => Promise<void>) {
+    socialBusy = true;
+    socialError = null;
+    try {
+      await action();
+    } catch (e) {
+      socialError = asAppError(e).message;
+    } finally {
+      socialBusy = false;
+    }
+  }
+
+  const toggleTrack = () => social(() => nexusStore.setTracked(game.domainName, mod!.modId, !tracked));
+  const toggleEndorse = () => social(() => nexusStore.endorse(game.domainName, mod!.modId, mod!.version, !endorsed));
 
   $effect(() => {
     const id = modId;
@@ -100,7 +126,9 @@
         ? "Retour"
         : nav.nexusOrigin === "installed"
           ? "Retour aux mods installés"
-          : `Retour à ${game.name}`}
+          : nav.nexusOrigin === "nexusTracked"
+            ? "Retour aux mods suivis"
+            : `Retour à ${game.name}`}
     </button>
   </div>
 
@@ -124,9 +152,32 @@
         </p>
       </div>
       <div class="actions">
+        {#if nexusStore.ready}
+          <button
+            class="btn"
+            class:on={tracked}
+            aria-pressed={tracked}
+            title={tracked ? "Ne plus suivre ce mod" : "Suivre ce mod : il apparaît dans « Mods suivis », et Nexus Mods te prévient de ses mises à jour"}
+            disabled={socialBusy}
+            onclick={toggleTrack}
+          >
+            <Icon name="bell" size={15} />{tracked ? "Suivi" : "Suivre"}
+          </button>
+          <button
+            class="btn"
+            class:on={endorsed}
+            aria-pressed={endorsed}
+            title={endorsed ? "Retirer ma recommandation" : "Recommander ce mod sur Nexus Mods"}
+            disabled={socialBusy}
+            onclick={toggleEndorse}
+          >
+            <Icon name="thumb" size={15} />{endorsed ? "Recommandé" : "Recommander"}
+          </button>
+        {/if}
         <button class="btn" onclick={() => open(nexusModUrl(game.domainName, mod!.modId))}>
           Ouvrir sur Nexus Mods <Icon name="external" size={14} />
         </button>
+        {#if socialError}<p class="social-error" role="alert">{socialError}</p>{/if}
       </div>
     </header>
 
@@ -309,7 +360,23 @@
 
   .actions {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 0.6rem;
+    max-width: 34rem;
+  }
+
+  /* Suivi, recommandé : la couleur de l'appli. */
+  .actions .btn.on {
+    border-color: var(--accent-fill);
+    color: var(--accent);
+  }
+
+  .social-error {
+    flex-basis: 100%;
+    text-align: right;
+    font-size: var(--t-sm);
+    color: var(--danger);
   }
 
   .layout {

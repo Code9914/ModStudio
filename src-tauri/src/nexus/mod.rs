@@ -19,6 +19,7 @@ pub mod install;
 pub mod local;
 pub mod models;
 pub mod rules;
+pub mod social;
 pub mod tools;
 pub mod window;
 
@@ -200,6 +201,37 @@ pub async fn nexus_site_close(app: AppHandle) {
 }
 
 // ---------------------------------------------------------------- Installation
+
+// ------------------------------------------------------------ Suivis et recommandations
+
+/// Mods suivis et recommandés par l'utilisateur.
+#[tauri::command]
+pub async fn nexus_social(state: State<'_, AppState>) -> AppResult<social::Social> {
+    state.nexus.social().await
+}
+
+#[tauri::command]
+pub async fn nexus_set_tracked(state: State<'_, AppState>, domain: String, mod_id: i64, tracked: bool) -> AppResult<()> {
+    state.nexus.set_tracked(&domain, mod_id, tracked).await
+}
+
+/// Recommande un mod (`endorse`), ou indique ne pas vouloir le recommander.
+#[tauri::command]
+pub async fn nexus_endorse(
+    state: State<'_, AppState>,
+    domain: String,
+    mod_id: i64,
+    version: Option<String>,
+    endorse: bool,
+) -> AppResult<String> {
+    state.nexus.endorse(&domain, mod_id, version, endorse).await
+}
+
+/// Fiches des mods suivis, tous jeux confondus.
+#[tauri::command]
+pub async fn nexus_tracked_mods(state: State<'_, AppState>) -> AppResult<Vec<NexusMod>> {
+    state.nexus.tracked_mods().await
+}
 
 #[tauri::command]
 pub fn nexus_overview(state: State<'_, AppState>) -> Vec<GameInstall> {

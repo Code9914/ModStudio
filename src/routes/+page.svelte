@@ -13,6 +13,7 @@
   import ModView from "$lib/components/ModView.svelte";
   import NexusAccountView from "$lib/components/NexusAccountView.svelte";
   import NexusGamesView from "$lib/components/NexusGamesView.svelte";
+  import NexusTrackedView from "$lib/components/NexusTrackedView.svelte";
   import NexusModsView from "$lib/components/NexusModsView.svelte";
   import NexusModView from "$lib/components/NexusModView.svelte";
   import NexusSite from "$lib/components/NexusSite.svelte";
@@ -54,6 +55,7 @@
   async function checkNexus() {
     try {
       await nexusStore.load();
+      nexusStore.loadSocial();
       await Promise.all(Object.keys(nexusStore.games).map((id) => nexusStore.checkUpdates(Number(id))));
     } catch {
       /* la page Installés affichera l'erreur */
@@ -105,7 +107,7 @@
     if ((event.key === "Escape" || (event.altKey && event.key === "ArrowLeft")) && nav.view.name !== "games") {
       const v = nav.view.name;
       if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods") nav.back();
-      else if (v === "nexusAccount") nav.openNexusGames();
+      else if (v === "nexusAccount" || v === "nexusTracked") nav.openNexusGames();
       else if (v !== "nexusGames") nav.openGames();
     }
   }
@@ -244,6 +246,19 @@
           </li>
         {/each}
       {/if}
+      {#if nexusStore.ready}
+        <li>
+          <button
+            class="nav-item"
+            aria-current={nav.view.name === "nexusTracked" || (nav.view.name === "nexusMod" && nav.nexusOrigin === "nexusTracked")
+              ? "page"
+              : undefined}
+            onclick={() => nav.openNexusTracked()}
+          >
+            <Icon name="bell" size={18} />Mods suivis
+          </button>
+        </li>
+      {/if}
     </ul>
 
     <ul class="nav">
@@ -355,6 +370,9 @@
       {/key}
       {#if nav.view.name === "nexusMod" && nav.nexusGame}
         <div class="pane"><NexusModView game={nav.nexusGame} modId={nav.view.modId} /></div>
+      {/if}
+      {#if nav.view.name === "nexusTracked"}
+        <div class="pane"><NexusTrackedView /></div>
       {/if}
       {#if nav.view.name === "nexusAccount"}
         <div class="pane"><NexusAccountView /></div>

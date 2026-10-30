@@ -15,7 +15,8 @@
     | "plus"
     | "user"
     | "library"
-    | "refresh";
+    | "refresh"
+    | "bell";
 
   let { name, size = 16 }: { name: Name; size?: number } = $props();
 
@@ -35,6 +36,7 @@
     user: "M19 20v-1a5 5 0 0 0-5-5h-4a5 5 0 0 0-5 5v1M12 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z",
     library: "M5 4h3v16H5zM10 4h3v16h-3zM15.5 4.8l2.9-.8 3.6 15.3-2.9.7z",
     refresh: "M20 11a8 8 0 0 0-14.7-4.3L4 8m0-4v4h4M4 13a8 8 0 0 0 14.7 4.3L20 16m0 4v-4h-4",
+    bell: "M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Zm4 4a2 2 0 0 0 4 0",
   };
 </script>
 
