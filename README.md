@@ -251,6 +251,11 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
   sur les fichiers et plugins actifs du jeu, version du jeu, fichiers
   obligatoires et conditionnels, priorités. Les destinations partent de `Data`
   pour les jeux Bethesda. L'archive reste extraite le temps des choix.
+- **Barre latérale et « Installés »** (v0.6.2) : seuls les jeux qui ont au
+  moins un mod installé y figurent. Un chargeur de mods (MelonLoader, BepInEx,
+  UE4SS, script extender) compte comme un mod : ceux de ModStudio avec leur
+  version et « Retirer », ceux installés à la main repérés dans le dossier du
+  jeu.
 
 ## Obtenir ta clé API
 

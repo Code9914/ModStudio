@@ -1,6 +1,6 @@
 [package]
 name = "modstudio"
-version = "0.6.1"
+version = "0.6.2"
 description = "Client de bureau non officiel pour mod.io et Nexus Mods"
 authors = []
 edition = "2024"
