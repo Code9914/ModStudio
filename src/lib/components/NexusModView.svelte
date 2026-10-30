@@ -389,11 +389,18 @@
     border-radius: var(--r-sm);
   }
 
-  .prose :global(:not(pre) > code) {
+  /* Code dans le texte (directement dans .prose aussi), pas dans un bloc. */
+  .prose :global(code) {
     padding: 0.1em 0.4em;
     font-size: 0.9em;
     background: var(--raise);
     border-radius: var(--r-sm);
+  }
+
+  .prose :global(pre code) {
+    padding: 0;
+    font-size: inherit;
+    background: none;
   }
 
   .prose :global(hr) {

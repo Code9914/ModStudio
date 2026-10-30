@@ -56,6 +56,9 @@ function setCodeAside(s: string, codes: string[]): string {
         before = before.replace(/[ \t\n]+$/, " ");
       }
       after = after.replace(/^[ \t]*\n[ \t\n]*(?=[.,;:!?)])/, "");
+      // « [code]SellX3.dll[/code]into » : l'espace perdue à la conversion.
+      after = after.replace(/^(?=[\p{L}\p{N}])/u, " ");
+      if (/[\p{L}\p{N}]$/u.test(before)) before += " ";
     }
     out = before + `\uE000${codes.length - 1}\uE001`;
     rest = after;
@@ -108,14 +111,17 @@ const RULES: [RegExp, string | ((...m: string[]) => string)][] = [
   [/\[line\]/gi, "<hr>"],
 ];
 
-/** Balises de mise en forme abandonnées (taille, couleur, police, alignement), et listes mal fermées. */
-const DROPPED = /\[\/?(?:size|color|colour|font|center|centre|left|right|justify|indent|align|style|h[1-6]|list)(?:=[^\]]*)?\]/gi;
+/** Balises de mise en forme abandonnées (taille, couleur, police, alignement). */
+const DROPPED = /\[\/?(?:size|color|colour|font|center|centre|left|right|justify|indent|align|style|h[1-6])(?:=[^\]]*)?\]/gi;
 
 const BLOCK = "(?:ul|ol|li|blockquote|pre|details|summary|h3|hr)";
 
 export function bbcodeToHtml(input: string): string {
   let s = input.replace(/\r\n?/g, "\n").replace(/\n?<br\s*\/?>\n?/gi, "\n");
   s = escapeHtml(decodeEntities(s)).replace(/[\uE000\uE001]/g, "");
+  // Mise en forme retirée d'abord : un [/color] entre un retour à la ligne et
+  // un [code] ne doit pas cacher où se trouve le code.
+  s = s.replace(DROPPED, "");
   const codes: string[] = [];
   s = setCodeAside(s, codes);
   // Les balises imbriquées se résolvent de l'intérieur vers l'extérieur.
@@ -124,7 +130,8 @@ export function bbcodeToHtml(input: string): string {
     for (const [re, rep] of RULES) s = s.replace(re, rep as never);
     if (s === before) break;
   }
-  s = s.replace(DROPPED, "");
+  // Listes mal fermées : balises restantes retirées.
+  s = s.replace(/\[\/?list(?:=[^\]]*)?\]/gi, "");
   // Éléments de liste hors d'un [list] : une puce, sans la balise de fin.
   s = s.replace(/\[\/\*\]/g, "").replace(/\[\*\]/g, "• ");
   s = s.replace(/\uE000(\d+)\uE001/g, (_, i) => codes[Number(i)]);
