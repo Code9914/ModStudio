@@ -18,6 +18,10 @@
   import NexusModView from "$lib/components/NexusModView.svelte";
   import NexusSite from "$lib/components/NexusSite.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
+  import TsGamesView from "$lib/components/TsGamesView.svelte";
+  import TsModsView from "$lib/components/TsModsView.svelte";
+  import TsModView from "$lib/components/TsModView.svelte";
+  import { tsStore } from "$lib/thunderstore.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import { updates as appUpdates } from "$lib/updates.svelte";
   import { appearance } from "$lib/appearance.svelte";
@@ -33,6 +37,7 @@
     // Nexus Mods fonctionne même sans clé mod.io.
     nexusStore.listenNxm();
     checkNexus();
+    checkThunderstore();
     try {
       const [settings] = await Promise.all([api.getSettings(), nexusStore.refreshAuth()]);
       nav.settings = settings;
@@ -62,6 +67,15 @@
     }
   }
 
+  async function checkThunderstore() {
+    try {
+      await tsStore.load();
+      await Promise.all(Object.keys(tsStore.games).map((id) => tsStore.checkUpdates(Number(id))));
+    } catch {
+      /* la page Installés affichera l'erreur */
+    }
+  }
+
   /** Charge les mods installés et cherche leurs mises à jour, sans bloquer. */
   async function checkInstalled() {
     try {
@@ -79,6 +93,10 @@
     ) +
       Object.values(nexusStore.games).reduce(
         (n, g) => n + Object.values(g.mods).filter((m) => nexusStore.outdated(g.gameId, m.modId)).length,
+        0,
+      ) +
+      Object.values(tsStore.games).reduce(
+        (n, g) => n + Object.values(g.mods).filter((m) => !m.disabled && tsStore.outdated(g.gameId, m.modId)).length,
         0,
       ),
   );
@@ -106,9 +124,9 @@
     if (typing) return;
     if ((event.key === "Escape" || (event.altKey && event.key === "ArrowLeft")) && nav.view.name !== "games") {
       const v = nav.view.name;
-      if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods") nav.back();
+      if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods" || v === "tsMod" || v === "tsMods") nav.back();
       else if (v === "nexusAccount" || v === "nexusTracked") nav.openNexusGames();
-      else if (v !== "nexusGames") nav.openGames();
+      else if (v !== "nexusGames" && v !== "tsGames") nav.openGames();
     }
   }
 
@@ -132,6 +150,13 @@
       .sort(byName),
   );
 
+  const tsRail = $derived(
+    Object.values(tsStore.games)
+      .filter((g) => g.domain && tsStore.count(g) > 0)
+      .map((g) => tsStore.communityOf(g))
+      .sort(byName),
+  );
+
   // Page d'un jeu (ou d'un de ses mods) ouverte depuis sa liste.
   const onModioGame = $derived(nav.view.name === "mods" || (nav.view.name === "mod" && nav.modOrigin === "mods"));
   const onNexusGame = $derived(
@@ -146,6 +171,11 @@
   const nexusGamesCurrent = $derived(
     nav.view.name === "nexusGames" ||
       (onNexusGame && (!appearance.value.railGames || !nexusRail.some((g) => g.id === nav.nexusGame?.id))),
+  );
+  const onTsGame = $derived(nav.view.name === "tsMods" || (nav.view.name === "tsMod" && nav.tsOrigin === "tsMods"));
+  const tsGamesCurrent = $derived(
+    nav.view.name === "tsGames" ||
+      (onTsGame && (!appearance.value.railGames || !tsRail.some((g) => g.id === nav.tsGame?.id))),
   );
 
   /** Ouvre un jeu mod.io de la barre latérale (sa fiche est chargée au besoin). */
@@ -261,13 +291,53 @@
       {/if}
     </ul>
 
+    <p class="section">Thunderstore</p>
+    <ul class="nav">
+      <li>
+        <button
+          class="nav-item"
+          aria-label="Jeux Thunderstore"
+          aria-current={tsGamesCurrent ? "page" : undefined}
+          onclick={() => nav.openTsGames()}
+        >
+          <Icon name="grid" size={18} />Jeux
+        </button>
+      </li>
+      {#if appearance.value.railGames}
+        {#each tsRail as g (g.id)}
+          <li>
+            <button
+              class="nav-item sub"
+              aria-current={onTsGame && nav.tsGame?.id === g.id ? "page" : undefined}
+              onclick={() => nav.openTsGame(nav.tsGame?.id === g.id ? nav.tsGame : g)}
+            >
+              {#if g.communityIconUrl ?? g.coverImageUrl}
+                <img
+                  class="cover"
+                  src={g.communityIconUrl ?? g.coverImageUrl}
+                  alt=""
+                  width="18"
+                  height="18"
+                  onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = "hidden")}
+                />
+              {:else}
+                <span class="icon-gap" aria-hidden="true"></span>
+              {/if}
+              <span class="ellipsis">{g.name}</span>
+            </button>
+          </li>
+        {/each}
+      {/if}
+    </ul>
+
     <ul class="nav">
       <li>
         <button
           class="nav-item"
           aria-current={nav.view.name === "installed" ||
           (nav.view.name === "mod" && nav.modOrigin === "installed") ||
-          (nav.view.name === "nexusMod" && nav.nexusOrigin === "installed")
+          (nav.view.name === "nexusMod" && nav.nexusOrigin === "installed") ||
+          (nav.view.name === "tsMod" && nav.tsOrigin === "installed")
             ? "page"
             : undefined}
           onclick={() => nav.openInstalled()}
@@ -370,6 +440,17 @@
       {/key}
       {#if nav.view.name === "nexusMod" && nav.nexusGame}
         <div class="pane"><NexusModView game={nav.nexusGame} modId={nav.view.modId} /></div>
+      {/if}
+      <div class="pane" hidden={nav.view.name !== "tsGames"}><TsGamesView /></div>
+      {#if nav.tsGame}
+        {#key nav.tsGame.id}
+          <div class="pane" hidden={nav.view.name !== "tsMods"}><TsModsView game={nav.tsGame} /></div>
+        {/key}
+      {/if}
+      {#if nav.view.name === "tsMod" && nav.tsGame}
+        {#key `${nav.view.namespace}-${nav.view.modName}`}
+          <div class="pane"><TsModView game={nav.tsGame} namespace={nav.view.namespace} name={nav.view.modName} /></div>
+        {/key}
       {/if}
       {#if nav.view.name === "nexusTracked"}
         <div class="pane"><NexusTrackedView /></div>
@@ -479,6 +560,10 @@
   .nav-item img {
     border-radius: 3px;
     flex: none;
+  }
+
+  .nav-item img.cover {
+    object-fit: cover;
   }
 
   .section {

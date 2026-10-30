@@ -1,11 +1,12 @@
-# ModStudio — client de bureau pour mod.io et Nexus Mods (v0.9)
+# ModStudio — client de bureau pour mod.io, Nexus Mods et Thunderstore (v0.9)
 
-ModStudio parcourt et installe les mods de [mod.io](https://mod.io) et de
-[Nexus Mods](https://www.nexusmods.com) depuis une appli de bureau
+ModStudio parcourt et installe les mods de [mod.io](https://mod.io), de
+[Nexus Mods](https://www.nexusmods.com) et de
+[Thunderstore](https://thunderstore.io) depuis une appli de bureau
 (Windows et Linux), construite avec Tauri 2, Rust et Svelte 5.
 
-> Client **non officiel** : il n'est ni affilié à mod.io ou à Nexus Mods, ni
-> soutenu par eux.
+> Client **non officiel** : il n'est ni affilié à mod.io, à Nexus Mods ou à
+> Thunderstore, ni soutenu par eux.
 
 ## Parcourir (v0.1)
 
@@ -296,6 +297,39 @@ Ce qui change sous Linux :
   (`WINEDLLOVERRIDES="winhttp=n,b" %command%` pour BepInEx), ou la variable
   d'environnement à mettre dans Heroic.
 
+## Thunderstore (v0.10)
+
+Thunderstore rassemble les mods de nombreux jeux Unity (Lethal Company,
+R.E.P.O., Valheim, Risk of Rain 2…). Son API est publique : pas de compte ni de
+clé à ajouter.
+
+- **Jeux** : les 350 jeux de Thunderstore, avec recherche et tri ; ceux installés
+  sur ce PC (Steam, Epic, Heroic) en premier, reconnus par leur nom.
+- **Mods** : liste paginée (recherche, tris « plus téléchargés », « mieux
+  notés », « récemment mis à jour », « nouveautés »), fiche avec le README
+  (Markdown), les versions, les mods nécessaires.
+- **Dossier du jeu** : celui qui contient l'exécutable, trouvé dans Steam ou
+  Epic quand c'est possible.
+- **Installation comme un gestionnaire de mods** : les mods nécessaires d'abord
+  (dernière version de chacun, ceux déjà installés sont gardés), puis le mod.
+  BepInExPack va dans le dossier du jeu s'il manque (gardé tel quel si BepInEx
+  est déjà là) ; chaque mod est rangé dans `BepInEx/plugins/<Équipe-Nom>`
+  (`patchers`, `core`, `monomod` de même). Les réglages par défaut
+  (`BepInEx/config`) ne remplacent jamais ceux qui existent, et restent en
+  place à la désinstallation. Jeux à MelonLoader : `Mods`, `Plugins`,
+  `UserLibs`, `UserData`.
+- **Suivi** : mises à jour (une par une ou toutes), activer / désactiver,
+  désinstaller (les mods nécessaires devenus inutiles sont proposés à la
+  désinstallation), version précise au choix, progression mod par mod.
+- Rien n'écrase les fichiers des mods installés depuis mod.io ou Nexus Mods
+  (ni l'inverse).
+- Sous Linux, l'option de lancement Steam pour BepInEx sous Proton est affichée
+  sur la page du jeu.
+
+Quelques jeux de Thunderstore n'utilisent pas BepInEx (Northstar pour
+Titanfall 2, par exemple) : leurs mods ne s'installent pas encore au bon
+endroit.
+
 ## Obtenir ta clé API
 
 1. Ouvre <https://mod.io/me/access> et connecte-toi.
@@ -328,6 +362,9 @@ src-tauri/src/
     tools.rs      outils de mods depuis GitHub (UE4SS, BepInEx, MelonLoader)
     fomod.rs      installateurs FOMOD (lecture, conditions, fichiers choisis)
     local.rs      jeux installés reconnus, moteur, outil conseillé
+  thunderstore/   source Thunderstore :
+    api.rs        jeux, mods, fiches, versions, README (API publique)
+    install.rs    dépendances, rangement BepInEx, mises à jour, désinstallation
   games/          jeux installés sur ce PC :
     steam.rs      bibliothèques et jeux Steam
     epic.rs       jeux Epic Games
@@ -385,6 +422,13 @@ différents), moteur reconnu (en-tête PE, version de l'exécutable), rangement
 Unreal / Unity / Bethesda, `plugins.txt` activé puis restauré, et installation
 d'UE4SS contre un faux GitHub (empreinte, fichiers du jeu jamais touchés).
 
+Pour Thunderstore : noms et versions vérifiés avant toute requête,
+téléchargements limités à `thunderstore.io` et son CDN, dépendances installées
+d'abord (BepInExPack sauté si BepInEx est là), rangement BepInEx (plugins,
+patchers, config jamais écrasée), mise à jour qui garde les réglages,
+conflits refusés sans rien toucher, et refus d'installer BepInExPack par-dessus
+un BepInEx installé à la main.
+
 ## Sécurité
 
 - La clé API ne quitte l'appli que vers un domaine mod.io
@@ -400,8 +444,8 @@ d'UE4SS contre un faux GitHub (empreinte, fichiers du jeu jamais touchés).
 - Se déconnecter révoque le jeton obtenu par e-mail. Un jeton créé à la main
   sur mod.io est seulement oublié : supprime-le sur mod.io/me/access pour le
   révoquer.
-- Les descriptions de mods (HTML écrit par leurs auteurs) passent par
-  DOMPurify, et l'appli applique une politique CSP stricte. Les liens s'ouvrent
+- Les descriptions de mods (HTML, BBCode ou Markdown écrits par leurs auteurs)
+  passent par DOMPurify, et l'appli applique une politique CSP stricte. Les liens s'ouvrent
   dans ton navigateur, jamais dans l'appli.
 
 ## Idées pour la suite

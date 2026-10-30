@@ -10,6 +10,7 @@ mod installer;
 mod modio_sdk;
 mod nexus;
 mod settings;
+mod thunderstore;
 mod toggle;
 #[cfg(test)]
 mod testutil;
@@ -104,6 +105,18 @@ pub fn run() {
             nexus::nexus_uninstall,
             nexus::nexus_updates,
             nexus::nexus_reveal,
+            thunderstore::ts_communities,
+            thunderstore::ts_packages,
+            thunderstore::ts_package,
+            thunderstore::ts_overview,
+            thunderstore::ts_configure,
+            thunderstore::ts_install,
+            thunderstore::ts_cancel,
+            thunderstore::ts_uninstall,
+            thunderstore::ts_set_enabled,
+            thunderstore::ts_updates,
+            thunderstore::ts_reveal,
+            thunderstore::ts_loader,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de ModStudio");

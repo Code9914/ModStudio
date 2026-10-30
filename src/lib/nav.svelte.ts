@@ -1,6 +1,6 @@
 // Navigation de l'appli (pas de routeur : un seul écran avec des vues).
 import { SvelteSet } from "svelte/reactivity";
-import { api, type AuthView, type Game, type NexusGame, type SettingsView } from "./api";
+import { api, type AuthView, type Game, type NexusGame, type SettingsView, type TsCommunity } from "./api";
 
 export type View =
   | { name: "games" }
@@ -14,10 +14,15 @@ export type View =
   | { name: "nexusMods" }
   | { name: "nexusMod"; modId: number }
   | { name: "nexusAccount" }
-  | { name: "nexusTracked" };
+  | { name: "nexusTracked" }
+  | { name: "tsGames" }
+  | { name: "tsMods" }
+  | { name: "tsMod"; namespace: string; modName: string };
 
 export type ModOrigin = "mods" | "library" | "installed";
 export type NexusOrigin = "nexusMods" | "installed" | "nexusTracked";
+export type TsOrigin = "tsMods" | "installed";
+export type TsRef = { namespace: string; name: string };
 
 class Nav {
   view = $state<View>({ name: "games" });
@@ -42,6 +47,11 @@ class Nav {
   afterNexusKey = $state<View | null>(null);
   /** Page du compte Nexus affichée comme accueil du premier lancement. */
   nexusWelcome = $state(false);
+
+  /** Jeu Thunderstore ouvert, et mods ouverts depuis sa liste puis via leurs dépendances. */
+  tsGame = $state<TsCommunity | null>(null);
+  tsModStack = $state<TsRef[]>([]);
+  tsOrigin = $state<TsOrigin>("tsMods");
 
   /** Mods suivis dans le jeu ouvert. */
   subs = new SvelteSet<number>();
@@ -116,6 +126,32 @@ class Nav {
     this.view = { name: "nexusTracked" };
   }
 
+  // ------------------------------------------------------------ Thunderstore
+
+  openTsGames() {
+    this.view = { name: "tsGames" };
+  }
+
+  openTsGame(game: TsCommunity) {
+    if (this.tsGame?.id !== game.id) this.tsGame = game;
+    this.tsModStack = [];
+    this.view = { name: "tsMods" };
+  }
+
+  openTsMod(ref: TsRef) {
+    if (this.view.name !== "tsMod") this.tsOrigin = "tsMods";
+    this.tsModStack = [...this.tsModStack, ref];
+    this.view = { name: "tsMod", namespace: ref.namespace, modName: ref.name };
+  }
+
+  /** Fiche d'un mod Thunderstore ouverte depuis « Installés ». */
+  openTsModFromInstalled(game: TsCommunity, ref: TsRef) {
+    if (this.tsGame?.id !== game.id) this.tsGame = game;
+    this.tsOrigin = "installed";
+    this.tsModStack = [ref];
+    this.view = { name: "tsMod", namespace: ref.namespace, modName: ref.name };
+  }
+
   openNexusAccount(returnTo: View | null = null) {
     this.afterNexusKey = returnTo;
     this.nexusWelcome = false;
@@ -130,6 +166,21 @@ class Nav {
   }
 
   back() {
+    if (this.view.name === "tsMod" && this.tsModStack.length > 1) {
+      this.tsModStack = this.tsModStack.slice(0, -1);
+      const top = this.tsModStack[this.tsModStack.length - 1];
+      this.view = { name: "tsMod", namespace: top.namespace, modName: top.name };
+      return;
+    }
+    if (this.view.name === "tsMod") {
+      this.tsModStack = [];
+      this.view = { name: this.tsOrigin };
+      return;
+    }
+    if (this.view.name === "tsMods") {
+      this.view = { name: "tsGames" };
+      return;
+    }
     if (this.view.name === "nexusMod" && this.nexusModStack.length > 1) {
       this.nexusModStack = this.nexusModStack.slice(0, -1);
       this.view = { name: "nexusMod", modId: this.nexusModStack[this.nexusModStack.length - 1] };

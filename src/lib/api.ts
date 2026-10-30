@@ -46,6 +46,8 @@ export interface AppError {
     | "tool_unavailable"
     | "tool_mismatch"
     | "tool_present"
+    | "nexus_refused"
+    | "thunderstore_api"
     | "unknown";
   message: string;
   retryAfter: number | null;
@@ -779,7 +781,8 @@ export type InstallEvent =
   | { phase: "downloading"; received: number; total: number }
   | { phase: "verifying" }
   | { phase: "extracting"; done: number; total: number }
-  | { phase: "finishing" };
+  | { phase: "finishing" }
+  | { phase: "step"; name: string; index: number; total: number };
 
 export interface LatestFile {
   modId: number;
@@ -806,4 +809,138 @@ export interface MyMods {
   games: Game[];
   mods: Mod[];
   truncated: boolean;
+}
+
+// ------------------------------------------------------------------ Thunderstore
+
+export interface TsCommunity {
+  /** Identifiant du jeu dans ModStudio (bibliothèque des mods installés). */
+  id: number;
+  identifier: string;
+  name: string;
+  coverImageUrl: string | null;
+  heroImageUrl: string | null;
+  communityIconUrl: string | null;
+  totalDownloadCount: number;
+  totalPackageCount: number;
+}
+
+export interface TsCategory {
+  name: string;
+  slug: string;
+}
+
+export interface TsPackage {
+  /** Identifiant du mod dans ModStudio (`Équipe-Nom`). */
+  id: number;
+  namespace: string;
+  name: string;
+  description: string;
+  iconUrl: string | null;
+  downloadCount: number;
+  ratingCount: number;
+  categories: TsCategory[];
+  isDeprecated: boolean;
+  isNsfw: boolean;
+  isPinned: boolean;
+  lastUpdated: string | null;
+  size: number;
+}
+
+export interface TsDependency {
+  id: number;
+  namespace: string;
+  name: string;
+  versionNumber: string;
+  description: string;
+  iconUrl: string | null;
+  isRemoved: boolean;
+  isUnavailable: boolean;
+}
+
+export interface TsPackageDetail {
+  id: number;
+  namespace: string;
+  name: string;
+  description: string;
+  iconUrl: string | null;
+  downloadCount: number;
+  ratingCount: number;
+  categories: TsCategory[];
+  communityIdentifier: string;
+  communityName: string;
+  dependencies: TsDependency[];
+  latestVersionNumber: string;
+  websiteUrl: string | null;
+  isDeprecated: boolean;
+  isNsfw: boolean;
+  versionCount: number;
+  versionCreated: string | null;
+  packageCreated: string | null;
+  size: number;
+  team: { name: string } | null;
+  dependantCount: number;
+}
+
+export interface TsVersion {
+  versionNumber: string;
+  datetimeCreated: string | null;
+  downloadCount: number;
+}
+
+export interface TsPackageView {
+  detail: TsPackageDetail;
+  versions: TsVersion[];
+  readme: string | null;
+}
+
+export type TsOrdering = "most-downloaded" | "top-rated" | "newest" | "last-updated";
+
+export interface TsInstalled {
+  game: GameInstall;
+  /** Mods installés, dépendances d'abord. */
+  installed: string[];
+  /** BepInEx était déjà là : le paquet BepInExPack demandé n'a pas été installé. */
+  keptLoader: boolean;
+}
+
+export interface TsUpdate {
+  modId: number;
+  version: string;
+}
+
+export interface TsLoader {
+  name: "BepInEx" | "MelonLoader" | null;
+  launchOption: string | null;
+}
+
+export const ts = {
+  communities: (refresh = false) => call<TsCommunity[]>("ts_communities", { refresh }),
+  packages: (p: { community: string; query: string; ordering: TsOrdering; offset: number; limit: number }) =>
+    call<Page<TsPackage>>("ts_packages", p),
+  package: (community: string, namespace: string, name: string) =>
+    call<TsPackageView>("ts_package", { community, namespace, name }),
+  overview: () => call<GameInstall[]>("ts_overview"),
+  configure: (community: string, name: string, icon: string | null, folder: string) =>
+    call<GameInstall>("ts_configure", { community, name, icon, folder }),
+  install: (
+    p: { community: string; namespace: string; name: string; version?: string | null },
+    onProgress: (e: InstallEvent) => void,
+  ) => {
+    const onEvent = new Channel<InstallEvent>();
+    onEvent.onmessage = onProgress;
+    return call<TsInstalled>("ts_install", { ...p, onEvent });
+  },
+  cancel: (community: string) => call<null>("ts_cancel", { community }),
+  uninstall: (gameId: number, modId: number) => call<UninstallResult>("ts_uninstall", { gameId, modId }),
+  setEnabled: (gameId: number, modId: number, enabled: boolean) =>
+    call<GameInstall>("ts_set_enabled", { gameId, modId, enabled }),
+  updates: (gameId: number) => call<TsUpdate[]>("ts_updates", { gameId }),
+  loader: (gameId: number) => call<TsLoader>("ts_loader", { gameId }),
+  reveal: (gameId: number, modId: number | null = null) => call<null>("ts_reveal", { gameId, modId }),
+};
+
+/** Page d'un mod sur le site de Thunderstore. */
+export function tsPackageUrl(community: string, namespace: string, name: string) {
+  return `https://thunderstore.io/c/${community}/p/${namespace}/${name}/`;
 }

@@ -151,6 +151,19 @@ pub enum AppError {
     /// Refus expliqué de Nexus (recommandation impossible…).
     #[error("{0}")]
     NexusRefused(String),
+
+    // ------------------------------------------------------------ Thunderstore
+    #[error("Élément introuvable sur Thunderstore.")]
+    ThunderstoreNotFound,
+
+    #[error("Trop de requêtes envoyées à Thunderstore. Nouvel essai possible dans {0} s.")]
+    ThunderstoreRateLimited(u64),
+
+    #[error("Thunderstore a renvoyé une erreur {status} : {message}")]
+    ThunderstoreApi { status: u16, message: String },
+
+    #[error("Impossible de joindre Thunderstore. Vérifie ta connexion internet. ({0})")]
+    ThunderstoreNetwork(String),
 }
 
 impl AppError {
@@ -201,6 +214,10 @@ impl AppError {
             AppError::NexusNetwork(_) => "network",
             AppError::NexusDecode(_) => "decode",
             AppError::NexusRefused(_) => "nexus_refused",
+            AppError::ThunderstoreNotFound => "not_found",
+            AppError::ThunderstoreRateLimited(_) => "rate_limited",
+            AppError::ThunderstoreApi { .. } => "thunderstore_api",
+            AppError::ThunderstoreNetwork(_) => "network",
         }
     }
 
@@ -220,9 +237,9 @@ impl AppError {
             AppError::Forbidden { .. } => Some(403),
             AppError::NotFound => Some(404),
             AppError::RateLimited(_) => Some(429),
-            AppError::Api { status, .. } | AppError::NexusApi { status, .. } => Some(*status),
-            AppError::NexusNotFound => Some(404),
-            AppError::NexusRateLimited(_) => Some(429),
+            AppError::Api { status, .. } | AppError::NexusApi { status, .. } | AppError::ThunderstoreApi { status, .. } => Some(*status),
+            AppError::NexusNotFound | AppError::ThunderstoreNotFound => Some(404),
+            AppError::NexusRateLimited(_) | AppError::ThunderstoreRateLimited(_) => Some(429),
             _ => None,
         }
     }
@@ -234,7 +251,7 @@ impl Serialize for AppError {
         s.serialize_field("kind", self.kind())?;
         s.serialize_field("message", &self.to_string())?;
         let retry_after = match self {
-            AppError::RateLimited(secs) | AppError::NexusRateLimited(secs) => Some(*secs),
+            AppError::RateLimited(secs) | AppError::NexusRateLimited(secs) | AppError::ThunderstoreRateLimited(secs) => Some(*secs),
             _ => None,
         };
         s.serialize_field("retryAfter", &retry_after)?;

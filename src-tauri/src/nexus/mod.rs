@@ -320,7 +320,7 @@ pub async fn nexus_install(
         _ => None,
     };
     // Les fichiers des mods installés depuis mod.io ne sont jamais écrasés.
-    let modio = state.library.lock().expect("library").clone();
+    let modio = crate::thunderstore::merged(&[&state.library, &state.thunderstore.library]);
     state
         .nexus
         .install(
@@ -350,7 +350,7 @@ pub async fn nexus_fomod_finish(
     let emit: Arc<dyn Fn(InstallEvent) + Send + Sync> = Arc::new(move |e| {
         let _ = on_event.send(e);
     });
-    let modio = state.library.lock().expect("library").clone();
+    let modio = crate::thunderstore::merged(&[&state.library, &state.thunderstore.library]);
     state.nexus.fomod_finish(&token, selections, &modio, emit).await
 }
 
@@ -379,14 +379,14 @@ pub fn nexus_uninstall(
 /// Active ou désactive un mod sans le désinstaller.
 #[tauri::command]
 pub fn nexus_set_enabled(state: State<'_, AppState>, game_id: i64, mod_id: i64, enabled: bool) -> AppResult<GameInstall> {
-    let modio = state.library.lock().expect("library").clone();
+    let modio = crate::thunderstore::merged(&[&state.library, &state.thunderstore.library]);
     state.nexus.set_enabled(game_id, mod_id, enabled, &modio)
 }
 
 /// Passe à un profil de mods.
 #[tauri::command]
 pub fn nexus_apply_profile(state: State<'_, AppState>, game_id: i64, name: String) -> AppResult<crate::toggle::ProfileApplied> {
-    let modio = state.library.lock().expect("library").clone();
+    let modio = crate::thunderstore::merged(&[&state.library, &state.thunderstore.library]);
     state.nexus.apply_profile(game_id, &name, &modio)
 }
 

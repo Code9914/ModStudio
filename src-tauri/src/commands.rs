@@ -31,6 +31,8 @@ pub struct AppState {
     pub jobs: Mutex<HashMap<i64, Arc<AtomicBool>>>,
     /// Source Nexus Mods (compte, bibliothèque et installations à part).
     pub nexus: NexusState,
+    /// Source Thunderstore (bibliothèque et installations à part).
+    pub thunderstore: crate::thunderstore::ThunderstoreState,
 }
 
 impl AppState {
@@ -46,8 +48,13 @@ impl AppState {
             nexus_secrets,
             settings_path.with_file_name("installed-nexus.json"),
         );
+        let thunderstore = crate::thunderstore::ThunderstoreState::new(
+            crate::thunderstore::api::API_BASE,
+            settings_path.with_file_name("installed-thunderstore.json"),
+        );
         Self {
             nexus,
+            thunderstore,
             client: ModioClient::new(),
             settings: RwLock::new(settings),
             library: Mutex::new(Library::load(&library_path)),

@@ -34,6 +34,8 @@ export function describe(e: InstallEvent): Progress {
       return { label: "Extraction…", ratio: e.total > 0 ? e.done / e.total : null };
     case "finishing":
       return { label: "Mise en place des fichiers…", ratio: null };
+    case "step":
+      return { label: `${e.name} (${e.index} sur ${e.total})…`, ratio: null };
   }
 }
 

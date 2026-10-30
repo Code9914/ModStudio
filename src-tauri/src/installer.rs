@@ -286,6 +286,8 @@ pub enum InstallEvent {
     Verifying,
     Extracting { done: u64, total: u64 },
     Finishing,
+    /// Plusieurs mods à la suite (dépendances) : celui en cours.
+    Step { name: String, index: u32, total: u32 },
 }
 
 // ---------------------------------------------------------------- Téléchargement
@@ -351,8 +353,8 @@ async fn download_inner(
     }
 
     let total = response.content_length().unwrap_or(req.expected_size).max(req.expected_size);
-    // Garde-fou contre une réponse sans fin.
-    let limit = total.saturating_mul(2).saturating_add(10 * 1024 * 1024);
+    // Garde-fou contre une réponse sans fin (taille inconnue : 4 Go au plus).
+    let limit = if total == 0 { 4 * 1024 * 1024 * 1024 } else { total.saturating_mul(2).saturating_add(10 * 1024 * 1024) };
 
     if let Some(dir) = req.dest.parent() {
         fs::create_dir_all(dir).map_err(io_err)?;

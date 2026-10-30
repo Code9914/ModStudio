@@ -416,7 +416,7 @@ pub fn set_enabled(state: &AppState, game_id: i64, mod_id: i64, enabled: bool) -
     let root = state.disabled_root();
     let ctx = crate::toggle::Ctx { store_root: &root, source: "modio" };
     // Les fichiers des mods Nexus ne sont jamais écrasés non plus.
-    let nexus = state.nexus.library.lock().expect("library").clone();
+    let nexus = crate::thunderstore::merged(&[&state.nexus.library, &state.thunderstore.library]);
     let mut lib = state.library.lock().expect("library");
     let mut game = lib.games.remove(&game_id).ok_or(AppError::NotFound)?;
     let result = if enabled {
@@ -438,7 +438,7 @@ pub fn apply_profile(state: &AppState, game_id: i64, name: &str) -> AppResult<cr
     }
     let root = state.disabled_root();
     let ctx = crate::toggle::Ctx { store_root: &root, source: "modio" };
-    let nexus = state.nexus.library.lock().expect("library").clone();
+    let nexus = crate::thunderstore::merged(&[&state.nexus.library, &state.thunderstore.library]);
     let mut lib = state.library.lock().expect("library");
     let mut game = lib.games.remove(&game_id).ok_or(AppError::NotFound)?;
     let result = {

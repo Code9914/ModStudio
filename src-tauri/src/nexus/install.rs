@@ -371,7 +371,7 @@ struct Finished {
 }
 
 /// Place les fichiers : un lot par dossier touché (nouvelle version ou ancienne).
-fn place_plan(
+pub(crate) fn place_plan(
     config: &GameInstall,
     old: Option<&InstalledMod>,
     others: &HashMap<PathBuf, BTreeMap<String, String>>,

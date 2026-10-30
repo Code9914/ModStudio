@@ -5,12 +5,14 @@
     api,
     asAppError,
     nexus,
+    ts,
     type AppError,
     type GameInstall,
     type InstalledMod,
     type InstalledTool,
   } from "$lib/api";
   import { engineNames, nexusGameOf, nexusStore } from "$lib/nexus.svelte";
+  import { splitFullName, tsStore } from "$lib/thunderstore.svelte";
   import NexusFolderSetup from "./NexusFolderSetup.svelte";
   import ModToggle from "./ModToggle.svelte";
   import ProfileBar from "./ProfileBar.svelte";
@@ -36,10 +38,11 @@
   async function refresh() {
     error = null;
     try {
-      await Promise.all([installs.load(), nexusStore.load()]);
+      await Promise.all([installs.load(), nexusStore.load(), tsStore.load()]);
       await Promise.all([
         ...Object.keys(installs.games).map((id) => installs.checkUpdates(Number(id))),
         ...Object.keys(nexusStore.games).map((id) => nexusStore.checkUpdates(Number(id))),
+        ...Object.keys(tsStore.games).map((id) => tsStore.checkUpdates(Number(id))),
       ]);
       // Nouvelles versions des chargeurs de mods installés par ModStudio.
       for (const g of Object.values(nexusStore.games)) {
@@ -82,12 +85,19 @@
       .sort((a, b) => a.gameName.localeCompare(b.gameName, "fr")),
   );
 
+  const tsGames = $derived(
+    Object.values(tsStore.games)
+      .filter((g) => tsStore.count(g) > 0)
+      .sort((a, b) => a.gameName.localeCompare(b.gameName, "fr")),
+  );
+
   const total = $derived(
     games.reduce((n, g) => n + Object.keys(g.mods).length, 0) +
-      nexusGames.reduce((n, g) => n + nexusStore.count(g), 0),
+      nexusGames.reduce((n, g) => n + nexusStore.count(g), 0) +
+      tsGames.reduce((n, g) => n + tsStore.count(g), 0),
   );
-  const withMods = $derived(games.length + nexusGames.length);
-  const loaded = $derived(installs.loaded && nexusStore.loaded);
+  const withMods = $derived(games.length + nexusGames.length + tsGames.length);
+  const loaded = $derived(installs.loaded && nexusStore.loaded && tsStore.loaded);
 
   async function update(g: GameInstall, m: InstalledMod) {
     rowErrors.delete(m.modId);
@@ -135,17 +145,20 @@
   // ------------------------------------------------------------ Activer / désactiver
   const toggling = new SvelteSet<string>();
 
-  async function toggle(source: "modio" | "nexus", g: GameInstall, m: InstalledMod, enabled: boolean) {
+  async function toggle(source: "modio" | "nexus" | "ts", g: GameInstall, m: InstalledMod, enabled: boolean) {
     const k = `${source}:${g.gameId}:${m.modId}`;
     toggling.add(k);
     if (source === "modio") rowErrors.delete(m.modId);
+    else if (source === "ts") tsErrors.delete(tsKey(g, m));
     else nxErrors.delete(nexusStore.key(g.gameId, m.modId));
     try {
       if (source === "modio") await installs.setEnabled(g.gameId, m.modId, enabled);
+      else if (source === "ts") await tsStore.setEnabled(g.gameId, m.modId, enabled);
       else await nexusStore.setEnabled(g.gameId, m.modId, enabled);
     } catch (e) {
       const message = asAppError(e).message;
       if (source === "modio") rowErrors.set(m.modId, message);
+      else if (source === "ts") tsErrors.set(tsKey(g, m), message);
       else nxErrors.set(nexusStore.key(g.gameId, m.modId), message);
     } finally {
       toggling.delete(k);
@@ -299,6 +312,91 @@
       nxRemoving.delete(k);
     }
   }
+
+  // ------------------------------------------------------------ Thunderstore
+
+  const tsKey = (g: GameInstall, m: { modId: number }) => `${g.gameId}:${m.modId}`;
+  const tsErrors = new SvelteMap<string, string>();
+  const tsNotes = new SvelteMap<string, string>();
+  const tsConfirming = new SvelteSet<string>();
+  const tsRemoving = new SvelteSet<string>();
+  const tsGameNotes = new SvelteMap<number, string>();
+  const tsOrphans = new SvelteMap<number, { parent: string; mods: { modId: number; name: string }[] }>();
+  const tsUpdatingAll = new SvelteSet<number>();
+
+  function tsOpen(g: GameInstall, m: InstalledMod) {
+    const ref = splitFullName(m.fileName);
+    if (ref && g.domain) nav.openTsModFromInstalled(tsStore.communityOf(g), ref);
+  }
+
+  function tsOutdatedIn(g: GameInstall) {
+    return Object.values(g.mods).filter((m) => !m.disabled && tsStore.outdated(g.gameId, m.modId));
+  }
+
+  async function tsUpdate(g: GameInstall, m: InstalledMod) {
+    const ref = splitFullName(m.fileName);
+    if (!ref || !g.domain) return;
+    const k = tsKey(g, m);
+    tsErrors.delete(k);
+    tsNotes.delete(k);
+    try {
+      await tsStore.install(tsStore.communityOf(g), ref.namespace, ref.name, m.modId);
+      tsNotes.set(k, "Mis à jour.");
+    } catch (e) {
+      const err = asAppError(e);
+      if (err.kind !== "cancelled") tsErrors.set(k, err.message);
+    }
+  }
+
+  async function tsUpdateAll(g: GameInstall) {
+    tsUpdatingAll.add(g.gameId);
+    for (const m of tsOutdatedIn(g)) await tsUpdate(g, m);
+    tsUpdatingAll.delete(g.gameId);
+  }
+
+  async function tsUninstall(g: GameInstall, m: InstalledMod) {
+    const k = tsKey(g, m);
+    if (!tsConfirming.has(k)) {
+      tsConfirming.add(k);
+      setTimeout(() => tsConfirming.delete(k), 4000);
+      return;
+    }
+    tsConfirming.delete(k);
+    tsRemoving.add(k);
+    tsErrors.delete(k);
+    try {
+      const r = await tsStore.uninstall(g.gameId, m.modId);
+      if (r.leftFolder) {
+        tsGameNotes.set(g.gameId, `« ${m.name} » désinstallé. Son dossier contient des fichiers ajoutés depuis, il a été laissé en place.`);
+      }
+      if (r.orphans.length) tsOrphans.set(g.gameId, { parent: m.name, mods: r.orphans });
+    } catch (e) {
+      tsErrors.set(k, asAppError(e).message);
+    } finally {
+      tsRemoving.delete(k);
+    }
+  }
+
+  async function removeTsOrphans(g: GameInstall) {
+    const entry = tsOrphans.get(g.gameId);
+    tsOrphans.delete(g.gameId);
+    if (!entry) return;
+    for (const o of entry.mods) {
+      const k = tsKey(g, o);
+      tsRemoving.add(k);
+      try {
+        await tsStore.uninstall(g.gameId, o.modId);
+      } catch (e) {
+        tsErrors.set(k, asAppError(e).message);
+      } finally {
+        tsRemoving.delete(k);
+      }
+    }
+  }
+
+  function tsReveal(gameId: number, modId: number | null) {
+    ts.reveal(gameId, modId).catch((e) => (error = asAppError(e)));
+  }
 </script>
 
 <div class="view">
@@ -338,6 +436,7 @@
           <button class="btn btn-primary" onclick={() => nav.openGames()}>Parcourir mod.io</button>
         {/if}
         <button class="btn" onclick={() => nav.openNexusGames()}>Parcourir Nexus Mods</button>
+        <button class="btn" onclick={() => nav.openTsGames()}>Parcourir Thunderstore</button>
       </div>
     </div>
   {/if}
@@ -638,6 +737,111 @@
       </ul>
     </section>
   {/each}
+
+  {#each tsGames as g (g.gameId)}
+    {@const list = mods(g)}
+    {@const outdated = tsOutdatedIn(g)}
+    {@const job = tsStore.progress[g.gameId]}
+    <section class="group">
+      <div class="group-head">
+        {#if g.icon}<img class="game-icon" src={g.icon} alt="" width="28" height="28" />{/if}
+        <h2>{g.gameName}</h2>
+        <span class="chip">Thunderstore</span>
+        <span class="muted count">{tsStore.count(g)}</span>
+        <div class="group-actions">
+          {#if outdated.length > 0}
+            <button class="btn btn-primary" onclick={() => tsUpdateAll(g)} disabled={tsUpdatingAll.has(g.gameId) || !!job}>
+              <Icon name="download" size={15} />{tsUpdatingAll.has(g.gameId)
+                ? "Mise à jour…"
+                : outdated.length > 1
+                  ? `Tout mettre à jour (${outdated.length})`
+                  : "Mettre à jour (1)"}
+            </button>
+          {/if}
+          <button class="btn btn-ghost" onclick={() => tsReveal(g.gameId, null)}>Ouvrir le dossier</button>
+          <button class="btn btn-ghost" onclick={() => nav.openTsGame(tsStore.communityOf(g))}>Page du jeu</button>
+        </div>
+      </div>
+      <p class="folder muted">{g.folder}, rangement BepInEx</p>
+
+      {#if job}
+        <div class="row-progress wide"><ProgressBar progress={job} oncancel={() => tsStore.cancel(tsStore.communityOf(g))} /></div>
+      {/if}
+
+      {#if tsGameNotes.get(g.gameId)}<p class="note">{tsGameNotes.get(g.gameId)}</p>{/if}
+
+      {#if tsOrphans.get(g.gameId)}
+        {@const o = tsOrphans.get(g.gameId)!}
+        <div class="orphans">
+          <p class="small">
+            {o.mods.map((x) => `« ${x.name} »`).join(", ")}
+            {o.mods.length > 1 ? "avaient été installés" : "avait été installé"} avec « {o.parent} » et ne
+            {o.mods.length > 1 ? "servent" : "sert"} plus à aucun autre mod.
+          </p>
+          <button class="btn btn-primary" onclick={() => removeTsOrphans(g)}>
+            {o.mods.length > 1 ? "Les désinstaller aussi" : "Le désinstaller aussi"}
+          </button>
+          <button class="btn btn-ghost" onclick={() => tsOrphans.delete(g.gameId)}>Garder</button>
+        </div>
+      {/if}
+
+      {#if list.length === 0}
+        <p class="muted small">Aucun mod installé ne correspond à « {query.trim()} ».</p>
+      {/if}
+
+      <ul class="rows">
+        {#each list as m (m.modId)}
+          {@const k = tsKey(g, m)}
+          {@const latest = tsStore.latest(g.gameId, m.modId)}
+          <li class="row" class:off={m.disabled}>
+            <button class="row-main" onclick={() => tsOpen(g, m)}>
+              <span class="row-thumb square"><Thumb src={m.logo} label={m.name} /></span>
+              <span class="row-text">
+                <span class="row-name">{m.name}</span>
+                <span class="row-meta">
+                  {#if m.fileName}<span>{m.fileName.split("-")[0]}</span>{/if}
+                  <span>{m.version ? `version ${m.version}` : "version sans numéro"}</span>
+                  <span>{bytes(m.size)}</span>
+                  <span>installé {ago(m.installedAt)}</span>
+                  {#if m.disabled}<span class="chip">Désactivé</span>{/if}
+                  {#if m.auto && m.requiredBy.length}
+                    <span>nécessaire à « {m.requiredBy.map((id) => g.mods[id]?.name ?? `mod ${id}`).join(" », « ")} »</span>
+                  {/if}
+                </span>
+                {#if tsErrors.get(k)}
+                  <span class="row-error">{tsErrors.get(k)}</span>
+                {:else if tsNotes.get(k)}
+                  <span class="row-note">{tsNotes.get(k)}</span>
+                {/if}
+              </span>
+            </button>
+            <div class="row-action">
+              <ModToggle
+                enabled={!m.disabled}
+                name={m.name}
+                busy={toggling.has(`ts:${g.gameId}:${m.modId}`) || !!job}
+                ontoggle={(on) => toggle("ts", g, m, on)}
+              />
+              {#if latest && !m.disabled}
+                <span class="chip chip-accent">Version {latest}</span>
+                <button class="btn btn-primary" onclick={() => tsUpdate(g, m)} disabled={!!job}>Mettre à jour</button>
+              {/if}
+              <button class="btn btn-ghost" onclick={() => tsReveal(g.gameId, m.modId)} disabled={m.disabled}>Ouvrir</button>
+              <button
+                class="btn"
+                class:btn-ghost={!tsConfirming.has(k)}
+                class:danger={tsConfirming.has(k)}
+                onclick={() => tsUninstall(g, m)}
+                disabled={tsRemoving.has(k) || !!job}
+              >
+                {tsRemoving.has(k) ? "…" : tsConfirming.has(k) ? "Confirmer" : "Désinstaller"}
+              </button>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/each}
 </div>
 
 <style>
@@ -815,6 +1019,17 @@
     object-fit: cover;
   }
 
+  /* Icônes carrées de Thunderstore : centrées dans la même largeur. */
+  .row-thumb.square {
+    display: flex;
+    justify-content: center;
+  }
+
+  .row-thumb.square :global(.thumb) {
+    aspect-ratio: 1;
+    width: 4.25rem;
+  }
+
   .row-thumb :global(.fallback) {
     font-size: var(--t-xl);
   }
@@ -852,6 +1067,11 @@
     align-items: center;
     gap: 0.4rem;
     flex: none;
+  }
+
+  .row-progress.wide {
+    max-width: 34rem;
+    width: auto;
   }
 
   .row-progress {
