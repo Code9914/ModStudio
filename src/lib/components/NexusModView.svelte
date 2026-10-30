@@ -248,7 +248,10 @@
                 </li>
               {/each}
             </ul>
-            <p class="muted small">ModStudio n'installe pas les mods nécessaires tout seul : ouvre-les pour les installer.</p>
+            <p class="muted small">
+              ModStudio installe ceux qui sont sur Nexus Mods en même temps que ce mod ; les autres (liens externes)
+              s'installent depuis leur page, ou depuis la page du jeu pour UE4SS, BepInEx et MelonLoader.
+            </p>
           </section>
         {/if}
       </aside>

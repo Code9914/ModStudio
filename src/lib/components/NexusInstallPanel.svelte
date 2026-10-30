@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteSet } from "svelte/reactivity";
   import {
     asAppError,
     nexus,
@@ -10,7 +11,7 @@
   } from "$lib/api";
   import { bytes } from "$lib/format";
   import { nav } from "$lib/nav.svelte";
-  import { nexusStore, questFile, requirementMatches } from "$lib/nexus.svelte";
+  import { nexusStore, recommendedFile, requirementMatches } from "$lib/nexus.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
   import NexusFolderSetup from "./NexusFolderSetup.svelte";
@@ -29,7 +30,31 @@
   const progress = $derived(nexusStore.progress[key] ?? null);
   const waiting = $derived(nexusStore.waiting[key] ?? null);
   const outdated = $derived(nexusStore.outdated(game.id, mod.modId));
-  const busy = $derived(progress !== null || waiting !== null);
+
+  // ------------------------------------------------------------ Mods nécessaires
+  /** Mods nécessaires hébergés sur Nexus pour ce jeu, pas encore installés. */
+  const missingDeps = $derived(
+    mod.requirements.filter(
+      (r, i, all) =>
+        !r.externalRequirement &&
+        r.gameId === game.id &&
+        r.modId > 0 &&
+        r.modId !== mod.modId &&
+        !nexusStore.installed(game.id, r.modId) &&
+        all.findIndex((x) => x.modId === r.modId) === i,
+    ),
+  );
+  /** Mods nécessaires décochés par l'utilisateur. */
+  const skipDeps = new SvelteSet<number>();
+  /** Mod nécessaire en cours d'installation. */
+  let currentDep = $state<{ modId: number; name: string; index: number; total: number } | null>(null);
+  const depKey = $derived(currentDep ? nexusStore.key(game.id, currentDep.modId) : null);
+  const depProgress = $derived(depKey ? (nexusStore.progress[depKey] ?? null) : null);
+  const depWaiting = $derived(depKey ? (nexusStore.waiting[depKey] ?? null) : null);
+  /** Mods nécessaires installés avec celui-ci et devenus inutiles après sa désinstallation. */
+  let orphans = $state<{ modId: number; name: string }[]>([]);
+
+  const busy = $derived(progress !== null || waiting !== null || currentDep !== null);
   const gameDir = $derived(config?.extraFolders?.game ?? null);
 
   // Outil de mods du jeu (UE4SS…) : proposé si ce mod en a besoin et qu'il manque.
@@ -57,36 +82,8 @@
   /** Chargeurs de mods déjà installés dans le jeu (`bepinex`, `melonloader`). */
   const gameLoaders = $derived(nexusStore.setups[game.id]?.engine?.tools ?? []);
 
-  /** Préférence pour la version du mod faite pour le chargeur installé (« BepInEx » plutôt que « Standalone »). */
-  function loaderScore(f: NexusFile): number {
-    const text = `${f.name} ${f.description ?? ""}`.toLowerCase();
-    let score = 0;
-    for (const [loader, pattern, other] of [
-      ["bepinex", /bepinex/, /melon/],
-      ["melonloader", /melon/, /bepinex/],
-    ] as const) {
-      if (!gameLoaders.includes(loader)) continue;
-      if (pattern.test(text)) score += 2;
-      if (other.test(text)) score -= 1;
-      if (/standalone|autonome/.test(text)) score -= 2;
-    }
-    return score;
-  }
-
   /** Fichier conseillé : le plus récent des fichiers principaux (version PC), pour le chargeur du jeu. */
-  const recommended = $derived.by(() => {
-    if (!files) return null;
-    const current = files.filter((f) => ["MAIN", "OPTIONAL", "UPDATE", "MISCELLANEOUS"].includes(f.category));
-    const pc = current.filter((f) => !questFile(f.name));
-    const pool = pc.length ? pc : current;
-    const main = pool.filter((f) => f.category === "MAIN");
-    const list = main.length ? main : pool;
-    return (
-      [...list].sort(
-        (a, b) => loaderScore(b) - loaderScore(a) || Number(b.primary) - Number(a.primary) || b.date - a.date,
-      )[0] ?? null
-    );
-  });
+  const recommended = $derived(files ? recommendedFile(files, gameLoaders) : null);
   const waitingFile = $derived(waiting ? (files?.find((f) => f.fileId === waiting.fileId) ?? null) : null);
 
   let setupOpen = $state(false);
@@ -112,11 +109,57 @@
     run(file);
   }
 
+  /**
+   * Installe les mods nécessaires cochés, l'un après l'autre (chacun passe par
+   * la page Nexus pour un compte gratuit). Renvoie leurs noms, ou `null` si
+   * l'un d'eux n'a pas pu être installé.
+   */
+  async function runDeps(): Promise<string[] | null> {
+    const deps = missingDeps.filter((r) => !skipDeps.has(r.modId));
+    const done: string[] = [];
+    for (const [i, r] of deps.entries()) {
+      currentDep = { modId: r.modId, name: r.modName, index: i + 1, total: deps.length };
+      try {
+        const file = recommendedFile(await nexus.listFiles(game.id, r.modId), gameLoaders);
+        if (!file) throw { kind: "nexus_not_found", message: "aucun fichier à télécharger.", retryAfter: null };
+        const res = await nexusStore.request(game.id, game.domainName, r.modId, file.fileId, file.name, mod.modId);
+        done.push(res.record.name);
+        if (res.needsTool && !neededTool) neededTool = res.needsTool;
+      } catch (e) {
+        const err = asAppError(e);
+        currentDep = null;
+        if (err.kind === "cancelled") note = `Installation annulée (mod nécessaire « ${r.modName} »).`;
+        else error = { ...err, message: `Mod nécessaire « ${r.modName} » : ${err.message}` };
+        return null;
+      }
+    }
+    currentDep = null;
+    return done;
+  }
+
+  /** Installe seulement les mods nécessaires manquants (mod déjà installé). */
+  async function installDeps() {
+    error = null;
+    note = null;
+    const done = await runDeps();
+    if (done?.length) note = `Mods nécessaires installés : ${done.join(", ")}.`;
+  }
+
   async function run(file: NexusFile) {
     const updating = record !== null;
+    orphans = [];
+    // Les mods nécessaires d'abord (pas lors d'une mise à jour).
+    const deps = updating ? [] : await runDeps();
+    if (deps === null) return;
     try {
       const r = await nexusStore.request(game.id, game.domainName, mod.modId, file.fileId, file.name);
-      note = [updating ? "Mis à jour." : "Installé.", r.notice].filter(Boolean).join(" ");
+      note = [
+        updating ? "Mis à jour." : "Installé.",
+        deps.length ? `Mods nécessaires installés avant lui : ${deps.join(", ")}.` : null,
+        r.notice,
+      ]
+        .filter(Boolean)
+        .join(" ");
       if (r.needsTool) neededTool = r.needsTool;
     } catch (e) {
       const err = asAppError(e);
@@ -130,12 +173,32 @@
   }
 
   function cancel() {
-    if (waiting) nexusStore.stopWaiting(game.id, game.domainName, mod.modId);
+    if (currentDep) {
+      if (depWaiting) nexusStore.stopWaiting(game.id, game.domainName, currentDep.modId);
+      else nexusStore.cancel(currentDep.modId);
+    } else if (waiting) nexusStore.stopWaiting(game.id, game.domainName, mod.modId);
     else nexusStore.cancel(mod.modId);
   }
 
   function reopen() {
-    if (waiting) nexusStore.reopen(game.id, waiting.domain, mod.modId, waitingFile?.name ?? null);
+    if (currentDep && depWaiting) nexusStore.reopen(game.id, depWaiting.domain, currentDep.modId, currentDep.name);
+    else if (waiting) nexusStore.reopen(game.id, waiting.domain, mod.modId, waitingFile?.name ?? null);
+  }
+
+  async function removeOrphans() {
+    const list = orphans;
+    orphans = [];
+    const failed: string[] = [];
+    for (const o of list) {
+      try {
+        await nexusStore.uninstall(game.id, o.modId);
+      } catch {
+        failed.push(o.name);
+      }
+    }
+    note = failed.length
+      ? `Impossible de désinstaller ${failed.map((n) => `« ${n} »`).join(", ")} : ferme le jeu puis réessaie depuis « Installés ».`
+      : `${list.map((o) => `« ${o.name} »`).join(", ")} ${list.length > 1 ? "désinstallés" : "désinstallé"} aussi.`;
   }
 
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
@@ -152,10 +215,11 @@
     error = null;
     note = null;
     try {
-      const left = await nexusStore.uninstall(game.id, mod.modId);
-      note = left
-        ? `Désinstallé. Le dossier « ${left} » contient des fichiers ajoutés depuis, il a été laissé en place.`
+      const r = await nexusStore.uninstall(game.id, mod.modId);
+      note = r.leftFolder
+        ? `Désinstallé. Le dossier « ${r.leftFolder} » contient des fichiers ajoutés depuis, il a été laissé en place.`
         : "Désinstallé.";
+      orphans = r.orphans;
     } catch (e) {
       error = asAppError(e);
     } finally {
@@ -190,6 +254,23 @@
         pendingFile = null;
       }}
     />
+  {:else if currentDep}
+    <div class="dep-run" role="status">
+      <p class="small">
+        <span class="strong">Mod nécessaire {currentDep.index}/{currentDep.total} : {currentDep.name}</span>
+        {#if !depWaiting && !depProgress}<span class="muted">, préparation…</span>{/if}
+      </p>
+      {#if depWaiting}
+        <p class="small">Clique sur « Slow download » sur la page Nexus Mods : l'installation démarrera toute seule.</p>
+        <div class="row">
+          <button class="btn" onclick={reopen}>Rouvrir la page</button>
+          <button class="btn btn-ghost" onclick={cancel}>Annuler</button>
+        </div>
+      {:else if depProgress}
+        <ProgressBar progress={depProgress} oncancel={cancel} />
+      {/if}
+      <p class="small muted">« {mod.name} » s'installera juste après.</p>
+    </div>
   {:else if waiting}
     <div class="waiting" role="status">
       <p class="small">
@@ -234,11 +315,43 @@
         {removing ? "Désinstallation…" : confirming ? "Confirmer" : "Désinstaller"}
       </button>
     </div>
+    {#if missingDeps.length}
+      <div class="deps">
+        <p class="small">
+          <span class="strong">Mods nécessaires manquants :</span>
+          {missingDeps.map((r) => r.modName).join(", ")}.
+        </p>
+        <button class="btn" onclick={installDeps} disabled={busy}>
+          <Icon name="download" size={15} />{missingDeps.length > 1 ? "Les installer" : "L'installer"}
+        </button>
+      </div>
+    {/if}
   {:else if files === null}
     <p class="small muted">Chargement des fichiers…</p>
   {:else if !recommended}
     <p class="small muted">Aucun fichier à télécharger pour ce mod.</p>
   {:else}
+    {#if missingDeps.length && nexusStore.ready}
+      <div class="deps">
+        <p class="small strong">Ce mod a besoin de :</p>
+        {#each missingDeps as r (r.modId)}
+          <label class="dep">
+            <input
+              type="checkbox"
+              checked={!skipDeps.has(r.modId)}
+              onchange={(e) => (e.currentTarget.checked ? skipDeps.delete(r.modId) : skipDeps.add(r.modId))}
+            />
+            <span>
+              <span>{r.modName}</span>
+              {#if r.notes}<span class="muted small note-dep">{r.notes}</span>{/if}
+            </span>
+          </label>
+        {/each}
+        <p class="small muted">
+          ModStudio les installe d'abord{nexusStore.premium ? "" : ", une page Nexus par fichier comme pour ce mod"}.
+        </p>
+      </div>
+    {/if}
     <button class="btn btn-primary wide" onclick={() => install(recommended!)} disabled={busy}>
       <Icon name="download" size={15} />{nexusStore.ready ? "Installer" : "Ajouter ma clé pour installer"}
     </button>
@@ -264,6 +377,22 @@
 
   {#if error}<ErrorNotice {error} />{/if}
   {#if note}<p class="note small" role="status">{note}</p>{/if}
+
+  {#if orphans.length}
+    <div class="deps">
+      <p class="small">
+        {orphans.map((o) => `« ${o.name} »`).join(", ")}
+        {orphans.length > 1 ? "avaient été installés" : "avait été installé"} avec ce mod et ne
+        {orphans.length > 1 ? "servent" : "sert"} plus à aucun autre.
+      </p>
+      <div class="row">
+        <button class="btn btn-primary" onclick={removeOrphans}>
+          {orphans.length > 1 ? "Les désinstaller aussi" : "Le désinstaller aussi"}
+        </button>
+        <button class="btn btn-ghost" onclick={() => (orphans = [])}>Garder</button>
+      </div>
+    </div>
+  {/if}
 
   {#if shownTool && config && !setupOpen}
     <div class="needs">
@@ -342,6 +471,42 @@
 
   .note {
     color: var(--ok);
+  }
+
+  .deps,
+  .dep-run {
+    display: grid;
+    gap: 0.5rem;
+    justify-items: start;
+    padding: 0.8rem 0.9rem;
+    border-radius: var(--r-md);
+    background: var(--raise);
+  }
+
+  .dep-run {
+    justify-items: stretch;
+    border-left: 3px solid var(--accent-fill);
+  }
+
+  .dep {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-size: var(--t-sm);
+    cursor: pointer;
+  }
+
+  .dep input {
+    margin-top: 0.2rem;
+    accent-color: var(--accent-fill);
+  }
+
+  .dep > span {
+    display: grid;
+  }
+
+  .note-dep {
+    font-size: var(--t-xs);
   }
 
   .needs {

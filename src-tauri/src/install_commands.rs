@@ -318,7 +318,7 @@ pub async fn install(
 
 /// Un mod nécessaire reste « automatique » tant que l'utilisateur ne l'a pas
 /// installé lui-même ; une installation directe le rend permanent.
-fn dependency_state(required_by: Option<i64>, old: Option<&InstalledMod>) -> (bool, Vec<i64>) {
+pub(crate) fn dependency_state(required_by: Option<i64>, old: Option<&InstalledMod>) -> (bool, Vec<i64>) {
     match (required_by, old) {
         (None, _) => (false, Vec::new()),
         (Some(_), Some(o)) if !o.auto => (false, Vec::new()),

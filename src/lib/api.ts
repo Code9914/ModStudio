@@ -639,7 +639,16 @@ export const nexus = {
     gameDir?: string | null;
   }) => call<GameInstall>("nexus_configure_game", p),
   install: (
-    p: { gameId: number; gameDomain: string; modId: number; fileId: number; nxmKey?: string; nxmExpires?: number },
+    p: {
+      gameId: number;
+      gameDomain: string;
+      modId: number;
+      fileId: number;
+      nxmKey?: string;
+      nxmExpires?: number;
+      /** Mod qui a besoin de celui-ci (installation d'un mod nécessaire). */
+      requiredBy?: number;
+    },
     onProgress: (e: InstallEvent) => void,
   ) => {
     const onEvent = new Channel<InstallEvent>();
@@ -647,7 +656,7 @@ export const nexus = {
     return call<NexusInstalled>("nexus_install", { ...p, onEvent });
   },
   cancelInstall: (modId: number) => call<null>("nexus_cancel_install", { modId }),
-  uninstall: (gameId: number, modId: number) => call<string | null>("nexus_uninstall", { gameId, modId }),
+  uninstall: (gameId: number, modId: number) => call<UninstallResult>("nexus_uninstall", { gameId, modId }),
   updates: (gameId: number) => call<NexusUpdate[]>("nexus_updates", { gameId }),
   reveal: (gameId: number, modId: number | null = null) => call<null>("nexus_reveal", { gameId, modId }),
 };

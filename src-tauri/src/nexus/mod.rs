@@ -267,6 +267,7 @@ pub async fn nexus_install(
     file_id: i64,
     nxm_key: Option<String>,
     nxm_expires: Option<i64>,
+    required_by: Option<i64>,
     on_event: Channel<InstallEvent>,
 ) -> AppResult<NexusInstalled> {
     let emit: Arc<dyn Fn(InstallEvent) + Send + Sync> = Arc::new(move |e| {
@@ -287,6 +288,7 @@ pub async fn nexus_install(
                 mod_id,
                 file_id,
                 nxm,
+                required_by: required_by.filter(|id| *id > 0 && *id != mod_id),
             },
             &modio,
             emit,
@@ -299,9 +301,14 @@ pub fn nexus_cancel_install(state: State<'_, AppState>, mod_id: i64) {
     state.nexus.cancel(mod_id)
 }
 
-/// Désinstalle ; renvoie le dossier laissé en place s'il contient des fichiers ajoutés depuis.
+/// Désinstalle ; renvoie le dossier laissé en place s'il contient des fichiers
+/// ajoutés depuis, et les mods nécessaires devenus inutiles.
 #[tauri::command]
-pub fn nexus_uninstall(state: State<'_, AppState>, game_id: i64, mod_id: i64) -> AppResult<Option<String>> {
+pub fn nexus_uninstall(
+    state: State<'_, AppState>,
+    game_id: i64,
+    mod_id: i64,
+) -> AppResult<crate::install_commands::UninstallResult> {
     state.nexus.remove(game_id, mod_id)
 }
 

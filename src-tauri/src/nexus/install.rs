@@ -20,6 +20,7 @@ use crate::archive;
 use crate::error::{AppError, AppResult};
 use crate::games::engine::{self, Engine, EngineInfo};
 use crate::games::InstalledGame;
+use crate::install_commands::{dependency_state, Orphan, UninstallResult};
 use crate::installer::{
     self, Batch, DownloadRequest, GameInstall, InstallEvent, InstalledMod, Layout, Library, ModPart, PlaceInput,
     STAGING_DIR,
@@ -34,6 +35,8 @@ pub struct InstallRequest {
     pub file_id: i64,
     /// Clé et expiration d'un lien `nxm://` (comptes sans Premium).
     pub nxm: Option<(String, i64)>,
+    /// Mod qui a besoin de celui-ci (installation d'un mod nécessaire).
+    pub required_by: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -475,8 +478,11 @@ impl NexusState {
         cleanup();
         let (placed, root, detected_dir, plugins) = placed?;
 
+        let (auto, required_by) = dependency_state(req.required_by, old.as_ref());
         let mut record = InstalledMod {
             mod_id,
+            auto,
+            required_by,
             name: detail.summary.name.clone(),
             logo: detail.summary.thumbnail_url.clone().or(detail.summary.picture_url.clone()),
             version: file.version.clone().filter(|v| !v.trim().is_empty()),
@@ -609,7 +615,8 @@ impl NexusState {
         }
     }
 
-    pub fn remove(&self, game_id: i64, mod_id: i64) -> AppResult<Option<String>> {
+    /// Désinstalle ; renvoie le dossier laissé en place et les mods nécessaires devenus inutiles.
+    pub fn remove(&self, game_id: i64, mod_id: i64) -> AppResult<UninstallResult> {
         if self.jobs.lock().expect("jobs").contains_key(&mod_id) {
             return Err(AppError::InstallInProgress);
         }
@@ -636,8 +643,25 @@ impl NexusState {
             )));
         }
         game.mods.remove(&mod_id);
+
+        // Mods nécessaires installés avec lui et dont plus aucun mod n'a besoin.
+        let mut orphans = Vec::new();
+        for other in game.mods.values_mut() {
+            if other.required_by.contains(&mod_id) {
+                other.required_by.retain(|id| *id != mod_id);
+                if other.auto && other.required_by.is_empty() {
+                    orphans.push(Orphan {
+                        mod_id: other.mod_id,
+                        name: other.name.clone(),
+                    });
+                }
+            }
+        }
         self.save_library(&lib)?;
-        Ok(removal.left_folder)
+        Ok(UninstallResult {
+            left_folder: removal.left_folder,
+            orphans,
+        })
     }
 
     /// Mods installés dont le fichier a été remplacé sur Nexus Mods.
@@ -749,6 +773,7 @@ mod tests {
             mod_id: 148,
             file_id: 316,
             nxm,
+            required_by: None,
         }
     }
 
@@ -792,7 +817,7 @@ mod tests {
         let reloaded = Library::load(&s.library_path);
         assert!(reloaded.games[&rules::BONELAB].mods.contains_key(&148));
 
-        assert!(s.remove(rules::BONELAB, 148).unwrap().is_none());
+        assert!(s.remove(rules::BONELAB, 148).unwrap().left_folder.is_none());
         assert!(!mods.join("BaBaCorp.711").exists());
     }
 
@@ -890,6 +915,7 @@ mod tests {
             mod_id: 148,
             file_id: 316,
             nxm: None,
+            required_by: None,
         }
     }
 
@@ -962,6 +988,31 @@ mod tests {
         assert!(game.join("Data/Skyrim.esm").exists(), "les fichiers du jeu restent");
         let text = fs::read_to_string(&plugins).unwrap();
         assert!(!text.contains("BetterLanterns") && text.contains("Unofficial"), "{text:?}");
+    }
+
+    #[tokio::test]
+    async fn required_mods_are_marked_and_offered_for_removal() {
+        let zip = make_zip(&[("BoneLib/BoneLib.pallet.json", b"{}")]);
+        let (_server, s) = nexus_with(zip, 200);
+        s.set_key("cle").await.unwrap();
+        let mods = tempdir("bl-req");
+        s.configure(rules::BONELAB, "bonelab", "BONELAB".into(), None, mods.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+        // Le mod 148 est installé comme mod nécessaire du mod 200.
+        let mut req = request(None);
+        req.required_by = Some(200);
+        let out = s.install(req, &Library::default(), quiet()).await.unwrap();
+        assert!(out.record.auto);
+        assert_eq!(out.record.required_by, vec![200]);
+
+        // Le mod 200 (sans fichiers ici) est désinstallé : le 148 ne sert plus.
+        s.library.lock().unwrap().games.get_mut(&rules::BONELAB).unwrap().mods.insert(
+            200,
+            InstalledMod { mod_id: 200, name: "LabFusion".into(), ..Default::default() },
+        );
+        let r = s.remove(rules::BONELAB, 200).unwrap();
+        assert_eq!(r.orphans.iter().map(|o| o.mod_id).collect::<Vec<_>>(), vec![148]);
+        assert!(s.library.lock().unwrap().games[&rules::BONELAB].mods[&148].required_by.is_empty());
     }
 
     #[test]

@@ -8,6 +8,7 @@ import {
   type GameInstall,
   type InstalledMod,
   type NexusAuthView,
+  type NexusFile,
   type NexusGame,
   type NexusGameSetup,
   type NexusInstalled,
@@ -25,6 +26,7 @@ export type SiteRequest =
 interface Pending {
   gameId: number;
   fileId: number;
+  requiredBy?: number;
   resolve: (r: NexusInstalled) => void;
   reject: (e: AppError) => void;
 }
@@ -134,22 +136,30 @@ class NexusStore {
     modId: number,
     fileId: number,
     fileName: string | null = null,
+    requiredBy?: number,
   ): Promise<NexusInstalled> {
     if (this.premium) {
       try {
-        return await this.#install(gameId, domain, modId, fileId);
+        return await this.#install(gameId, domain, modId, fileId, undefined, requiredBy);
       } catch (e) {
         if (asAppError(e).kind !== "nexus_premium_required") throw e;
       }
     }
-    return this.#viaWebsite(gameId, domain, modId, fileId, fileName);
+    return this.#viaWebsite(gameId, domain, modId, fileId, fileName, requiredBy);
   }
 
-  #viaWebsite(gameId: number, domain: string, modId: number, fileId: number, fileName: string | null): Promise<NexusInstalled> {
+  #viaWebsite(
+    gameId: number,
+    domain: string,
+    modId: number,
+    fileId: number,
+    fileName: string | null,
+    requiredBy?: number,
+  ): Promise<NexusInstalled> {
     const k = `${domain}:${modId}`;
     this.#pending.get(k)?.reject(cancelled());
     return new Promise((resolve, reject) => {
-      this.#pending.set(k, { gameId, fileId, resolve, reject });
+      this.#pending.set(k, { gameId, fileId, requiredBy, resolve, reject });
       this.waiting[keyOf(gameId, modId)] = { fileId, domain };
       // La page s'ouvre dès que le cadre qui l'accueille est en place.
       this.site = { kind: "download", gameId, domain, modId, fileId, fileName };
@@ -203,15 +213,15 @@ class NexusStore {
     this.#pending.delete(k);
     delete this.waiting[keyOf(p.gameId, link.modId)];
     if (this.site?.kind === "download" && this.site.modId === link.modId) this.site = null;
-    this.#install(p.gameId, link.domain, link.modId, link.fileId, link).then(p.resolve, p.reject);
+    this.#install(p.gameId, link.domain, link.modId, link.fileId, link, p.requiredBy).then(p.resolve, p.reject);
   }
 
-  async #install(gameId: number, domain: string, modId: number, fileId: number, nxm?: NxmLink) {
+  async #install(gameId: number, domain: string, modId: number, fileId: number, nxm?: NxmLink, requiredBy?: number) {
     const k = keyOf(gameId, modId);
     this.progress[k] = { label: "Préparation…", ratio: null };
     try {
       const result = await api.install(
-        { gameId, gameDomain: domain, modId, fileId, nxmKey: nxm?.key, nxmExpires: nxm?.expires },
+        { gameId, gameDomain: domain, modId, fileId, nxmKey: nxm?.key, nxmExpires: nxm?.expires, requiredBy },
         (e) => {
           this.progress[k] = describe(e);
         },
@@ -311,13 +321,16 @@ class NexusStore {
     await Promise.allSettled([this.load(), this.loadSetup(game.id, game.domainName)]);
   }
 
-  /** Renvoie le dossier laissé en place s'il contient des fichiers ajoutés depuis. */
+  /** Renvoie le dossier laissé en place et les mods nécessaires devenus inutiles. */
   async uninstall(gameId: number, modId: number) {
-    const left = await api.uninstall(gameId, modId);
+    const result = await api.uninstall(gameId, modId);
     const game = this.games[gameId];
-    if (game) delete game.mods[modId];
+    if (game) {
+      delete game.mods[modId];
+      for (const m of Object.values(game.mods)) m.requiredBy = m.requiredBy.filter((id) => id !== modId);
+    }
     delete this.updates[keyOf(gameId, modId)];
-    return left;
+    return result;
   }
 
   async checkUpdates(gameId: number): Promise<AppError | null> {
@@ -380,6 +393,40 @@ export const fileCategories: Record<string, string> = {
   ARCHIVED: "Archivés",
   REMOVED: "Retirés",
 };
+
+/** Préférence pour la version d'un mod faite pour le chargeur installé (« BepInEx » plutôt que « Standalone »). */
+function loaderScore(f: NexusFile, loaders: string[]): number {
+  const text = `${f.name} ${f.description ?? ""}`.toLowerCase();
+  let score = 0;
+  for (const [loader, pattern, other] of [
+    ["bepinex", /bepinex/, /melon/],
+    ["melonloader", /melon/, /bepinex/],
+  ] as const) {
+    if (!loaders.includes(loader)) continue;
+    if (pattern.test(text)) score += 2;
+    if (other.test(text)) score -= 1;
+    if (/standalone|autonome/.test(text)) score -= 2;
+  }
+  return score;
+}
+
+/**
+ * Fichier conseillé d'un mod : le plus récent des fichiers principaux (version
+ * PC), fait pour le chargeur de mods du jeu (`loaders` : outils présents).
+ */
+export function recommendedFile(files: NexusFile[], loaders: string[] = []): NexusFile | null {
+  const current = files.filter((f) => ["MAIN", "OPTIONAL", "UPDATE", "MISCELLANEOUS"].includes(f.category));
+  const pc = current.filter((f) => !questFile(f.name));
+  const pool = pc.length ? pc : current;
+  const main = pool.filter((f) => f.category === "MAIN");
+  const list = main.length ? main : pool;
+  return (
+    [...list].sort(
+      (a, b) =>
+        loaderScore(b, loaders) - loaderScore(a, loaders) || Number(b.primary) - Number(a.primary) || b.date - a.date,
+    )[0] ?? null
+  );
+}
 
 /** Fichier destiné au Quest (Android) plutôt qu'au PC, d'après son nom. */
 export function questFile(name: string) {

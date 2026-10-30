@@ -175,14 +175,35 @@
     nxRemoving.add(k);
     nxErrors.delete(k);
     try {
-      const left = await nexusStore.uninstall(g.gameId, m.modId);
-      if (left) {
+      const r = await nexusStore.uninstall(g.gameId, m.modId);
+      if (r.leftFolder) {
         nxNotes.set(g.gameId, `« ${m.name} » désinstallé. Son dossier contient des fichiers ajoutés depuis, il a été laissé en place.`);
       }
+      if (r.orphans.length) nxOrphans.set(g.gameId, { parent: m.name, mods: r.orphans });
     } catch (e) {
       nxErrors.set(k, asAppError(e).message);
     } finally {
       nxRemoving.delete(k);
+    }
+  }
+
+  /** Mods nécessaires Nexus devenus inutiles après une désinstallation, par jeu. */
+  const nxOrphans = new SvelteMap<number, { parent: string; mods: { modId: number; name: string }[] }>();
+
+  async function removeNexusOrphans(g: GameInstall) {
+    const entry = nxOrphans.get(g.gameId);
+    nxOrphans.delete(g.gameId);
+    if (!entry) return;
+    for (const o of entry.mods) {
+      const k = nexusStore.key(g.gameId, o.modId);
+      nxRemoving.add(k);
+      try {
+        await nexusStore.uninstall(g.gameId, o.modId);
+      } catch (e) {
+        nxErrors.set(k, asAppError(e).message);
+      } finally {
+        nxRemoving.delete(k);
+      }
     }
   }
 
@@ -439,6 +460,21 @@
 
       {#if nxNotes.get(g.gameId)}<p class="note">{nxNotes.get(g.gameId)}</p>{/if}
 
+      {#if nxOrphans.get(g.gameId)}
+        {@const o = nxOrphans.get(g.gameId)!}
+        <div class="orphans">
+          <p class="small">
+            {o.mods.map((x) => `« ${x.name} »`).join(", ")}
+            {o.mods.length > 1 ? "avaient été installés" : "avait été installé"} avec « {o.parent} » et ne
+            {o.mods.length > 1 ? "servent" : "sert"} plus à aucun autre mod.
+          </p>
+          <button class="btn btn-primary" onclick={() => removeNexusOrphans(g)}>
+            {o.mods.length > 1 ? "Les désinstaller aussi" : "Le désinstaller aussi"}
+          </button>
+          <button class="btn btn-ghost" onclick={() => nxOrphans.delete(g.gameId)}>Garder</button>
+        </div>
+      {/if}
+
       {#if Object.keys(g.mods).length === 0}
         <p class="muted small">Aucun mod installé pour ce jeu.</p>
       {:else if list.length === 0}
@@ -461,6 +497,9 @@
                   <span>{bytes(m.size)}</span>
                   <span>installé {ago(m.installedAt)}</span>
                   {#if m.parts?.length}<span>mod de code</span>{/if}
+                  {#if m.auto && m.requiredBy.length}
+                    <span>nécessaire à « {m.requiredBy.map((id) => g.mods[id]?.name ?? `mod ${id}`).join(" », « ")} »</span>
+                  {/if}
                 </span>
                 {#if nxErrors.get(k)}<span class="row-error">{nxErrors.get(k)}</span>{/if}
               </span>
