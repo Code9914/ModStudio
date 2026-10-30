@@ -5,6 +5,23 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ModStudio</title>
+    <script>
+      // Apparence choisie (réglages), posée avant le premier affichage.
+      // Même logique que apply() dans src/lib/appearance.svelte.ts.
+      try {
+        var a = JSON.parse(localStorage.getItem("modstudio.appearance") || "null");
+        if (a) {
+          var r = document.documentElement;
+          if (a.theme === "dark" || a.theme === "light") r.dataset.theme = a.theme;
+          if (a.tint === false) r.dataset.tint = "off";
+          if (a.text === "small" || a.text === "large") r.dataset.text = a.text;
+          if (a.thumbs === "small" || a.thumbs === "large") r.dataset.thumbs = a.thumbs;
+          if (a.corners === "square" || a.corners === "round") r.dataset.corners = a.corners;
+          if (/^#[0-9a-f]{6}$/i.test(a.colorA)) r.style.setProperty("--accent-a", a.colorA);
+          if (/^#[0-9a-f]{6}$/i.test(a.colorB)) r.style.setProperty("--accent-b", a.colorB);
+        }
+      } catch (e) {}
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="off">

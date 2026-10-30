@@ -327,7 +327,7 @@
   }
 
   .posters {
-    grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(calc(135px * var(--thumb-scale)), 1fr));
     gap: 1.5rem 1.1rem;
   }
 

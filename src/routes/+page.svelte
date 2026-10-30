@@ -19,6 +19,7 @@
   import SettingsView from "$lib/components/SettingsView.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import { updates as appUpdates } from "$lib/updates.svelte";
+  import { appearance } from "$lib/appearance.svelte";
   import { nexusGameImage, type GameInstall } from "$lib/api";
   import { nexusGameOf, nexusStore, welcomeDone } from "$lib/nexus.svelte";
 
@@ -134,12 +135,15 @@
   const onNexusGame = $derived(
     nav.view.name === "nexusMods" || (nav.view.name === "nexusMod" && nav.nexusOrigin === "nexusMods"),
   );
-  // Jeu sans mod ouvert : « Jeux » reste en surbrillance.
+  // Jeu sans mod ouvert, ou raccourcis des jeux masqués dans les réglages :
+  // « Jeux » reste en surbrillance.
   const modioGamesCurrent = $derived(
-    nav.view.name === "games" || (onModioGame && !modioRail.some((g) => g.id === nav.game?.id)),
+    nav.view.name === "games" ||
+      (onModioGame && (!appearance.value.railGames || !modioRail.some((g) => g.id === nav.game?.id))),
   );
   const nexusGamesCurrent = $derived(
-    nav.view.name === "nexusGames" || (onNexusGame && !nexusRail.some((g) => g.id === nav.nexusGame?.id)),
+    nav.view.name === "nexusGames" ||
+      (onNexusGame && (!appearance.value.railGames || !nexusRail.some((g) => g.id === nav.nexusGame?.id))),
   );
 
   /** Ouvre un jeu mod.io de la barre latérale (sa fiche est chargée au besoin). */
@@ -176,7 +180,7 @@
           <Icon name="grid" size={18} />Jeux
         </button>
       </li>
-      {#if ready}
+      {#if ready && appearance.value.railGames}
         {#each modioRail as g (g.id)}
           <li>
             <button
@@ -220,24 +224,26 @@
           <Icon name="grid" size={18} />Jeux
         </button>
       </li>
-      {#each nexusRail as g (g.id)}
-        <li>
-          <button
-            class="nav-item sub"
-            aria-current={onNexusGame && nav.nexusGame?.id === g.id ? "page" : undefined}
-            onclick={() => nav.openNexusGame(nav.nexusGame?.id === g.id ? nav.nexusGame : g)}
-          >
-            <img
-              src={nexusGameImage(g.id, "thumbnail")}
-              alt=""
-              width="18"
-              height="18"
-              onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = "hidden")}
-            />
-            <span class="ellipsis">{g.name}</span>
-          </button>
-        </li>
-      {/each}
+      {#if appearance.value.railGames}
+        {#each nexusRail as g (g.id)}
+          <li>
+            <button
+              class="nav-item sub"
+              aria-current={onNexusGame && nav.nexusGame?.id === g.id ? "page" : undefined}
+              onclick={() => nav.openNexusGame(nav.nexusGame?.id === g.id ? nav.nexusGame : g)}
+            >
+              <img
+                src={nexusGameImage(g.id, "thumbnail")}
+                alt=""
+                width="18"
+                height="18"
+                onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = "hidden")}
+              />
+              <span class="ellipsis">{g.name}</span>
+            </button>
+          </li>
+        {/each}
+      {/if}
     </ul>
 
     <ul class="nav">
@@ -395,7 +401,14 @@
     font-weight: 800;
     font-size: var(--t-2xl);
     letter-spacing: -0.03em;
-    padding: 0 0.6rem;
+    margin-inline: 0.6rem;
+    justify-self: start;
+    align-self: flex-start;
+    /* Le nom de l'appli porte les deux couleurs choisies. */
+    background: var(--accent-grad-ink);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 
   .nav {
@@ -431,11 +444,13 @@
     cursor: not-allowed;
   }
 
+  /* Élément actif : un trait vertical aux deux couleurs. */
   .nav-item[aria-current="page"],
   .account[aria-current="page"] {
-    background: var(--raise);
+    background:
+      linear-gradient(var(--accent-a-ink), var(--accent-b-ink)) left / 3px 100% no-repeat,
+      var(--raise);
     color: var(--text);
-    box-shadow: inset 3px 0 0 var(--accent-fill);
   }
 
   .nav-item.sub {

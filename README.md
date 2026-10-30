@@ -256,6 +256,11 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
   UE4SS, script extender) compte comme un mod : ceux de ModStudio avec leur
   version et « Retirer », ceux installés à la main repérés dans le dossier du
   jeu.
+- **Apparence** (Réglages) : thème mauve et bleu par défaut, autres couleurs
+  ou deux couleurs au choix (dégradé), fond teinté ou gris, thème clair /
+  sombre / comme Windows, taille du texte, des vignettes, coins, raccourcis
+  des jeux dans la barre latérale. Gardée sur l'ordinateur et appliquée avant
+  le premier affichage.
 
 ## Obtenir ta clé API
 

@@ -285,7 +285,7 @@
   }
 
   .body :global(.card-grid) {
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(calc(210px * var(--thumb-scale)), 1fr));
   }
 
   .author {

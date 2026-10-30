@@ -3,6 +3,7 @@
   import { api, type AppError } from "$lib/api";
   import { nav } from "$lib/nav.svelte";
   import { updates } from "$lib/updates.svelte";
+  import AppearanceSettings from "./AppearanceSettings.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
 
@@ -56,6 +57,7 @@
       </p>
     {:else}
       <h1>Réglages</h1>
+      <AppearanceSettings />
     {/if}
 
     <section class="block">
@@ -115,7 +117,9 @@
       </form>
     </section>
 
-    {#if !first}
+    {#if first}
+      <AppearanceSettings />
+    {:else}
       <section class="block">
         <h2>Mises à jour de ModStudio</h2>
         {#if !updates.enabled}

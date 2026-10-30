@@ -41,7 +41,7 @@
     position: absolute;
     inset: 0 auto 0 0;
     border-radius: 999px;
-    background: var(--accent-fill);
+    background: var(--accent-grad);
     transition: width 150ms linear;
   }
 
