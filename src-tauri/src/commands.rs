@@ -281,6 +281,7 @@ fn modio_page(url: &str) -> Option<tauri::Url> {
 /// Ouvre (ou réutilise) une fenêtre de ModStudio sur une page de mod.io.
 /// Sert pour les jeux fermés aux applications tierces : c'est le site officiel
 /// qui fait tout, avec la connexion de l'utilisateur à mod.io.
+/// `async` obligatoire : voir `nexus_open_download`.
 #[tauri::command]
 pub async fn open_modio_window(app: tauri::AppHandle, url: String, title: Option<String>) -> AppResult<()> {
     use tauri::Manager;

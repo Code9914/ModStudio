@@ -119,8 +119,11 @@ pub async fn nexus_list_files(state: State<'_, AppState>, game_id: i64, mod_id: 
 }
 
 /// Page d'un fichier sur le site, dans une fenêtre de ModStudio.
+///
+/// Doit rester `async` : sous Windows, une fenêtre créée depuis une commande
+/// synchrone (exécutée sur le fil principal) reste blanche (wry#583).
 #[tauri::command]
-pub fn nexus_open_download(app: AppHandle, domain: String, mod_id: i64, file_id: i64) -> AppResult<()> {
+pub async fn nexus_open_download(app: AppHandle, domain: String, mod_id: i64, file_id: i64) -> AppResult<()> {
     window::open(&app, &domain, mod_id, file_id)
 }
 
