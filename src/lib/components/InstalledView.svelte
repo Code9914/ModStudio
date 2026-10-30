@@ -43,8 +43,13 @@
     if (nav.view.name === "installed") untrack(() => refresh());
   });
 
+  /** Seuls les jeux qui ont au moins un mod installé apparaissent ici. */
+  const hasMods = (g: GameInstall) => Object.keys(g.mods).length > 0;
+
   const games = $derived(
-    Object.values(installs.games).sort((a, b) => a.gameName.localeCompare(b.gameName, "fr")),
+    Object.values(installs.games)
+      .filter(hasMods)
+      .sort((a, b) => a.gameName.localeCompare(b.gameName, "fr")),
   );
 
   function mods(g: GameInstall): InstalledMod[] {
@@ -60,7 +65,9 @@
   }
 
   const nexusGames = $derived(
-    Object.values(nexusStore.games).sort((a, b) => a.gameName.localeCompare(b.gameName, "fr")),
+    Object.values(nexusStore.games)
+      .filter(hasMods)
+      .sort((a, b) => a.gameName.localeCompare(b.gameName, "fr")),
   );
 
   const total = $derived(
@@ -294,7 +301,7 @@
 
   {#if error}
     <ErrorNotice {error} onretry={refresh} />
-  {:else if loaded && total === 0 && games.length === 0 && nexusGames.length === 0}
+  {:else if loaded && total === 0}
     <div class="empty">
       <p>
         Aucun mod installé avec ModStudio pour l'instant. Ouvre la fiche d'un mod et clique sur « Installer » : tu
@@ -375,9 +382,7 @@
         </div>
       {/if}
 
-      {#if Object.keys(g.mods).length === 0}
-        <p class="muted small">Aucun mod installé pour ce jeu.</p>
-      {:else if list.length === 0}
+      {#if list.length === 0}
         <p class="muted small">Aucun mod installé ne correspond à « {query.trim()} ».</p>
       {/if}
 
@@ -521,9 +526,7 @@
         </div>
       {/if}
 
-      {#if Object.keys(g.mods).length === 0}
-        <p class="muted small">Aucun mod installé pour ce jeu.</p>
-      {:else if list.length === 0}
+      {#if list.length === 0}
         <p class="muted small">Aucun mod installé ne correspond à « {query.trim()} ».</p>
       {/if}
 
