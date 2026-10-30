@@ -11,12 +11,16 @@
     <ErrorNotice error={list.error} onretry={() => list.retry()} />
   </div>
 {:else if list.loaded && list.items.length > 0}
-  <div class="load-more" use:inview={() => list.more()}>
-    <p class="muted">{exact(list.items.length)} {noun} affichés sur {exact(list.total)}</p>
-    {#if list.hasMore}
-      <button class="btn" onclick={() => list.more()} disabled={list.loading}>
-        {list.loading ? "Chargement…" : "Afficher plus"}
-      </button>
-    {/if}
-  </div>
+  <!-- Recréé à chaque page reçue : si la liste ne remplit pas encore l'écran,
+       la suite se charge aussitôt, sans attendre un défilement. -->
+  {#key list.items.length}
+    <div class="load-more" use:inview={() => list.more()}>
+      <p class="muted">{exact(list.items.length)} {noun} affichés sur {exact(list.total)}</p>
+      {#if list.hasMore}
+        <button class="btn" onclick={() => list.more()} disabled={list.loading}>
+          {list.loading ? "Chargement…" : "Afficher plus"}
+        </button>
+      {/if}
+    </div>
+  {/key}
 {/if}

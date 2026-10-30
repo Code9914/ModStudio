@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 
 pub const API_BASE: &str = "https://thunderstore.io";
+/// Mods par page de liste : l'API ignore la taille demandée.
+pub const API_PAGE: u32 = 20;
 const USER_AGENT: &str = concat!("ModStudio/", env!("CARGO_PKG_VERSION"), " (client de mods non officiel)");
 
 /// Un jeu sur Thunderstore.
@@ -384,6 +386,35 @@ impl TsClient {
         Ok((list.count, packages))
     }
 
+    /// Mods `offset .. offset + limit` d'un jeu. L'API renvoie toujours
+    /// `API_PAGE` mods par page, quelle que soit la taille demandée : on lit
+    /// les pages qui couvrent la tranche, puis on la découpe.
+    pub async fn packages_range(&self, community: &str, query: &str, ordering: &str, offset: u32, limit: u32) -> AppResult<(i64, Vec<Package>)> {
+        let limit = limit.clamp(1, 100);
+        let first = offset / API_PAGE + 1;
+        let last = (offset + limit - 1) / API_PAGE + 1;
+        let (mut total, mut items) = (0i64, Vec::new());
+        for page in first..=last {
+            // Au-delà de la dernière page, l'API répond 404.
+            if page > first && (page as i64 - 1) * API_PAGE as i64 >= total {
+                break;
+            }
+            let (count, list) = match self.packages(community, query, ordering, page, API_PAGE).await {
+                Ok(r) => r,
+                Err(AppError::ThunderstoreNotFound) if page > first => break,
+                Err(e) => return Err(e),
+            };
+            total = count;
+            let short = list.len() < API_PAGE as usize;
+            items.extend(list);
+            if short {
+                break;
+            }
+        }
+        let skip = (offset - (first - 1) * API_PAGE) as usize;
+        Ok((total, items.into_iter().skip(skip).take(limit as usize).collect()))
+    }
+
     /// Fiche d'un mod, ses versions et son README.
     pub async fn package(&self, community: &str, namespace: &str, name: &str) -> AppResult<PackageView> {
         check_community(community)?;
@@ -439,6 +470,32 @@ impl TsClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::{fake_server, json_response};
+
+    fn listing(count: usize, from: usize, n: usize) -> String {
+        let items: Vec<String> = (from..from + n).map(|i| format!(r#"{{"namespace":"Team","name":"Mod{i}"}}"#)).collect();
+        json_response(200, &format!(r#"{{"count":{count},"next":null,"results":[{}]}}"#, items.join(",")))
+    }
+
+    #[tokio::test]
+    async fn pages_of_twenty_make_any_slice() {
+        // 45 mods : tranche 30..70 → pages 2 et 3 (la 3 est la dernière, incomplète).
+        let server = fake_server(vec![listing(45, 20, 20), listing(45, 40, 5)]);
+        let c = TsClient::new(server.base.trim_end_matches("/v1"));
+        let (total, items) = c.packages_range("bonelab", "", "most-downloaded", 30, 40).await.unwrap();
+        assert_eq!(total, 45);
+        assert_eq!(items.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), (30..45).map(|i| format!("Mod{i}")).collect::<Vec<_>>());
+        assert!(server.request(0).line.contains("page=2"));
+        assert!(server.request(1).line.contains("page=3"));
+        assert_eq!(server.count(), 2);
+
+        // 40 mods pile : pas de page 3 demandée (elle n'existe pas).
+        let server = fake_server(vec![listing(40, 20, 20)]);
+        let c = TsClient::new(server.base.trim_end_matches("/v1"));
+        let (_, items) = c.packages_range("bonelab", "", "most-downloaded", 20, 40).await.unwrap();
+        assert_eq!(items.len(), 20);
+        assert_eq!(server.count(), 1);
+    }
 
     #[test]
     fn checks_names_and_dependencies() {

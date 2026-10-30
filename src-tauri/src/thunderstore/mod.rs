@@ -155,18 +155,17 @@ pub async fn ts_packages(
     offset: Option<u32>,
     limit: Option<u32>,
 ) -> AppResult<Page<Package>> {
-    let limit = limit.unwrap_or(24).clamp(1, 100);
+    let limit = limit.unwrap_or(40).clamp(1, 100);
     let offset = offset.unwrap_or(0);
-    let page = offset / limit + 1;
     let (count, data) = state
         .thunderstore
         .client
-        .packages(&community, query.as_deref().unwrap_or(""), ordering.as_deref().unwrap_or("most-downloaded"), page, limit)
+        .packages_range(&community, query.as_deref().unwrap_or(""), ordering.as_deref().unwrap_or("most-downloaded"), offset, limit)
         .await?;
     let count = count.clamp(0, u32::MAX as i64) as u32;
     Ok(Page {
         result_count: data.len() as u32,
-        result_offset: (page - 1) * limit,
+        result_offset: offset,
         result_limit: limit,
         result_total: count,
         data,

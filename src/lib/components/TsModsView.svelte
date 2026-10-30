@@ -20,8 +20,9 @@
   let bannerFailed = $state(false);
 
   const list = new PagedList<TsPackage>(
+    // Deux pages de l'API (20 mods chacune) à la fois.
     (offset, limit) => ts.packages({ community: game.identifier, query: search, ordering: sort, offset, limit }),
-    30,
+    40,
   );
 
   $effect(() => {
