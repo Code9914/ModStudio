@@ -387,9 +387,9 @@ impl NexusState {
                     let project = info.project.clone().unwrap_or_default();
                     ruled = Some(engine_rules::unreal_plan(&extracted, &config_b.folder, &project, &mod_name)?.0);
                 }
-                (Some("unity"), Some(_)) => {
+                (Some("unity"), Some(info)) => {
                     let loader = loader.unwrap_or(UnityLoader::BepInEx);
-                    ruled = Some(engine_rules::unity_plan(&extracted, loader, &mod_name)?.0);
+                    ruled = Some(engine_rules::unity_plan(&extracted, loader, &mod_name, &info.tools)?.0);
                 }
                 (Some("bethesda"), Some(_)) => {
                     let game = engine::bethesda(&domain_b).ok_or_else(|| AppError::UnknownLayout("jeu Bethesda inconnu".into()))?;

@@ -523,6 +523,12 @@ export interface ToolOffer {
   /** Mods populaires du jeu qui en ont besoin, sur `sampled` examinés. */
   popular: number;
   sampled: number;
+  /** Version installée par ModStudio. */
+  installedVersion: string | null;
+  /** Autre version disponible (ou demandée par les mods du jeu). */
+  update: string | null;
+  /** Version précise demandée par les mods du jeu (`6.0.0-be.791`). */
+  requiredVersion: string | null;
 }
 
 export interface NexusGameSetup {

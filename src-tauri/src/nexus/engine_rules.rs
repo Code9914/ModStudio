@@ -165,8 +165,24 @@ pub enum UnityLoader {
     MelonLoader,
 }
 
+/// Fichiers d'un chargeur de mods (BepInEx, MelonLoader) ou d'un injecteur
+/// « autonome », chemin relatif à la racine de l'archive (en minuscules).
+fn is_loader_file(inner: &[String]) -> bool {
+    let first = lower(&inner[0]);
+    if inner.len() == 1 {
+        return matches!(
+            first.as_str(),
+            "winhttp.dll" | "version.dll" | "doorstop_config.ini" | ".doorstop_version" | "dobby.dll"
+        );
+    }
+    first == "melonloader"
+        || first == "dotnet"
+        || (first == "bepinex" && matches!(lower(&inner[1]).as_str(), "core" | "unity-libs" | "interop" | "cache"))
+}
+
 /// Mods Unity : plugins BepInEx (`BepInEx/plugins`) ou mods MelonLoader (`Mods`).
-pub fn unity_plan(extracted: &Path, loader: UnityLoader, mod_name: &str) -> AppResult<(RulePlan, NeededTool)> {
+/// `present` : outils déjà installés dans le jeu (`bepinex`, `melonloader`).
+pub fn unity_plan(extracted: &Path, loader: UnityLoader, mod_name: &str, present: &[String]) -> AppResult<(RulePlan, NeededTool)> {
     let files = files_of(extracted)?;
     let mut plan = RulePlan::default();
     let keep = |c: &str| {
@@ -178,14 +194,30 @@ pub fn unity_plan(extracted: &Path, loader: UnityLoader, mod_name: &str) -> AppR
     let strip = wrapper_depth(&files, &keep);
     let inners: Vec<(&Vec<String>, &[String])> = files.iter().map(|f| (f, &f[strip.min(f.len() - 1)..])).collect();
     let has = |dir: &str| inners.iter().any(|(_, i)| i.len() > 1 && lower(&i[0]) == dir);
+    let game_has = |t: &str| present.iter().any(|p| p == t);
 
-    if inners
-        .iter()
-        .any(|(_, i)| i.iter().any(|c| lower(c) == "melonloader") || i.last().is_some_and(|n| lower(n) == "version.dll") || i.last().is_some_and(|n| lower(n) == "winhttp.dll"))
-    {
-        return Err(AppError::UnknownLayout(
-            "Ce fichier contient un chargeur de mods (BepInEx ou MelonLoader) : installe-le depuis la page du jeu dans ModStudio.".into(),
-        ));
+    // Version « autonome » : l'archive apporte son propre chargeur ou injecteur.
+    if inners.iter().any(|(_, i)| is_loader_file(i)) {
+        let full_bepinex = inners.iter().any(|(_, i)| i.len() > 2 && lower(&i[0]) == "bepinex" && lower(&i[1]) == "core");
+        if full_bepinex && game_has("bepinex") {
+            // BepInEx fourni avec le mod alors qu'il est déjà installé : on ne garde que le mod.
+        } else if game_has("bepinex") || game_has("melonloader") {
+            let current = if game_has("bepinex") { "BepInEx" } else { "MelonLoader" };
+            return Err(AppError::UnknownLayout(format!(
+                "Ce fichier est la version « autonome » du mod : il apporte son propre chargeur (winhttp.dll, \
+                 version.dll…), qui entrerait en conflit avec {current}, déjà installé dans ce jeu. Choisis la version \
+                 {current} du mod dans la liste des fichiers."
+            )));
+        } else {
+            // Aucun chargeur dans le jeu : le mod s'installe tel quel dans le dossier du jeu.
+            for (f, inner) in &inners {
+                if inner.len() == 1 && is_doc(&inner[0]) {
+                    continue;
+                }
+                plan.push_root(extracted.join(f.join("/")), inner.join("/"));
+            }
+            return Ok((plan, None));
+        }
     }
 
     // Quel chargeur ce mod vise-t-il ?
@@ -200,11 +232,25 @@ pub fn unity_plan(extracted: &Path, loader: UnityLoader, mod_name: &str) -> AppR
         UnityLoader::BepInEx => "bepinex",
         UnityLoader::MelonLoader => "melonloader",
     });
+    // Archive rangée comme le dossier du jeu (`BepInEx/…` à la racine) : les
+    // autres dossiers vont aussi à la racine du jeu.
+    let root_relative = match target {
+        UnityLoader::BepInEx => has("bepinex"),
+        UnityLoader::MelonLoader => has("mods") || has("userlibs") || has("userdata") || has("plugins"),
+    };
     // Paquet Thunderstore : ses métadonnées restent avec le plugin.
     let thunderstore = inners.iter().any(|(_, i)| i.len() == 1 && lower(&i[0]) == "manifest.json");
 
     let mod_dir = safe_name(mod_name);
     for (f, inner) in &inners {
+        // Fichiers du chargeur fourni avec le mod, et sa configuration (créée par le chargeur installé).
+        let loader_config = inner.len() == 3
+            && lower(&inner[0]) == "bepinex"
+            && lower(&inner[1]) == "config"
+            && lower(&inner[2]) == "bepinex.cfg";
+        if is_loader_file(inner) || loader_config {
+            continue;
+        }
         let name = &f[f.len() - 1];
         let first = lower(&inner[0]);
         let dest = match target {
@@ -220,6 +266,8 @@ pub fn unity_plan(extracted: &Path, loader: UnityLoader, mod_name: &str) -> AppR
                     format!("BepInEx/plugins/{mod_dir}/{name}")
                 } else if inner.len() == 1 && is_doc(name) {
                     continue;
+                } else if root_relative {
+                    inner.join("/")
                 } else {
                     format!("BepInEx/plugins/{mod_dir}/{}", inner.join("/"))
                 }
@@ -235,6 +283,8 @@ pub fn unity_plan(extracted: &Path, loader: UnityLoader, mod_name: &str) -> AppR
                     format!("{root}/{}", inner[1..].join("/"))
                 } else if inner.len() == 1 && is_doc(name) {
                     continue;
+                } else if root_relative && inner.len() > 1 {
+                    inner.join("/")
                 } else {
                     format!("Mods/{}", inner.join("/"))
                 }
@@ -449,26 +499,61 @@ mod tests {
     #[test]
     fn unity_plugins_go_to_the_right_loader() {
         let dll = tree("un-dll", &["MyMod.dll", "README.txt"]);
-        let (plan, needs) = unity_plan(&dll, UnityLoader::BepInEx, "My Mod").unwrap();
+        let none: Vec<String> = Vec::new();
+        let bepinex = vec!["bepinex".to_string()];
+        let (plan, needs) = unity_plan(&dll, UnityLoader::BepInEx, "My Mod", &none).unwrap();
         assert_eq!(dests(&plan), vec!["BepInEx/plugins/My Mod/MyMod.dll"]);
         assert_eq!(needs, Some("bepinex"));
-        let (plan, needs) = unity_plan(&dll, UnityLoader::MelonLoader, "My Mod").unwrap();
+        let (plan, needs) = unity_plan(&dll, UnityLoader::MelonLoader, "My Mod", &none).unwrap();
         assert_eq!(dests(&plan), vec!["Mods/MyMod.dll"]);
         assert_eq!(needs, Some("melonloader"));
 
         // L'archive dit elle-même quel chargeur elle vise.
         let bep = tree("un-bep", &["Pack/BepInEx/plugins/A/A.dll", "Pack/BepInEx/config/a.cfg"]);
-        let (plan, _) = unity_plan(&bep, UnityLoader::MelonLoader, "A").unwrap();
+        let (plan, _) = unity_plan(&bep, UnityLoader::MelonLoader, "A", &none).unwrap();
         assert_eq!(dests(&plan), vec!["BepInEx/config/a.cfg", "BepInEx/plugins/A/A.dll"]);
         let thunder = tree("un-ts", &["manifest.json", "icon.png", "README.md", "plugins/B.dll"]);
-        let (plan, _) = unity_plan(&thunder, UnityLoader::BepInEx, "B").unwrap();
+        let (plan, _) = unity_plan(&thunder, UnityLoader::BepInEx, "B", &none).unwrap();
         assert_eq!(
             dests(&plan),
             vec!["BepInEx/plugins/B.dll", "BepInEx/plugins/B/README.md", "BepInEx/plugins/B/icon.png", "BepInEx/plugins/B/manifest.json"]
         );
 
-        let loader = tree("un-loader", &["winhttp.dll", "BepInEx/core/BepInEx.dll"]);
-        assert!(matches!(unity_plan(&loader, UnityLoader::BepInEx, "x").unwrap_err(), AppError::UnknownLayout(_)));
+        // Plugin livré avec son dossier à la racine du jeu (Moon Sweepers Trainer, version BepInEx).
+        let rooted = tree(
+            "un-rooted",
+            &[
+                "BepInEx/plugins/MoonSweepersTrainer/MoonSweepersTrainer.BepInEx.dll",
+                "MoonSweepersTrainer/MoonSweepersTrainer.dll",
+                "MoonSweepersTrainer/MoonSweepersTrainer.ini",
+                "CHANGELOG.txt",
+                "README.txt",
+            ],
+        );
+        let (plan, needs) = unity_plan(&rooted, UnityLoader::BepInEx, "Trainer", &bepinex).unwrap();
+        assert_eq!(needs, Some("bepinex"));
+        assert_eq!(
+            dests(&plan),
+            vec![
+                "BepInEx/plugins/MoonSweepersTrainer/MoonSweepersTrainer.BepInEx.dll",
+                "MoonSweepersTrainer/MoonSweepersTrainer.dll",
+                "MoonSweepersTrainer/MoonSweepersTrainer.ini",
+            ]
+        );
+
+        // Version « autonome » (injecteur winhttp.dll) : refusée si BepInEx est là…
+        let standalone = tree("un-standalone", &["winhttp.dll", "MoonSweepersTrainer/MoonSweepersTrainer.dll", "README.txt"]);
+        let err = unity_plan(&standalone, UnityLoader::BepInEx, "Trainer", &bepinex).unwrap_err();
+        assert!(matches!(&err, AppError::UnknownLayout(m) if m.contains("version BepInEx")), "{err}");
+        // … installée telle quelle sinon.
+        let (plan, needs) = unity_plan(&standalone, UnityLoader::BepInEx, "Trainer", &none).unwrap();
+        assert_eq!(needs, None);
+        assert_eq!(dests(&plan), vec!["MoonSweepersTrainer/MoonSweepersTrainer.dll", "winhttp.dll"]);
+
+        // BepInEx fourni avec le plugin alors qu'il est déjà installé : seul le plugin est gardé.
+        let pack = tree("un-pack", &["winhttp.dll", "doorstop_config.ini", "BepInEx/core/BepInEx.Core.dll", "BepInEx/plugins/C/C.dll"]);
+        let (plan, _) = unity_plan(&pack, UnityLoader::BepInEx, "C", &bepinex).unwrap();
+        assert_eq!(dests(&plan), vec!["BepInEx/plugins/C/C.dll"]);
     }
 
     #[test]

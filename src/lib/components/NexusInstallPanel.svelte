@@ -54,7 +54,26 @@
   });
   const toolFolder = $derived(config?.rules === "bonelab" ? gameDir : (config?.folder ?? null));
 
-  /** Fichier conseillé : le plus récent des fichiers principaux (version PC). */
+  /** Chargeurs de mods déjà installés dans le jeu (`bepinex`, `melonloader`). */
+  const gameLoaders = $derived(nexusStore.setups[game.id]?.engine?.tools ?? []);
+
+  /** Préférence pour la version du mod faite pour le chargeur installé (« BepInEx » plutôt que « Standalone »). */
+  function loaderScore(f: NexusFile): number {
+    const text = `${f.name} ${f.description ?? ""}`.toLowerCase();
+    let score = 0;
+    for (const [loader, pattern, other] of [
+      ["bepinex", /bepinex/, /melon/],
+      ["melonloader", /melon/, /bepinex/],
+    ] as const) {
+      if (!gameLoaders.includes(loader)) continue;
+      if (pattern.test(text)) score += 2;
+      if (other.test(text)) score -= 1;
+      if (/standalone|autonome/.test(text)) score -= 2;
+    }
+    return score;
+  }
+
+  /** Fichier conseillé : le plus récent des fichiers principaux (version PC), pour le chargeur du jeu. */
   const recommended = $derived.by(() => {
     if (!files) return null;
     const current = files.filter((f) => ["MAIN", "OPTIONAL", "UPDATE", "MISCELLANEOUS"].includes(f.category));
@@ -62,7 +81,11 @@
     const pool = pc.length ? pc : current;
     const main = pool.filter((f) => f.category === "MAIN");
     const list = main.length ? main : pool;
-    return [...list].sort((a, b) => Number(b.primary) - Number(a.primary) || b.date - a.date)[0] ?? null;
+    return (
+      [...list].sort(
+        (a, b) => loaderScore(b) - loaderScore(a) || Number(b.primary) - Number(a.primary) || b.date - a.date,
+      )[0] ?? null
+    );
   });
   const waitingFile = $derived(waiting ? (files?.find((f) => f.fileId === waiting.fileId) ?? null) : null);
 

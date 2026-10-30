@@ -150,20 +150,24 @@
       {/if}
 
       {#if tool}
-        <div class="tool" class:ready={tool.present}>
+        <div class="tool" class:ready={tool.present} class:stale={!!managedTool && !!tool.update}>
           {#if tool.present}
             <p class="small tool-ok">
               <Icon name="check" size={15} />
               <span>
                 <span class="strong">{tool.name}</span>
-                {managedTool ? `installé par ModStudio${managedTool.version ? ` (${managedTool.version})` : ""}` : "est installé"} :
-                les mods qui en ont besoin se chargeront.
+                {managedTool ? `installé par ModStudio${managedTool.version ? ` (${managedTool.version})` : ""}` : "est installé"}{managedTool && tool.update
+                  ? "."
+                  : " : les mods qui en ont besoin se chargeront."}
               </span>
             </p>
             {#if managedTool}
               <button class="btn btn-ghost" class:danger={confirmRemove} onclick={removeTool} disabled={busy}>
                 {confirmRemove ? "Confirmer" : `Retirer ${tool.name}`}
               </button>
+            {/if}
+            {#if managedTool && tool.update}
+              <NexusToolPrompt {game} {tool} folder={toolFolder} />
             {/if}
           {:else if config}
             <NexusToolPrompt {game} {tool} folder={toolFolder} reason={popularity ?? `${tool.name} n'est pas installé.`} />
@@ -259,6 +263,10 @@
 
   .tool.ready {
     border-left-color: var(--ok);
+  }
+
+  .tool.ready.stale {
+    border-left-color: var(--accent-fill);
   }
 
   .tool > :global(.prompt) {

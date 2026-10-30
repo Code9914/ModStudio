@@ -31,6 +31,11 @@
 
   const progress = $derived(nexusStore.toolProgress[game.id] ?? null);
   const fromNexus = $derived(tool.nexusMod !== null);
+  /** Déjà installé par ModStudio : remplacement par une autre version. */
+  const updating = $derived(tool.managed && !!tool.update);
+  const source = $derived(
+    tool.id === "bepinex6" ? "le site officiel des versions de BepInEx" : "sa page officielle sur GitHub",
+  );
 
   async function install() {
     confirming = false;
@@ -51,22 +56,48 @@
     <p class="small ok" role="status">
       <Icon name="check" size={15} />
       <span>
-        {tool.name} est installé. Lance le jeu une fois : {tool.name} se prépare au premier démarrage, puis charge les mods.
+        {tool.name} est {updating ? "à jour" : "installé"}. Lance le jeu une fois : {tool.name} se prépare au premier démarrage
+        (ça peut prendre une minute), puis charge les mods.
       </span>
     </p>
   {:else if progress}
-    <p class="small strong">Installation de {tool.name}…</p>
+    <p class="small strong">{updating ? "Mise à jour" : "Installation"} de {tool.name}…</p>
     <ProgressBar {progress} oncancel={() => nexusStore.cancelTool(game.id)} />
+  {:else if confirming && updating}
+    <p class="small">
+      ModStudio va remplacer <span class="strong">{tool.name} {tool.installedVersion ?? ""}</span> par la version
+      <span class="strong">{tool.update}</span>, téléchargée depuis {source}. Tes mods et leurs réglages restent en place.
+    </p>
+    <div class="row">
+      <button class="btn btn-primary" onclick={install}>Mettre à jour {tool.name}</button>
+      <button class="btn btn-ghost" onclick={() => (confirming = false)}>Annuler</button>
+    </div>
   {:else if confirming}
     <p class="small">
-      ModStudio va télécharger <span class="strong">{tool.name}</span> depuis sa page officielle sur GitHub et le copier
-      dans le dossier du jeu{folder ? "" : "."}
+      ModStudio va télécharger <span class="strong">{tool.name}</span>
+      {#if tool.requiredVersion}(version {tool.requiredVersion}){/if} depuis {source} et le copier dans le dossier du
+      jeu{folder ? "" : "."}
       {#if folder}<span class="path">({folder})</span>.{/if}
       Tu pourras le retirer depuis ModStudio à tout moment.
     </p>
     <div class="row">
       <button class="btn btn-primary" onclick={install}>Installer {tool.name}</button>
       <button class="btn btn-ghost" onclick={() => (confirming = false)}>Annuler</button>
+    </div>
+  {:else if updating}
+    <p class="small">
+      {#if tool.requiredVersion && tool.update === tool.requiredVersion}
+        <span class="strong">Les mods de ce jeu demandent {tool.name} {tool.requiredVersion}.</span>
+        La version installée ({tool.installedVersion ?? "inconnue"}) risque de ne pas les charger.
+      {:else}
+        <span class="strong">Nouvelle version de {tool.name} : {tool.update}.</span>
+        Version installée : {tool.installedVersion ?? "inconnue"}.
+      {/if}
+    </p>
+    <div class="row">
+      <button class="btn btn-primary" onclick={() => (confirming = true)}>
+        <Icon name="refresh" size={15} />Mettre à jour {tool.name}
+      </button>
     </div>
   {:else}
     <p class="small">

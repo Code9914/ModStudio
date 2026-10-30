@@ -70,6 +70,10 @@ pub struct NexusState {
     pub hints: Mutex<HashMap<String, tools::Hints>>,
     /// `%LOCALAPPDATA%` (où les jeux Bethesda gardent `plugins.txt`).
     pub local_appdata: Option<PathBuf>,
+    /// Page des versions « Bleeding Edge » de BepInEx.
+    pub bepinex_builds: String,
+    /// Versions d'outils déjà cherchées (date, version).
+    pub releases: Mutex<HashMap<String, (i64, tools::ToolRelease)>>,
 }
 
 impl NexusState {
@@ -90,6 +94,8 @@ impl NexusState {
             scanner: Arc::new(crate::games::installed_games),
             hints: Mutex::new(HashMap::new()),
             local_appdata: std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
+            bepinex_builds: tools::BEPINEX_BUILDS.to_string(),
+            releases: Mutex::new(HashMap::new()),
         }
     }
 }

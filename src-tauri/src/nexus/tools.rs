@@ -1,6 +1,8 @@
 //! Outils de mods installés par ModStudio dans le dossier d'un jeu :
 //! UE4SS (Unreal), BepInEx et MelonLoader (Unity), depuis leurs versions
-//! officielles sur GitHub (empreinte SHA-256 vérifiée quand GitHub la donne).
+//! officielles sur GitHub (empreinte SHA-256 vérifiée quand GitHub la donne),
+//! et BepInEx 6 IL2CPP depuis ses versions « Bleeding Edge » officielles
+//! (`builds.bepinex.dev`), seules compatibles avec les jeux Unity récents.
 //! Les script extenders des jeux Bethesda s'installent, eux, depuis leur page
 //! Nexus Mods comme un mod (voir `engine_rules.rs`).
 
@@ -23,16 +25,32 @@ use crate::games::engine::{self, Arch, Engine};
 use crate::installer::{self, Batch, DownloadRequest, InstallEvent, InstalledTool, STAGING_DIR};
 
 pub const GITHUB_API: &str = "https://api.github.com";
+pub const BEPINEX_BUILDS: &str = "https://builds.bepinex.dev/projects/bepinex_be";
+
+/// D'où vient un outil.
+pub enum Source {
+    /// Version GitHub : `tag` précis, ou dernière version stable.
+    GitHub { repo: &'static str, tag: Option<&'static str> },
+    /// Versions « Bleeding Edge » de BepInEx 6 (builds.bepinex.dev).
+    BepInExBleedingEdge,
+}
 
 pub struct ToolDef {
     pub id: &'static str,
     pub name: &'static str,
     pub description: &'static str,
-    pub repo: &'static str,
-    /// Version précise ; `None` : dernière version stable.
-    pub tag: Option<&'static str>,
+    pub source: Source,
     /// Nom sous lequel `engine::present_tools` signale l'outil.
     pub present: &'static str,
+}
+
+/// Version d'un outil prête à télécharger.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolRelease {
+    pub version: String,
+    pub url: String,
+    pub size: u64,
+    pub sha256: Option<String>,
 }
 
 pub const TOOLS: &[ToolDef] = &[
@@ -40,33 +58,30 @@ pub const TOOLS: &[ToolDef] = &[
         id: "ue4ss",
         name: "UE4SS",
         description: "chargeur de mods Lua et Blueprint pour les jeux Unreal Engine",
-        repo: "UE4SS-RE/RE-UE4SS",
         // Les versions « expérimentales » gèrent Unreal Engine 5.4 et plus récent.
-        tag: Some("experimental-latest"),
+        source: Source::GitHub { repo: "UE4SS-RE/RE-UE4SS", tag: Some("experimental-latest") },
         present: "ue4ss",
     },
     ToolDef {
         id: "bepinex5",
         name: "BepInEx 5",
         description: "chargeur de plugins pour les jeux Unity (Mono)",
-        repo: "BepInEx/BepInEx",
-        tag: None,
+        source: Source::GitHub { repo: "BepInEx/BepInEx", tag: None },
         present: "bepinex",
     },
     ToolDef {
         id: "bepinex6",
         name: "BepInEx 6 (IL2CPP)",
         description: "chargeur de plugins pour les jeux Unity compilés en IL2CPP",
-        repo: "BepInEx/BepInEx",
-        tag: Some("v6.0.0-pre.2"),
+        // La version 6.0.0-pre.2 de GitHub ne gère pas les versions récentes d'Unity.
+        source: Source::BepInExBleedingEdge,
         present: "bepinex",
     },
     ToolDef {
         id: "melonloader",
         name: "MelonLoader",
         description: "chargeur de mods pour les jeux Unity",
-        repo: "LavaGang/MelonLoader",
-        tag: None,
+        source: Source::GitHub { repo: "LavaGang/MelonLoader", tag: None },
         present: "melonloader",
     },
 ];
@@ -81,7 +96,6 @@ pub fn asset_matches(id: &str, name: &str, arch: Arch) -> bool {
     match id {
         "ue4ss" => name.starts_with("UE4SS_v") && name.ends_with(".zip"),
         "bepinex5" => name.starts_with(&format!("BepInEx_win_{a}_")) && name.ends_with(".zip"),
-        "bepinex6" => name.starts_with(&format!("BepInEx-Unity.IL2CPP-win-{a}-")) && name.ends_with(".zip"),
         "melonloader" => name == format!("MelonLoader.{a}.zip"),
         _ => false,
     }
@@ -96,10 +110,30 @@ pub struct Hints {
     pub ue4ss: usize,
     pub bepinex: usize,
     pub melonloader: usize,
+    /// Versions « Bleeding Edge » de BepInEx demandées (numéro → nombre de mods).
+    pub be_builds: BTreeMap<u32, usize>,
+}
+
+/// Numéro de version « Bleeding Edge » de BepInEx cité dans un texte
+/// (`6.0.0-be.791`, `…/bepinex_be/791`).
+pub fn be_build_in(text: &str) -> Option<u32> {
+    let t = text.to_ascii_lowercase();
+    for marker in ["-be.", " be.", "bepinex_be/", "be.", "be "] {
+        let mut from = 0;
+        while let Some(i) = t[from..].find(marker) {
+            let start = from + i + marker.len();
+            let digits: String = t[start..].chars().take_while(|c| c.is_ascii_digit()).collect();
+            if (3..=5).contains(&digits.len()) {
+                return digits.parse().ok();
+            }
+            from = start;
+        }
+    }
+    None
 }
 
 impl Hints {
-    /// Ajoute un mod d'après les noms de ses mods nécessaires.
+    /// Ajoute un mod d'après ses mods nécessaires (nom, lien).
     pub fn add_mod<'a>(&mut self, requirements: impl IntoIterator<Item = &'a str>) {
         let names: Vec<String> = requirements.into_iter().map(str::to_ascii_lowercase).collect();
         let any = |keys: &[&str]| names.iter().any(|n| keys.iter().any(|k| n.contains(k)));
@@ -107,6 +141,15 @@ impl Hints {
         self.ue4ss += any(&["ue4ss"]) as usize;
         self.bepinex += any(&["bepinex"]) as usize;
         self.melonloader += any(&["melonloader", "melon loader"]) as usize;
+        let build = names.iter().filter(|n| n.contains("bepinex")).find_map(|n| be_build_in(n));
+        if let Some(b) = build {
+            *self.be_builds.entry(b).or_default() += 1;
+        }
+    }
+
+    /// Version « Bleeding Edge » de BepInEx la plus demandée par les mods du jeu.
+    pub fn wanted_be_build(&self) -> Option<u32> {
+        self.be_builds.iter().max_by_key(|(build, n)| (**n, **build)).map(|(b, _)| *b)
     }
 
     /// Nombre de mods qui demandent cet outil (`ue4ss`, `bepinex`, `melonloader`).
@@ -147,15 +190,42 @@ struct Asset {
     digest: Option<String>,
 }
 
-/// Les téléchargements doivent venir de GitHub.
-pub fn github_url_allowed(url: &str, api_base: &str) -> bool {
+/// Les téléchargements doivent venir de GitHub ou du site officiel des versions de BepInEx.
+pub fn tool_url_allowed(url: &str, test_bases: &[&str]) -> bool {
     let Ok(u) = reqwest::Url::parse(url) else { return false };
     let Some(host) = u.host_str().map(str::to_ascii_lowercase) else { return false };
-    let api_host = reqwest::Url::parse(api_base).ok().and_then(|a| a.host_str().map(str::to_ascii_lowercase));
-    if api_host.as_deref() == Some(host.as_str()) && host == "127.0.0.1" {
+    // Serveur de test local.
+    let local = test_bases
+        .iter()
+        .filter_map(|b| reqwest::Url::parse(b).ok().and_then(|a| a.host_str().map(str::to_ascii_lowercase)))
+        .any(|h| h == host && h == "127.0.0.1");
+    if local {
         return true;
     }
-    u.scheme() == "https" && (host == "github.com" || host.ends_with(".githubusercontent.com"))
+    u.scheme() == "https" && (host == "github.com" || host.ends_with(".githubusercontent.com") || host == "builds.bepinex.dev")
+}
+
+/// Versions BepInEx 6 IL2CPP de la page des versions « Bleeding Edge » :
+/// (numéro, nom du fichier), la plus récente d'abord.
+pub fn parse_be_builds(html: &str, arch: Arch) -> Vec<(u32, String)> {
+    let prefix = format!("BepInEx-Unity.IL2CPP-win-{}-6.0.0-be.", arch.as_str());
+    let mut out: Vec<(u32, String)> = Vec::new();
+    let mut from = 0;
+    while let Some(i) = html[from..].find(&prefix) {
+        let start = from + i;
+        let rest = &html[start + prefix.len()..];
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let end = rest.find(".zip").map(|e| start + prefix.len() + e + 4);
+        from = start + prefix.len();
+        let (Ok(build), Some(end)) = (digits.parse::<u32>(), end) else { continue };
+        let name = &html[start..end];
+        // Nom de fichier simple uniquement (`+` du hash encodé en `%2B`).
+        if name.len() < 160 && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '%' | '_' | '+')) && !out.iter().any(|(b, _)| *b == build) {
+            out.push((build, name.to_string()));
+        }
+    }
+    out.sort_by(|a, b| b.0.cmp(&a.0));
+    out
 }
 
 fn sha256_file(path: &std::path::Path) -> std::io::Result<String> {
@@ -208,7 +278,9 @@ impl NexusState {
                 return Err(AppError::ToolMismatch(format!("{} ne convient pas au moteur de ce jeu.", def.name)));
             }
         };
-        if info.tools.iter().any(|t| t == def.present) {
+        // Déjà installé par ModStudio : mise à jour (les anciens fichiers sont remplacés).
+        let old = config.tools.get(def.id).cloned();
+        if old.is_none() && info.tools.iter().any(|t| t == def.present) {
             return Err(AppError::ToolPresent(def.name.to_string()));
         }
         // Un seul chargeur Unity à la fois.
@@ -238,24 +310,9 @@ impl NexusState {
         let _guard = Guard(self, job_key);
         emit(InstallEvent::Preparing);
 
-        // Version publiée sur GitHub.
-        let path = match def.tag {
-            Some(tag) => format!("/repos/{}/releases/tags/{tag}", def.repo),
-            None => format!("/repos/{}/releases/latest", def.repo),
-        };
-        let release: Release = self
-            .client
-            .fetch_json(&format!("{}{path}", self.github_api))
-            .await
-            .map_err(|e| AppError::ToolUnavailable(format!("{} sur GitHub ({e})", def.name)))?;
-        let asset = release
-            .assets
-            .iter()
-            .find(|a| asset_matches(def.id, &a.name, info.arch))
-            .ok_or_else(|| AppError::ToolUnavailable(format!("{} pour Windows {} (aucun fichier publié)", def.name, info.arch.as_str())))?;
-        if !github_url_allowed(&asset.browser_download_url, &self.github_api) {
-            return Err(AppError::DownloadRefused("lien de téléchargement inattendu".into()));
-        }
+        // Version à installer (celle demandée par les mods du jeu pour BepInEx 6).
+        let wanted = if def.id == "bepinex6" { self.hints(&domain).await.wanted_be_build() } else { None };
+        let release = self.tool_release(def, info.arch, wanted, true).await?;
 
         let staging = root.join(STAGING_DIR);
         let job_dir = staging.join(format!("tool-{}", def.id));
@@ -271,10 +328,10 @@ impl NexusState {
         if let Err(e) = installer::download(
             self.client.downloads(),
             DownloadRequest {
-                url: &asset.browser_download_url,
+                url: &release.url,
                 token: None,
                 dest: &archive_path,
-                expected_size: asset.size,
+                expected_size: release.size,
                 expected_md5: None,
             },
             &cancel,
@@ -286,7 +343,7 @@ impl NexusState {
             return Err(e);
         }
         emit(InstallEvent::Verifying);
-        if let Some(expected) = asset.digest.as_deref().and_then(|d| d.strip_prefix("sha256:")) {
+        if let Some(expected) = release.sha256.as_deref() {
             let actual = sha256_file(&archive_path).map_err(installer::io_err)?;
             if !actual.eq_ignore_ascii_case(expected) {
                 cleanup();
@@ -297,13 +354,26 @@ impl NexusState {
         if !root.is_dir() {
             return Err(AppError::Io(format!("le dossier du jeu n'existe plus : {}", root.display())));
         }
-        let others: BTreeMap<String, String> = config
+        // Fichiers des mods et des autres outils : jamais écrasés.
+        let mut without_this = config.clone();
+        without_this.tools.remove(def.id);
+        let others: BTreeMap<String, String> = without_this
             .owned_files(-1)
             .into_iter()
             .filter(|(folder, _, _)| *folder == root)
             .map(|(_, rel, owner)| (rel, owner))
             .collect();
-        let limit = installer::extraction_limit(asset.size, 0);
+        // Mise à jour de BepInEx 6 : les fichiers générés au premier lancement
+        // (assemblies d'interop) correspondent à l'ancienne version.
+        if old.is_some() && def.id == "bepinex6" {
+            for generated in ["BepInEx/interop", "BepInEx/unity-libs", "BepInEx/cache"] {
+                if let Some(dir) = installer::resolve_rel(&root, generated) {
+                    let _ = fs::remove_dir_all(dir);
+                }
+            }
+        }
+        let limit = installer::extraction_limit(release.size.max(1024 * 1024), 0);
+        let (old_files, old_dirs) = old.as_ref().map(|o| (o.files.clone(), o.dirs.clone())).unwrap_or_default();
         let (root_b, archive_b, job_b, emit_b, cancel_b, target_b) =
             (root.clone(), archive_path.clone(), job_dir.clone(), emit.clone(), cancel.clone(), target.clone());
         let placed = tokio::task::spawn_blocking(move || -> AppResult<installer::PlacedBatch> {
@@ -323,8 +393,8 @@ impl NexusState {
                 key: String::new(),
                 folder: root_b,
                 moves,
-                old_files: Vec::new(),
-                old_dirs: Vec::new(),
+                old_files,
+                old_dirs,
                 others,
             };
             Ok(installer::place_batches(vec![batch])?.pop().expect("un lot"))
@@ -339,7 +409,7 @@ impl NexusState {
             id: def.id.to_string(),
             name: def.name.to_string(),
             key: key.clone(),
-            version: Some(release.tag_name.clone()).filter(|t| !t.is_empty()),
+            version: Some(release.version.clone()).filter(|t| !t.is_empty()),
             installed_at: now(),
             files: placed.files,
             dirs: placed.dirs,
@@ -357,6 +427,68 @@ impl NexusState {
         }
         lib.save(&self.library_path)?;
         Ok(record)
+    }
+
+    /// Version d'un outil à télécharger (gardée en mémoire une heure).
+    /// `wanted` : version « Bleeding Edge » précise de BepInEx 6, si elle existe.
+    pub async fn tool_release(&self, def: &ToolDef, arch: Arch, wanted: Option<u32>, fresh: bool) -> AppResult<ToolRelease> {
+        let key = format!("{}:{}:{wanted:?}", def.id, arch.as_str());
+        if !fresh {
+            if let Some((at, r)) = self.releases.lock().expect("releases").get(&key) {
+                if now() - at < 3600 {
+                    return Ok(r.clone());
+                }
+            }
+        }
+        let release = match &def.source {
+            Source::GitHub { repo, tag } => {
+                let path = match tag {
+                    Some(tag) => format!("/repos/{repo}/releases/tags/{tag}"),
+                    None => format!("/repos/{repo}/releases/latest"),
+                };
+                let release: Release = self
+                    .client
+                    .fetch_json(&format!("{}{path}", self.github_api))
+                    .await
+                    .map_err(|e| AppError::ToolUnavailable(format!("{} sur GitHub ({e})", def.name)))?;
+                let asset = release
+                    .assets
+                    .iter()
+                    .find(|a| asset_matches(def.id, &a.name, arch))
+                    .ok_or_else(|| AppError::ToolUnavailable(format!("{} pour Windows {} (aucun fichier publié)", def.name, arch.as_str())))?;
+                ToolRelease {
+                    // La version « experimental-latest » d'UE4SS garde toujours le même nom : on prend celui du fichier.
+                    version: if def.id == "ue4ss" { asset.name.trim_end_matches(".zip").to_string() } else { release.tag_name.clone() },
+                    url: asset.browser_download_url.clone(),
+                    size: asset.size,
+                    sha256: asset.digest.as_deref().and_then(|d| d.strip_prefix("sha256:")).map(str::to_string),
+                }
+            }
+            Source::BepInExBleedingEdge => {
+                let html = self
+                    .client
+                    .fetch_bytes(&self.bepinex_builds)
+                    .await
+                    .map_err(|e| AppError::ToolUnavailable(format!("{} sur builds.bepinex.dev ({e})", def.name)))?;
+                let builds = parse_be_builds(&String::from_utf8_lossy(&html), arch);
+                let (build, file) = wanted
+                    .and_then(|w| builds.iter().find(|(b, _)| *b == w))
+                    .or_else(|| builds.first())
+                    .cloned()
+                    .ok_or_else(|| AppError::ToolUnavailable(format!("{} pour Windows {} (aucune version trouvée)", def.name, arch.as_str())))?;
+                ToolRelease {
+                    version: format!("6.0.0-be.{build}"),
+                    url: format!("{}/{build}/{file}", self.bepinex_builds.trim_end_matches('/')),
+                    size: 0,
+                    sha256: None,
+                }
+            }
+        };
+        if !tool_url_allowed(&release.url, &[&self.github_api, &self.bepinex_builds]) {
+            return Err(AppError::DownloadRefused("lien de téléchargement inattendu".into()));
+        }
+        self.releases.lock().expect("releases").insert(key, (now(), release.clone()));
+        Ok(release)
     }
 
     /// Retire un outil installé par ModStudio. Renvoie le dossier laissé en
@@ -396,7 +528,6 @@ mod tests {
         assert!(asset_matches("bepinex5", "BepInEx_win_x64_5.4.23.6.zip", Arch::X64));
         assert!(!asset_matches("bepinex5", "BepInEx_win_x86_5.4.23.6.zip", Arch::X64));
         assert!(!asset_matches("bepinex5", "BepInEx_linux_x64_5.4.23.6.zip", Arch::X64));
-        assert!(asset_matches("bepinex6", "BepInEx-Unity.IL2CPP-win-x86-6.0.0-pre.2.zip", Arch::X86));
         assert!(asset_matches("melonloader", "MelonLoader.x64.zip", Arch::X64));
         assert!(!asset_matches("melonloader", "MelonLoader.Installer.exe", Arch::X64));
     }
@@ -418,69 +549,152 @@ mod tests {
         assert_eq!(bep.count("bepinex"), 1);
         assert_eq!(recommend(Engine::UnityIl2cpp, &bep), Some("bepinex6"));
         assert_eq!(recommend(Engine::Bethesda, &none), None);
-        assert!(github_url_allowed("https://github.com/BepInEx/BepInEx/releases/download/v5/x.zip", GITHUB_API));
-        assert!(github_url_allowed("https://release-assets.githubusercontent.com/x", GITHUB_API));
-        assert!(!github_url_allowed("https://github.com.evil.example/x.zip", GITHUB_API));
-        assert!(!github_url_allowed("http://github.com/x.zip", GITHUB_API));
+        assert!(tool_url_allowed("https://github.com/BepInEx/BepInEx/releases/download/v5/x.zip", &[GITHUB_API]));
+        assert!(tool_url_allowed("https://release-assets.githubusercontent.com/x", &[GITHUB_API]));
+        assert!(tool_url_allowed("https://builds.bepinex.dev/projects/bepinex_be/791/x.zip", &[GITHUB_API]));
+        assert!(!tool_url_allowed("https://github.com.evil.example/x.zip", &[GITHUB_API]));
+        assert!(!tool_url_allowed("http://github.com/x.zip", &[GITHUB_API]));
+        assert!(!tool_url_allowed("http://127.0.0.1:9/x.zip", &[GITHUB_API]));
+    }
+
+    #[test]
+    fn reads_bepinex_bleeding_edge_builds() {
+        let html = r#"<a href="/projects/bepinex_be/791/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.791%2Bb782da4.zip">x</a>
+            <a href="/projects/bepinex_be/791/BepInEx-Unity.IL2CPP-win-x86-6.0.0-be.791%2Bb782da4.zip">x</a>
+            <a href="/projects/bepinex_be/790/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.790%2B4e98359.zip">x</a>
+            <a href="/projects/bepinex_be/791/BepInEx-Unity.Mono-win-x64-6.0.0-be.791%2Bb782da4.zip">x</a>"#;
+        let builds = parse_be_builds(html, Arch::X64);
+        assert_eq!(
+            builds,
+            vec![
+                (791, "BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.791%2Bb782da4.zip".to_string()),
+                (790, "BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.790%2B4e98359.zip".to_string()),
+            ]
+        );
+        assert_eq!(be_build_in("BepInEx 6.0.0-be.791, Unity.IL2CPP win-x64"), Some(791));
+        assert_eq!(be_build_in("https://builds.bepinex.dev/projects/bepinex_be/791"), Some(791));
+        assert_eq!(be_build_in("BepInEx 6 IL2CPP"), None);
+        let mut hints = Hints::default();
+        hints.add_mod(["MoonSweepers BepInEx Patcher", "BepInEx 6.0.0-be.791 (Unity.IL2CPP win-x64)"]);
+        hints.add_mod(["BepInEx 6 IL2CPP + Unity 6000.6 fix https://builds.bepinex.dev/projects/bepinex_be/791"]);
+        hints.add_mod(["BepInEx 6.0.0-be.735"]);
+        assert_eq!(hints.wanted_be_build(), Some(791));
+    }
+
+    fn sha(data: &[u8]) -> String {
+        let mut h = Sha256::new();
+        h.update(data);
+        h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    fn file_response(body: &[u8]) -> String {
+        let mut file = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/zip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        file.extend(body.iter().map(|&b| b as char));
+        file
     }
 
     #[tokio::test]
-    async fn installs_and_removes_ue4ss() {
-        let zip = make_zip(&[
+    async fn installs_updates_and_removes_ue4ss() {
+        let v1 = make_zip(&[
             ("dwmapi.dll", b"proxy"),
             ("ue4ss/UE4SS.dll", b"core"),
             ("ue4ss/Mods/mods.txt", b"BPModLoaderMod : 1"),
         ]);
-        let digest = {
-            let mut h = Sha256::new();
-            h.update(&zip);
-            h.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>()
-        };
+        let v2 = make_zip(&[("dwmapi.dll", b"proxy 2"), ("ue4ss/UE4SS.dll", b"core 2"), ("ue4ss/UE4SS-settings.ini", b"[x]")]);
         let server = fake_server_with(|base| {
             let root = base.trim_end_matches("/v1").to_string();
-            let release = format!(
-                r#"{{"tag_name":"experimental-latest","assets":[
-                    {{"name":"zDEV-UE4SS_v3.zip","browser_download_url":"{root}/dev.zip","size":1}},
-                    {{"name":"UE4SS_v3.0.1-1185.zip","browser_download_url":"{root}/ue4ss.zip","size":{},"digest":"sha256:{digest}"}}]}}"#,
-                zip.len()
-            );
-            let mut file = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/zip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                zip.len()
-            );
-            file.extend(zip.iter().map(|&b| b as char));
-            vec![json_response(200, &release), file]
+            let release = |name: &str, zip: &[u8], file: &str| {
+                format!(
+                    r#"{{"tag_name":"experimental-latest","assets":[
+                    {{"name":"zDEV-{name}.zip","browser_download_url":"{root}/dev.zip","size":1}},
+                    {{"name":"{name}.zip","browser_download_url":"{root}/{file}","size":{},"digest":"sha256:{}"}}]}}"#,
+                    zip.len(),
+                    sha(zip)
+                )
+            };
+            vec![
+                json_response(200, &release("UE4SS_v3.0.1-1185", &v1, "v1.zip")),
+                file_response(&v1),
+                json_response(200, &release("UE4SS_v3.0.2-1200", &v2, "v2.zip")),
+                file_response(&v2),
+            ]
         });
         let mut state = NexusState::new("http://127.0.0.1:9", Box::new(MemoryStore::default()), tempdir("tool-lib").join("n.json"));
         state.github_api = server.base.trim_end_matches("/v1").to_string();
 
         // Jeu Unreal configuré sur son dossier d'installation.
         let game = tempdir("tool-game");
-        fs::create_dir_all(game.join("Pilgrim/Binaries/Win64")).unwrap();
+        let win64 = game.join("Pilgrim/Binaries/Win64");
+        fs::create_dir_all(&win64).unwrap();
         fs::create_dir_all(game.join("Pilgrim/Content/Paks")).unwrap();
-        fs::write(game.join("Pilgrim/Binaries/Win64/Pilgrim-Win64-Shipping.exe"), b"").unwrap();
+        fs::write(win64.join("Pilgrim-Win64-Shipping.exe"), b"").unwrap();
         let g = state
             .configure(6534, "pilgrim", "PILGRIM".into(), None, game.to_string_lossy().into_owned(), Layout::Flat, false, None)
             .unwrap();
         assert_eq!(g.rules.as_deref(), Some("unreal"));
 
         let record = state.install_tool(6534, "ue4ss", Arc::new(|_| {})).await.unwrap();
-        assert_eq!(record.version.as_deref(), Some("experimental-latest"));
-        assert_eq!(fs::read(game.join("Pilgrim/Binaries/Win64/dwmapi.dll")).unwrap(), b"proxy");
-        assert!(game.join("Pilgrim/Binaries/Win64/ue4ss/UE4SS.dll").is_file());
+        assert_eq!(record.version.as_deref(), Some("UE4SS_v3.0.1-1185"));
+        assert_eq!(fs::read(win64.join("dwmapi.dll")).unwrap(), b"proxy");
+        assert!(win64.join("ue4ss/UE4SS.dll").is_file());
         let req = server.request(0);
         assert!(req.line.starts_with("GET /repos/UE4SS-RE/RE-UE4SS/releases/tags/experimental-latest"), "{}", req.line);
         assert!(req.header("user-agent").is_some());
         assert_eq!(engine::detect(&game, "pilgrim").tools, vec!["ue4ss"]);
 
-        // Déjà présent : pas de deuxième installation.
-        assert!(matches!(state.install_tool(6534, "ue4ss", Arc::new(|_| {})).await, Err(AppError::ToolPresent(_))));
+        // Mise à jour : anciens fichiers remplacés, fichiers créés par UE4SS gardés.
+        fs::write(win64.join("ue4ss/UE4SS.log"), b"journal").unwrap();
+        let record = state.install_tool(6534, "ue4ss", Arc::new(|_| {})).await.unwrap();
+        assert_eq!(record.version.as_deref(), Some("UE4SS_v3.0.2-1200"));
+        assert_eq!(fs::read(win64.join("ue4ss/UE4SS.dll")).unwrap(), b"core 2");
+        assert!(!win64.join("ue4ss/Mods/mods.txt").exists());
+        assert!(win64.join("ue4ss/UE4SS.log").exists());
+
         // Mauvais outil pour ce moteur.
         assert!(matches!(state.install_tool(6534, "bepinex5", Arc::new(|_| {})).await, Err(AppError::ToolMismatch(_))));
 
-        assert!(state.remove_tool(6534, "ue4ss").unwrap().is_none());
-        assert!(!game.join("Pilgrim/Binaries/Win64/dwmapi.dll").exists());
-        assert!(!game.join("Pilgrim/Binaries/Win64/ue4ss").exists());
-        assert!(game.join("Pilgrim/Binaries/Win64/Pilgrim-Win64-Shipping.exe").exists(), "les fichiers du jeu restent");
+        // Retrait : le dossier qui contient le journal reste.
+        assert_eq!(state.remove_tool(6534, "ue4ss").unwrap().as_deref(), Some("Pilgrim/Binaries/Win64/ue4ss"));
+        assert!(!win64.join("dwmapi.dll").exists());
+        assert!(!win64.join("ue4ss/UE4SS.dll").exists());
+        assert!(win64.join("Pilgrim-Win64-Shipping.exe").exists(), "les fichiers du jeu restent");
+    }
+
+    #[tokio::test]
+    async fn bepinex_6_comes_from_the_bleeding_edge_builds() {
+        let zip = make_zip(&[("winhttp.dll", b"doorstop"), ("BepInEx/core/BepInEx.Core.dll", b"core"), ("dotnet/coreclr.dll", b"clr")]);
+        let server = fake_server_with(|base| {
+            let html = r#"<a href="/projects/bepinex_be/792/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.792%2Bc0ffee1.zip">792</a>
+                <a href="/projects/bepinex_be/791/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.791%2Bb782da4.zip">791</a>"#;
+            let _ = base;
+            vec![
+                // Mods nécessaires des mods populaires : BepInEx be.791.
+                json_response(
+                    200,
+                    r#"{"data":{"mods":{"nodes":[{"modRequirements":{"nexusRequirements":{"nodes":[{"modName":"BepInEx 6.0.0-be.791","url":"https://builds.bepinex.dev/projects/bepinex_be"}]}}}]}}}"#,
+                ),
+                format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}", html.len()),
+                file_response(&zip),
+            ]
+        });
+        let root = server.base.trim_end_matches("/v1").to_string();
+        let mut state = NexusState::new(&root, Box::new(MemoryStore::default()), tempdir("be-lib").join("n.json"));
+        state.bepinex_builds = format!("{root}/projects/bepinex_be");
+
+        let game = tempdir("be-game");
+        fs::write(game.join("UnityPlayer.dll"), b"").unwrap();
+        fs::write(game.join("GameAssembly.dll"), b"").unwrap();
+        fs::create_dir_all(game.join("MoonSweepers_Data")).unwrap();
+        state
+            .configure(10774, "moonsweepers", "Moon Sweepers".into(), None, game.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+        let record = state.install_tool(10774, "bepinex6", Arc::new(|_| {})).await.unwrap();
+        assert_eq!(record.version.as_deref(), Some("6.0.0-be.791"), "la version demandée par les mods du jeu");
+        assert!(server.request(2).line.starts_with("GET /projects/bepinex_be/791/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.791%2Bb782da4.zip"));
+        assert!(game.join("BepInEx/core/BepInEx.Core.dll").is_file());
+        assert_eq!(state.library.lock().unwrap().games[&10774].rules.as_deref(), Some("unity"));
     }
 }

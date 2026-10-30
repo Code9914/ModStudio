@@ -37,22 +37,34 @@ pub struct ToolOffer {
     /// Nombre de mods parmi les plus populaires du jeu qui en ont besoin.
     pub popular: usize,
     pub sampled: usize,
+    /// Version installée par ModStudio.
+    pub installed_version: Option<String>,
+    /// Version différente disponible (ou demandée par les mods du jeu).
+    pub update: Option<String>,
+    /// Version précise demandée par les mods du jeu (`6.0.0-be.791`).
+    pub required_version: Option<String>,
 }
 
 impl ToolOffer {
     /// Outil installable depuis GitHub (`tools::TOOLS`).
     pub fn github(id: &str, config: Option<&GameInstall>, info: Option<&EngineInfo>, hints: &Hints) -> Option<ToolOffer> {
         let def = tools::tool(id)?;
+        let record = config.and_then(|c| c.tools.get(def.id));
         Some(ToolOffer {
             id: def.id.to_string(),
             name: def.name.to_string(),
             description: def.description.to_string(),
             present: info.is_some_and(|i| i.tools.iter().any(|t| t == def.present)),
-            managed: config.is_some_and(|c| c.tools.contains_key(def.id)),
+            managed: record.is_some(),
             nexus_mod: None,
             game_version: None,
             popular: hints.count(def.present),
             sampled: hints.mods,
+            installed_version: record.and_then(|r| r.version.clone()),
+            update: None,
+            required_version: (def.id == "bepinex6")
+                .then(|| hints.wanted_be_build().map(|b| format!("6.0.0-be.{b}")))
+                .flatten(),
         })
     }
 
@@ -69,6 +81,9 @@ impl ToolOffer {
             game_version: info.and_then(|i| i.exe_version.clone()),
             popular: 0,
             sampled: 0,
+            installed_version: None,
+            update: None,
+            required_version: None,
         })
     }
 }
@@ -210,7 +225,7 @@ impl NexusState {
         }
         let gql = "query Requirements($filter: ModsFilter, $count: Int, $sort: [ModsSort!]) \
                    { mods(count: $count, filter: $filter, sort: $sort) \
-                   { nodes { modRequirements { nexusRequirements { nodes { modName } } } } } }";
+                   { nodes { modRequirements { nexusRequirements { nodes { modName url } } } } } }";
         let variables = json!({
             "count": 30,
             "filter": { "gameDomainName": [{ "value": domain, "op": "EQUALS" }] },
@@ -221,12 +236,14 @@ impl NexusState {
         };
         let mut hints = Hints::default();
         for node in data["mods"]["nodes"].as_array().into_iter().flatten() {
-            let names = node["modRequirements"]["nexusRequirements"]["nodes"]
+            // Nom et lien de chaque mod nécessaire (le lien donne parfois la version voulue).
+            let texts: Vec<String> = node["modRequirements"]["nexusRequirements"]["nodes"]
                 .as_array()
                 .into_iter()
                 .flatten()
-                .filter_map(|r| r["modName"].as_str());
-            hints.add_mod(names);
+                .map(|r| format!("{} {}", r["modName"].as_str().unwrap_or(""), r["url"].as_str().unwrap_or("")))
+                .collect();
+            hints.add_mod(texts.iter().map(String::as_str));
         }
         self.hints.lock().expect("hints").insert(domain.to_string(), hints.clone());
         hints
@@ -272,8 +289,20 @@ impl NexusState {
                     if unity && !loader_used {
                         None
                     } else {
-                        chosen_tool(game_id, info, &hints)
-                            .and_then(|id| ToolOffer::github(id, setup.config.as_ref(), Some(info), &hints))
+                        let mut offer = chosen_tool(game_id, info, &hints)
+                            .and_then(|id| ToolOffer::github(id, setup.config.as_ref(), Some(info), &hints));
+                        // Installé par ModStudio : nouvelle version (ou version demandée par les mods) ?
+                        if let Some(o) = offer.as_mut().filter(|o| o.managed) {
+                            if let Some(def) = tools::tool(&o.id) {
+                                let wanted = if def.id == "bepinex6" { hints.wanted_be_build() } else { None };
+                                if let Ok(r) = self.tool_release(def, info.arch, wanted, false).await {
+                                    if o.installed_version.as_deref() != Some(r.version.as_str()) {
+                                        o.update = Some(r.version);
+                                    }
+                                }
+                            }
+                        }
+                        offer
                     }
                 }
             };

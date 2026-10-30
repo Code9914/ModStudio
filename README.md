@@ -202,8 +202,15 @@ Deuxième source de mods, dans la section « Nexus Mods » du menu :
     refusés avec une explication.
 - **Outils de mods**, installés après confirmation, depuis leur page GitHub
   officielle (empreinte SHA-256 vérifiée) : **UE4SS** (version expérimentale,
-  compatible Unreal 5.4+), **BepInEx 5** (Unity Mono), **BepInEx 6** (Unity
-  IL2CPP), **MelonLoader**. L'outil conseillé dépend du moteur, du chargeur
+  compatible Unreal 5.4+), **BepInEx 5** (Unity Mono), **MelonLoader** ; et
+  **BepInEx 6** (Unity IL2CPP) depuis ses versions « Bleeding Edge » officielles
+  (`builds.bepinex.dev`), seules compatibles avec les jeux Unity récents. Si les
+  mods du jeu demandent une version précise (`6.0.0-be.791`), c'est celle-là.
+  Un outil installé par ModStudio se met à jour depuis la page du jeu (les
+  fichiers générés au premier lancement de l'ancienne version sont refaits).
+- Les versions « autonomes » d'un mod (avec leur propre `winhttp.dll` ou
+  `version.dll`) sont refusées quand le jeu a déjà BepInEx ou MelonLoader, et
+  ModStudio conseille la version du mod faite pour le chargeur installé. L'outil conseillé dépend du moteur, du chargeur
   déjà présent, et des mods nécessaires indiqués par les mods les plus
   recommandés du jeu. Il se retire depuis la page du jeu ou « Installés ».
   Les **script extenders** (SKSE64, F4SE, SFSE, xNVSE, FOSE, xOBSE) s'installent
