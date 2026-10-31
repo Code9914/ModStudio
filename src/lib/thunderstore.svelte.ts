@@ -8,6 +8,7 @@ import {
   type GameInstall,
   type InstallEvent,
   type InstalledMod,
+  type ProfileEdit,
   type RmlMod,
   type RmlStatus,
   type TsCommunity,
@@ -213,6 +214,17 @@ class TsStore {
 
   async setEnabled(gameId: number, modId: number, enabled: boolean) {
     this.games[gameId] = await ts.setEnabled(gameId, modId, enabled);
+  }
+
+  async applyProfile(gameId: number, name: string) {
+    const r = await ts.applyProfile(gameId, name);
+    this.games[gameId] = r.game;
+    this.refreshLoader(gameId);
+    return r.issues;
+  }
+
+  async editProfiles(gameId: number, edit: ProfileEdit) {
+    this.games[gameId] = await ts.editProfiles(gameId, edit);
   }
 
   async uninstall(gameId: number, modId: number) {

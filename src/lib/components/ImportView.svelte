@@ -168,7 +168,8 @@
 
   /** Les versions comptent (mod.io installe toujours la dernière). */
   const pinnable = $derived(source === "nexus" || source === "ts" || source === "cl");
-  const withProfiles = $derived(source === "modio" || source === "nexus");
+  /** Toutes les sources ont des profils : le profil importé en devient un. */
+  const withProfiles = $derived(source !== null);
 
   type Action = "install" | "replace" | "enable" | "keep";
 
@@ -408,14 +409,17 @@
     try {
       if (!stopping && withProfiles && makeProfile) {
         const name = profileName;
-        const store = source === "modio" ? installs : nexusStore;
-        const game = store.game(gameId);
+        const store = source === "modio" ? installs : source === "nexus" ? nexusStore : source === "ts" ? tsStore : listsStore;
+        // `config` se relit à chaque fois : la bibliothèque à jour après les installations.
+        const game = config;
         if (game) {
           // Avec les mods ajoutés pendant l'import (mods nécessaires d'une version plus récente).
           const added = Object.keys(game.mods).map(Number).filter((id) => !before.has(id));
-          const ids = profileMods(game, [...imported.profile.mods.map((m) => Number(m.id)), ...added]);
+          // Identifiants dans la bibliothèque (Thunderstore, communautés : retrouvés par leur nom).
+          const listed = imported.profile.mods.map((m) => recordOf(m)?.modId).filter((id): id is number => id !== undefined);
+          const ids = profileMods(game, [...listed, ...added]);
           await store.editProfiles(gameId, { action: "createWith", name, mods: ids });
-          const kept = store.game(gameId)?.activeProfile ?? null;
+          const kept = config?.activeProfile ?? null;
           const issues = await store.applyProfile(gameId, name);
           for (const i of issues) notes.push(`${i.name} : ${i.message}`);
           notes.unshift(
@@ -551,7 +555,8 @@
       {/if}
 
       {#if !blocker}
-        <div class="options">
+        <!-- Une fois fini, le résumé dit ce qui a été fait : les options n'ont plus lieu d'être. -->
+        <div class="options" hidden={!!summary}>
           {#if pinnable}
             <label class="check small">
               <input type="checkbox" bind:checked={sameVersions} disabled={running} />

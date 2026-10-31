@@ -906,6 +906,54 @@ impl ListsState {
         result.map(|_| out)
     }
 
+    /// Passe à un profil de mods (un chargeur désactivé rend au jeu ses
+    /// fichiers, comme avec l'interrupteur du mod).
+    pub fn apply_profile(&self, game_id: i64, name: &str, other_libraries: &[Library]) -> AppResult<toggle::ProfileApplied> {
+        if self.jobs.lock().expect("jobs").contains_key(&game_id) {
+            return Err(AppError::InstallInProgress);
+        }
+        let root = self.disabled_root();
+        let ctx = toggle::Ctx { store_root: &root, source: "lists" };
+        let mut lib = self.library.lock().expect("library");
+        let mut game = lib.games.remove(&game_id).ok_or(AppError::NotFound)?;
+        let result = {
+            let mut libs: Vec<&Library> = other_libraries.iter().collect();
+            libs.insert(0, &*lib);
+            toggle::apply_profile_by(&mut game, name, &mut |g, id, on| {
+                let replaced = g.mods.get(&id).map(|m| m.replaced.clone()).unwrap_or_default();
+                if on {
+                    let others = toggle::others_map(g, id, &libs);
+                    let kept = keep_originals(&g.folder, &replaced);
+                    let r = toggle::enable(g, id, &ctx, &others);
+                    if r.is_err() {
+                        restore_originals(&g.folder, &kept);
+                    }
+                    r
+                } else {
+                    let r = toggle::disable(g, id, &ctx);
+                    if r.is_ok() {
+                        restore_originals(&g.folder, &replaced);
+                    }
+                    r
+                }
+            })
+        };
+        let out = game.clone();
+        lib.games.insert(game_id, game);
+        self.save_library(&lib)?;
+        result.map(|issues| toggle::ProfileApplied { game: out, issues })
+    }
+
+    /// Crée, renomme ou supprime un profil.
+    pub fn edit_profiles(&self, game_id: i64, edit: &toggle::ProfileEdit) -> AppResult<GameInstall> {
+        let mut lib = self.library.lock().expect("library");
+        let game = lib.games.get_mut(&game_id).ok_or(AppError::NotFound)?;
+        toggle::edit_profiles(game, edit)?;
+        let out = game.clone();
+        self.save_library(&lib)?;
+        Ok(out)
+    }
+
     /// Mods installés dont une version plus récente est dans la liste.
     pub async fn updates(&self, game_id: i64) -> AppResult<Vec<ListUpdate>> {
         let Some(game) = def_of(game_id) else { return Ok(Vec::new()) };

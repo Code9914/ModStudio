@@ -479,6 +479,19 @@ pub fn cl_set_enabled(state: State<'_, AppState>, game_id: i64, mod_id: i64, ena
     state.lists.set_enabled(game_id, mod_id, enabled, &others)
 }
 
+/// Passe à un profil de mods.
+#[tauri::command]
+pub fn cl_apply_profile(state: State<'_, AppState>, game_id: i64, name: String) -> AppResult<crate::toggle::ProfileApplied> {
+    let others = others(&state);
+    state.lists.apply_profile(game_id, &name, &others)
+}
+
+/// Crée, renomme ou supprime un profil.
+#[tauri::command]
+pub fn cl_edit_profiles(state: State<'_, AppState>, game_id: i64, edit: crate::toggle::ProfileEdit) -> AppResult<GameInstall> {
+    state.lists.edit_profiles(game_id, &edit)
+}
+
 #[tauri::command]
 pub async fn cl_updates(state: State<'_, AppState>, game_id: i64) -> AppResult<Vec<install::ListUpdate>> {
     state.lists.updates(game_id).await

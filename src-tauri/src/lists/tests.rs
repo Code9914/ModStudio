@@ -161,6 +161,16 @@ async fn hollow_knight_gets_the_api_then_mods_in_their_folders_and_the_game_back
     st.set_enabled(gid, api_id, true, &[]).unwrap();
     assert_eq!(fs::read(managed.join("Assembly-CSharp.dll")).unwrap(), modded);
     assert!(fs::read(managed.join("Assembly-CSharp.dll.modstudio-orig")).unwrap().starts_with(b"vanilla"));
+    // Profil « Sans mods » : le chargeur désactivé rend aussi au jeu ses fichiers.
+    st.edit_profiles(gid, &crate::toggle::ProfileEdit::CreateWith { name: "Sans mods".into(), mods: vec![] }).unwrap();
+    let applied = st.apply_profile(gid, "Sans mods", &[]).unwrap();
+    assert!(applied.issues.is_empty(), "{:?}", applied.issues);
+    assert!(applied.game.mods.values().all(|m| m.disabled));
+    assert!(fs::read(managed.join("Assembly-CSharp.dll")).unwrap().starts_with(b"vanilla"));
+    let applied = st.apply_profile(gid, "Principal", &[]).unwrap();
+    assert!(applied.game.mods.values().all(|m| !m.disabled));
+    assert_eq!(fs::read(managed.join("Assembly-CSharp.dll")).unwrap(), modded);
+    assert_eq!(fs::read(managed.join("Mods/Satchel/Satchel.dll")).unwrap(), satchel);
     let rec = &out.game.mods[&api_id];
     assert_eq!(rec.replaced, ["hollow_knight_Data/Managed/Assembly-CSharp.dll"]);
     assert!(rec.auto && rec.required_by.contains(&mod_id("hollow-knight", "Charm Mod")) && rec.required_by.contains(&mod_id("hollow-knight", "Satchel")));

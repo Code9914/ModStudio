@@ -959,6 +959,8 @@ export const ts = {
   uninstall: (gameId: number, modId: number) => call<UninstallResult>("ts_uninstall", { gameId, modId }),
   setEnabled: (gameId: number, modId: number, enabled: boolean) =>
     call<GameInstall>("ts_set_enabled", { gameId, modId, enabled }),
+  applyProfile: (gameId: number, name: string) => call<ProfileApplied>("ts_apply_profile", { gameId, name }),
+  editProfiles: (gameId: number, edit: ProfileEdit) => call<GameInstall>("ts_edit_profiles", { gameId, edit }),
   updates: (gameId: number) => call<TsUpdate[]>("ts_updates", { gameId }),
   loader: (gameId: number) => call<TsLoader>("ts_loader", { gameId }),
   reveal: (gameId: number, modId: number | null = null) => call<null>("ts_reveal", { gameId, modId }),
@@ -1129,6 +1131,8 @@ export const cl = {
   uninstall: (gameId: number, modId: number) => call<UninstallResult>("cl_uninstall", { gameId, modId }),
   setEnabled: (gameId: number, modId: number, enabled: boolean) =>
     call<GameInstall>("cl_set_enabled", { gameId, modId, enabled }),
+  applyProfile: (gameId: number, name: string) => call<ProfileApplied>("cl_apply_profile", { gameId, name }),
+  editProfiles: (gameId: number, edit: ProfileEdit) => call<GameInstall>("cl_edit_profiles", { gameId, edit }),
   updates: (gameId: number) => call<TsUpdate[]>("cl_updates", { gameId }),
   launch: (game: string) => call<null>("cl_launch", { game }),
   reveal: (gameId: number, modId: number | null = null) => call<null>("cl_reveal", { gameId, modId }),

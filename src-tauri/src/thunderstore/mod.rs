@@ -231,6 +231,19 @@ pub fn ts_set_enabled(state: State<'_, AppState>, game_id: i64, mod_id: i64, ena
     state.thunderstore.set_enabled(game_id, mod_id, enabled, &others)
 }
 
+/// Passe à un profil de mods.
+#[tauri::command]
+pub fn ts_apply_profile(state: State<'_, AppState>, game_id: i64, name: String) -> AppResult<crate::toggle::ProfileApplied> {
+    let others = others(&state);
+    state.thunderstore.apply_profile(game_id, &name, &others)
+}
+
+/// Crée, renomme ou supprime un profil.
+#[tauri::command]
+pub fn ts_edit_profiles(state: State<'_, AppState>, game_id: i64, edit: crate::toggle::ProfileEdit) -> AppResult<GameInstall> {
+    state.thunderstore.edit_profiles(game_id, &edit)
+}
+
 #[tauri::command]
 pub async fn ts_updates(state: State<'_, AppState>, game_id: i64) -> AppResult<Vec<TsUpdate>> {
     state.thunderstore.updates(game_id).await

@@ -903,6 +903,14 @@
         <SharePanel source="ts" game={g} onclose={() => (sharing = null)} />
       {/if}
 
+      {#if Object.keys(g.mods).length > 0}
+        <ProfileBar
+          game={g}
+          onapply={(name) => tsStore.applyProfile(g.gameId, name)}
+          onedit={(edit) => tsStore.editProfiles(g.gameId, edit)}
+        />
+      {/if}
+
       {#if job}
         <div class="row-progress wide"><ProgressBar progress={job} oncancel={() => tsStore.cancel(tsStore.communityOf(g))} /></div>
       {/if}
@@ -1012,6 +1020,14 @@
 
       {#if sharing === `cl:${g.gameId}`}
         <SharePanel source="cl" game={g} onclose={() => (sharing = null)} />
+      {/if}
+
+      {#if Object.keys(g.mods).length > 0}
+        <ProfileBar
+          game={g}
+          onapply={(name) => listsStore.applyProfile(g.gameId, name)}
+          onedit={(edit) => listsStore.editProfiles(g.gameId, edit)}
+        />
       {/if}
 
       {#if job && game}

@@ -73,9 +73,8 @@ warning ("More info", then "Run anyway").
   with its enabled mods and their versions. The code goes through no server:
   paste it in a chat. You can also save it as a `.modstudio` file.
 - **Import**: "Installés", then "Importer un profil". ModStudio shows what you
-  already have and installs the rest. For mod.io and Nexus Mods, the imported
-  list becomes a profile of the game, and your previous mods stay in
-  "Principal".
+  already have and installs the rest. The imported list becomes a profile of
+  the game, and your previous mods stay in "Principal".
 - **r2modman, Gale, Thunderstore Mod Manager**: their codes and `.r2z` files can
   be imported too. For a Thunderstore game, "Créer un code r2modman" makes a
   code a friend can use in those managers.
@@ -212,9 +211,8 @@ quand même »).
   passe par aucun serveur : il se colle dans une discussion. Tu peux aussi
   l'enregistrer dans un fichier `.modstudio`.
 - **Importer** : « Installés », puis « Importer un profil ». ModStudio montre ce
-  que tu as déjà et installe le reste. Pour mod.io et Nexus Mods, le profil
-  importé devient un profil du jeu, et tes mods d'avant restent dans
-  « Principal ».
+  que tu as déjà et installe le reste. Le profil importé devient un profil du
+  jeu, et tes mods d'avant restent dans « Principal ».
 - **r2modman, Gale, Thunderstore Mod Manager** : leurs codes et fichiers `.r2z`
   s'importent aussi. Pour un jeu Thunderstore, « Créer un code r2modman »
   donne un code qu'un ami peut utiliser dans ces gestionnaires.

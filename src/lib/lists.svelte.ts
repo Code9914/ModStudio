@@ -1,5 +1,5 @@
 // Jeux dont la communauté tient sa propre liste de mods : état partagé par toutes les vues.
-import { asAppError, cl, type AppError, type ClGame, type ClInstalled, type ClLoader, type ClMod, type DetectedGame, type GameInstall } from "./api";
+import { asAppError, cl, type AppError, type ClGame, type ClInstalled, type ClLoader, type ClMod, type DetectedGame, type GameInstall, type ProfileEdit } from "./api";
 import { describe, type Progress } from "./installs.svelte";
 import { nexusStore } from "./nexus.svelte";
 import { normalizeName } from "./thunderstore.svelte";
@@ -148,6 +148,18 @@ class ListsStore {
 
   async setEnabled(gameId: number, modId: number, enabled: boolean) {
     this.installs[gameId] = await cl.setEnabled(gameId, modId, enabled);
+  }
+
+  async applyProfile(gameId: number, name: string) {
+    const r = await cl.applyProfile(gameId, name);
+    this.installs[gameId] = r.game;
+    const game = this.games.find((g) => g.gameId === gameId);
+    if (game) this.refreshLoader(game);
+    return r.issues;
+  }
+
+  async editProfiles(gameId: number, edit: ProfileEdit) {
+    this.installs[gameId] = await cl.editProfiles(gameId, edit);
   }
 
   async uninstall(gameId: number, modId: number) {

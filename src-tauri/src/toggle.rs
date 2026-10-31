@@ -410,6 +410,28 @@ pub fn apply_profile(
     others_for: &dyn Fn(&GameInstall, i64) -> HashMap<PathBuf, BTreeMap<String, String>>,
     on_toggle: &mut dyn FnMut(&InstalledMod, bool),
 ) -> AppResult<Vec<ProfileIssue>> {
+    apply_profile_by(game, name, &mut |g, id, on| {
+        let record = g.mods[&id].clone();
+        let r = if on {
+            let others = others_for(g, id);
+            enable(g, id, ctx, &others)
+        } else {
+            disable(g, id, ctx)
+        };
+        if r.is_ok() {
+            on_toggle(&record, on);
+        }
+        r
+    })
+}
+
+/// Passe à un profil en activant ou désactivant chaque mod avec `change`
+/// (les sources qui ont plus à faire qu'un simple `enable` / `disable`).
+pub fn apply_profile_by(
+    game: &mut GameInstall,
+    name: &str,
+    change: &mut dyn FnMut(&mut GameInstall, i64, bool) -> AppResult<()>,
+) -> AppResult<Vec<ProfileIssue>> {
     let wanted: Vec<i64> = game.profiles.iter().find(|p| p.name == name).ok_or(AppError::NotFound)?.mods.clone();
     // Le profil quitté garde l'état actuel ; aucun profil ne suit les changements qui viennent.
     sync_active(game);
@@ -420,21 +442,18 @@ pub fn apply_profile(
         if game.mods[id].disabled {
             continue;
         }
-        let record = game.mods[id].clone();
-        match disable(game, *id, ctx) {
-            Ok(()) => on_toggle(&record, false),
-            Err(e) => issues.push(ProfileIssue { mod_id: *id, name: record.name, message: e.to_string() }),
+        let name = game.mods[id].name.clone();
+        if let Err(e) = change(game, *id, false) {
+            issues.push(ProfileIssue { mod_id: *id, name, message: e.to_string() });
         }
     }
     for id in ids.iter().filter(|id| wanted.contains(id)) {
         if !game.mods[id].disabled {
             continue;
         }
-        let record = game.mods[id].clone();
-        let others = others_for(game, *id);
-        match enable(game, *id, ctx, &others) {
-            Ok(()) => on_toggle(&record, true),
-            Err(e) => issues.push(ProfileIssue { mod_id: *id, name: record.name, message: e.to_string() }),
+        let name = game.mods[id].name.clone();
+        if let Err(e) = change(game, *id, true) {
+            issues.push(ProfileIssue { mod_id: *id, name, message: e.to_string() });
         }
     }
     game.active_profile = Some(name.to_string());

@@ -1578,6 +1578,37 @@ impl ThunderstoreState {
         result.map(|_| out)
     }
 
+    /// Passe à un profil de mods.
+    pub fn apply_profile(&self, game_id: i64, name: &str, other_libraries: &[Library]) -> AppResult<toggle::ProfileApplied> {
+        if self.jobs.lock().expect("jobs").contains_key(&game_id) {
+            return Err(AppError::InstallInProgress);
+        }
+        let root = self.disabled_root();
+        let ctx = toggle::Ctx { store_root: &root, source: "thunderstore" };
+        let mut lib = self.library.lock().expect("library");
+        let mut game = lib.games.remove(&game_id).ok_or(AppError::NotFound)?;
+        let result = {
+            let mut libs: Vec<&Library> = other_libraries.iter().collect();
+            libs.insert(0, &*lib);
+            let others_for = |g: &GameInstall, id: i64| toggle::others_map(g, id, &libs);
+            toggle::apply_profile(&mut game, name, &ctx, &others_for, &mut |_, _| {})
+        };
+        let out = game.clone();
+        lib.games.insert(game_id, game);
+        self.save_library(&lib)?;
+        result.map(|issues| toggle::ProfileApplied { game: out, issues })
+    }
+
+    /// Crée, renomme ou supprime un profil.
+    pub fn edit_profiles(&self, game_id: i64, edit: &toggle::ProfileEdit) -> AppResult<GameInstall> {
+        let mut lib = self.library.lock().expect("library");
+        let game = lib.games.get_mut(&game_id).ok_or(AppError::NotFound)?;
+        toggle::edit_profiles(game, edit)?;
+        let out = game.clone();
+        self.save_library(&lib)?;
+        Ok(out)
+    }
+
     /// Mods installés dont une nouvelle version est publiée.
     pub async fn updates(&self, game_id: i64) -> AppResult<Vec<TsUpdate>> {
         let installed: Vec<(i64, String, Option<String>)> = self
