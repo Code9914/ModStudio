@@ -19,6 +19,7 @@
   import NexusModsView from "$lib/components/NexusModsView.svelte";
   import NexusModView from "$lib/components/NexusModView.svelte";
   import NexusSite from "$lib/components/NexusSite.svelte";
+  import SearchView from "$lib/components/SearchView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
   import TsGamesView from "$lib/components/TsGamesView.svelte";
   import TsModsView from "$lib/components/TsModsView.svelte";
@@ -141,8 +142,23 @@
   });
 
   function onKey(event: KeyboardEvent) {
+    // Ctrl + K (⌘ + K sur Mac) : recherche globale, depuis n'importe où.
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      nav.openSearch();
+      return;
+    }
     const typing = (event.target as HTMLElement)?.closest("input, textarea, select");
     if (typing) return;
+    if (event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      nav.openSearch();
+      return;
+    }
+    if (event.key === "Escape" && nav.view.name === "search") {
+      nav.back();
+      return;
+    }
     if ((event.key === "Escape" || (event.altKey && event.key === "ArrowLeft")) && nav.view.name !== "games") {
       const v = nav.view.name;
       if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods" || v === "tsMod" || v === "tsMods" || v === "rmlMod" || v === "clMod" || v === "clMods" || v === "import") nav.back();
@@ -236,6 +252,24 @@
 <div class="app">
   <nav class="rail" aria-label={tr("Navigation principale", "Main navigation")}>
     <p class="wordmark">ModStudio</p>
+
+    <button
+      class="search-item"
+      aria-current={nav.view.name === "search" ||
+      (nav.view.name === "mod" && nav.modOrigin === "search") ||
+      (nav.view.name === "nexusMod" && nav.nexusOrigin === "search") ||
+      (nav.view.name === "tsMod" && nav.tsOrigin === "search") ||
+      (nav.view.name === "rmlMod" && nav.rmlOrigin === "search") ||
+      (nav.view.name === "clMod" && nav.clOrigin === "search")
+        ? "page"
+        : undefined}
+      aria-keyshortcuts="Control+K"
+      onclick={() => nav.openSearch()}
+    >
+      <Icon name="search" size={17} />
+      <span class="search-label">{tr("Rechercher", "Search")}</span>
+      <kbd>Ctrl K</kbd>
+    </button>
 
     <p class="section">mod.io</p>
     <ul class="nav">
@@ -519,6 +553,7 @@
       {#if nav.view.name === "nexusMod" && nav.nexusGame}
         <div class="pane"><NexusModView game={nav.nexusGame} modId={nav.view.modId} /></div>
       {/if}
+      <div class="pane" hidden={nav.view.name !== "search"}><SearchView /></div>
       <div class="pane" hidden={nav.view.name !== "tsGames"}><TsGamesView /></div>
       {#if nav.tsGame}
         {#key nav.tsGame.id}
@@ -614,6 +649,46 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 0.2rem;
+  }
+
+  .search-item {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    margin-top: -0.4rem;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--raise);
+    color: var(--muted);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .search-item:hover {
+    border-color: var(--muted);
+    color: var(--text);
+  }
+
+  .search-item[aria-current="page"] {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  .search-label {
+    flex: 1;
+  }
+
+  .search-item kbd {
+    font-family: inherit;
+    font-size: var(--t-xs);
+    font-weight: 600;
+    padding: 0.05rem 0.35rem;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    color: var(--muted);
   }
 
   .nav-item {

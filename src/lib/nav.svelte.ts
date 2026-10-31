@@ -22,12 +22,16 @@ export type View =
   | { name: "clGames" }
   | { name: "clMods" }
   | { name: "clMod"; id: string }
-  | { name: "import" };
+  | { name: "import" }
+  | { name: "search" };
 
-export type ModOrigin = "mods" | "library" | "installed";
-export type NexusOrigin = "nexusMods" | "installed" | "nexusTracked";
-export type TsOrigin = "tsMods" | "installed";
+export type ModOrigin = "mods" | "library" | "installed" | "search";
+export type NexusOrigin = "nexusMods" | "installed" | "nexusTracked" | "search";
+export type TsOrigin = "tsMods" | "installed" | "search";
+export type ClOrigin = "clMods" | "installed" | "search";
 export type TsRef = { namespace: string; name: string };
+/** Liste de mods d'un jeu ouverte depuis la recherche globale, avec sa recherche. */
+export type ListSearch = { list: "mods" | "nexusMods" | "tsMods" | "rml" | "clMods"; game: number | string; query: string };
 
 class Nav {
   view = $state<View>({ name: "games" });
@@ -66,7 +70,12 @@ class Nav {
   /** Jeu des listes des communautés ouvert, et mods ouverts (puis via leurs dépendances). */
   clGame = $state<ClGame | null>(null);
   clStack = $state<string[]>([]);
-  clOrigin = $state<"clMods" | "installed">("clMods");
+  clOrigin = $state<ClOrigin>("clMods");
+
+  /** Vue où revenir en quittant la recherche globale. */
+  searchReturn = $state<View | null>(null);
+  /** Recherche à reprendre dans la liste de mods d'un jeu. */
+  listSearch = $state<ListSearch | null>(null);
 
   /** Mods suivis dans le jeu ouvert. */
   subs = new SvelteSet<number>();
@@ -79,6 +88,20 @@ class Nav {
 
   openGames() {
     this.view = { name: "games" };
+  }
+
+  /** Recherche dans toutes les sources. */
+  openSearch() {
+    if (this.view.name !== "search") this.searchReturn = this.view;
+    this.view = { name: "search" };
+  }
+
+  /** La recherche à reprendre dans la liste `list` du jeu `game`, s'il y en a une (une seule fois). */
+  takeListSearch(list: ListSearch["list"], game: number | string): string | null {
+    const s = this.listSearch;
+    if (!s || s.list !== list || s.game !== game) return null;
+    this.listSearch = null;
+    return s.query;
   }
 
   openGame(game: Game) {
@@ -169,8 +192,16 @@ class Nav {
 
   /** Fiche d'un mod Thunderstore ouverte depuis « Installés ». */
   openTsModFromInstalled(game: TsCommunity, ref: TsRef) {
-    if (this.tsGame?.id !== game.id) this.tsGame = game;
-    this.tsOrigin = "installed";
+    this.openTsModFrom(game, ref, "installed");
+  }
+
+  /** Fiche d'un mod Thunderstore ouverte depuis une autre liste que celle de son jeu. */
+  openTsModFrom(game: TsCommunity, ref: TsRef, origin: TsOrigin) {
+    if (this.tsGame?.id !== game.id) {
+      this.tsGame = game;
+      this.tsTab = "thunderstore";
+    }
+    this.tsOrigin = origin;
     this.tsModStack = [ref];
     this.view = { name: "tsMod", namespace: ref.namespace, modName: ref.name };
   }
@@ -184,9 +215,13 @@ class Nav {
 
   /** Fiche d'un mod de ResoniteModLoader ouverte depuis « Installés ». */
   openRmlModFromInstalled(game: TsCommunity, id: string) {
+    this.openRmlModFrom(game, id, "installed");
+  }
+
+  openRmlModFrom(game: TsCommunity, id: string, origin: TsOrigin) {
     if (this.tsGame?.id !== game.id) this.tsGame = game;
     this.tsTab = "rml";
-    this.rmlOrigin = "installed";
+    this.rmlOrigin = origin;
     this.rmlStack = [id];
     this.view = { name: "rmlMod", id };
   }
@@ -211,8 +246,12 @@ class Nav {
 
   /** Fiche d'un mod ouverte depuis « Installés ». */
   openClModFromInstalled(game: ClGame, id: string) {
+    this.openClModFrom(game, id, "installed");
+  }
+
+  openClModFrom(game: ClGame, id: string, origin: ClOrigin) {
     if (this.clGame?.id !== game.id) this.clGame = game;
-    this.clOrigin = "installed";
+    this.clOrigin = origin;
     this.clStack = [id];
     this.view = { name: "clMod", id };
   }
@@ -231,6 +270,13 @@ class Nav {
   }
 
   back() {
+    if (this.view.name === "search") {
+      // Une page qui ne dépend pas du jeu ouvert (celui-ci a pu changer depuis).
+      const to = this.searchReturn;
+      const safe = ["games", "nexusGames", "tsGames", "clGames", "installed", "library", "settings", "nexusTracked"];
+      this.view = to && safe.includes(to.name) ? to : this.settings?.hasApiKey ? { name: "games" } : { name: "nexusGames" };
+      return;
+    }
     if (this.view.name === "import") {
       this.view = { name: "installed" };
       return;

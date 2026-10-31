@@ -127,9 +127,32 @@ impl NexusState {
         limit: u32,
     ) -> AppResult<Page<NexusMod>> {
         check_domain(game_domain)?;
+        self.find_mods(Some(game_domain), search_term(query), sort, hide_adult, offset, limit).await
+    }
+
+    /// Mods de tous les jeux dont le nom contient `query` (recherche globale).
+    pub async fn search_mods(&self, query: String, hide_adult: bool, offset: u32, limit: u32) -> AppResult<Page<NexusMod>> {
+        let Some(q) = search_term(Some(query)).filter(|q| q.chars().count() >= 2) else {
+            return Err(AppError::InvalidArgument(crate::tr!("recherche trop courte", "search too short")));
+        };
+        self.find_mods(None, Some(q), None, hide_adult, offset, limit).await
+    }
+
+    async fn find_mods(
+        &self,
+        game_domain: Option<&str>,
+        query: Option<String>,
+        sort: Option<String>,
+        hide_adult: bool,
+        offset: u32,
+        limit: u32,
+    ) -> AppResult<Page<NexusMod>> {
         let limit = clamp(limit);
-        let mut filter = json!({ "gameDomainName": [{ "value": game_domain, "op": "EQUALS" }] });
-        if let Some(q) = search_term(query) {
+        let mut filter = json!({});
+        if let Some(domain) = game_domain {
+            filter["gameDomainName"] = json!([{ "value": domain, "op": "EQUALS" }]);
+        }
+        if let Some(q) = query {
             filter["name"] = json!([{ "value": q, "op": "WILDCARD" }]);
         }
         if hide_adult {
@@ -278,6 +301,25 @@ mod tests {
         assert_eq!(v["filter"]["adultContent"][0]["value"], false);
         assert_eq!(v["sort"][0]["downloads"]["direction"], "DESC");
         assert_eq!(v["offset"], 30);
+    }
+
+    #[tokio::test]
+    async fn searches_mods_of_every_game() {
+        let server = fake_server(vec![json_response(
+            200,
+            r#"{"data":{"mods":{"totalCount":2,"nodes":[{"modId":7,"name":"More Players","game":{"id":3333,"domainName":"lethalcompany","name":"Lethal Company"}}]}}}"#,
+        )]);
+        let s = state(&server.base);
+        let p = s.search_mods(" more players ".into(), false, 0, 8).await.unwrap();
+        assert_eq!(p.data[0].game.as_ref().unwrap().domain_name, "lethalcompany");
+        let body: Value = serde_json::from_str(&server.request(0).body).unwrap();
+        let filter = &body["variables"]["filter"];
+        assert!(filter.get("gameDomainName").is_none(), "{filter}");
+        assert!(filter.get("adultContent").is_none(), "{filter}");
+        assert_eq!(filter["name"][0]["value"], "more players");
+        assert_eq!(body["variables"]["sort"][0]["endorsements"]["direction"], "DESC");
+        // Rien à chercher : pas de requête vers Nexus.
+        assert!(s.search_mods(" x ".into(), false, 0, 8).await.is_err());
     }
 
     #[tokio::test]

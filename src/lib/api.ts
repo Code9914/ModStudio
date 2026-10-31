@@ -712,6 +712,11 @@ export const nexus = {
     const page = await call<Page<NexusMod>>("nexus_list_mods", p);
     return { ...page, data: page.data.map(withId) };
   },
+  /** Mods de tous les jeux dont le nom contient `query`. */
+  searchMods: async (query: string, offset: number, limit: number) => {
+    const page = await call<Page<NexusMod>>("nexus_search_mods", { query, offset, limit });
+    return { ...page, data: page.data.map(withId) };
+  },
   getMod: async (gameId: number, modId: number) => withId(await call<NexusModDetail>("nexus_get_mod", { gameId, modId })),
   listFiles: (gameId: number, modId: number) => call<NexusFile[]>("nexus_list_files", { gameId, modId }),
   /** Page d'un fichier dans ModStudio (`bounds` : zone où l'intégrer). */

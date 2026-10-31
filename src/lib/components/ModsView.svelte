@@ -25,6 +25,11 @@
   let { game }: { game: Game } = $props();
 
   let query = $state("");
+  // Ouverte depuis la recherche globale : la même recherche ici.
+  $effect(() => {
+    const q = nav.takeListSearch("mods", game.id);
+    if (q !== null) query = q;
+  });
   let search = $state("");
   let sort = $state<ModSort>("-downloads_today");
   /** Tags choisis, par groupe. */

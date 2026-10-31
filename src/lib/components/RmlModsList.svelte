@@ -15,6 +15,11 @@
   let { game }: { game: TsCommunity } = $props();
 
   let query = $state("");
+  // Ouverte depuis la recherche globale : la même recherche ici.
+  $effect(() => {
+    const q = nav.takeListSearch("rml", game.id);
+    if (q !== null) query = q;
+  });
   let category = $state("");
   let showAll = $state(false);
   const PAGE = 48;

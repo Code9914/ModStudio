@@ -34,6 +34,9 @@ For every game:
   it, per-game profiles, clean uninstall.
 - **Share your mods**: a code you send to a friend, who gets the same mods in
   the same versions (see below).
+- **Global search** (Ctrl + K): one search for mods and games across every
+  source. Nexus Mods is searched in all its games; Thunderstore and mod.io in
+  your games.
 - **Translated descriptions**: a "Translate" button (or automatic translation,
   in Settings) for descriptions written in another language. Translation runs
   on your computer with Firefox's engine (Bergamot): the text isn't sent
@@ -174,6 +177,9 @@ Et pour tous les jeux :
   propre.
 - **Partager ses mods** : un code à envoyer à un ami, qui installe les mêmes
   mods dans les mêmes versions (voir plus bas).
+- **Recherche globale** (Ctrl + K) : une seule recherche pour les mods et les
+  jeux de toutes les sources. Nexus Mods est parcouru dans tous ses jeux,
+  Thunderstore et mod.io dans tes jeux.
 - **Descriptions traduites** : un bouton « Traduire » (ou la traduction
   automatique, dans les Réglages) pour les descriptions écrites dans une autre
   langue. La traduction se fait sur ton ordinateur avec le moteur de Firefox

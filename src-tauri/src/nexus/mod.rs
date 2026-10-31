@@ -153,6 +153,13 @@ pub async fn nexus_list_mods(
     state.nexus.list_mods(&game_domain, query, sort, hide_adult, offset, limit).await
 }
 
+/// Recherche dans les mods de tous les jeux.
+#[tauri::command]
+pub async fn nexus_search_mods(state: State<'_, AppState>, query: String, offset: u32, limit: u32) -> AppResult<Page<NexusMod>> {
+    let hide_adult = state.snapshot().hide_mature;
+    state.nexus.search_mods(query, hide_adult, offset, limit).await
+}
+
 #[tauri::command]
 pub async fn nexus_get_mod(state: State<'_, AppState>, game_id: i64, mod_id: i64) -> AppResult<NexusModDetail> {
     state.nexus.get_mod(game_id, mod_id).await

@@ -83,6 +83,7 @@ pub fn run() {
             nexus::nexus_list_games,
             nexus::nexus_get_game,
             nexus::nexus_list_mods,
+            nexus::nexus_search_mods,
             nexus::nexus_get_mod,
             nexus::nexus_list_files,
             nexus::nexus_open_download,

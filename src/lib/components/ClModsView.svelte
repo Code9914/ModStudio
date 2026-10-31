@@ -17,6 +17,11 @@
   let { game }: { game: ClGame } = $props();
 
   let query = $state("");
+  // Ouverte depuis la recherche globale : la même recherche ici.
+  $effect(() => {
+    const q = nav.takeListSearch("clMods", game.id);
+    if (q !== null) query = q;
+  });
   let category = $state("");
   type Sort = "name" | "downloads" | "updated";
   /** Tri choisi ; par défaut les plus téléchargés quand la liste donne ce chiffre. */
