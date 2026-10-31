@@ -3,6 +3,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api, asAppError, type AppError, type FolderSuggestion, type Layout } from "$lib/api";
+  import { tr } from "$lib/i18n.svelte";
   import { installs, layoutLabels } from "$lib/installs.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -70,7 +71,7 @@
     const picked = await open({
       directory: true,
       multiple: false,
-      title: `Dossier des mods de ${gameName}`,
+      title: tr(`Dossier des mods de ${gameName}`, `${gameName} mods folder`),
       defaultPath: folder || undefined,
     });
     if (typeof picked === "string") folder = picked;
@@ -93,61 +94,84 @@
 </script>
 
 <div class="setup">
-  <p class="title">Où installer les mods de {gameName} ?</p>
+  <p class="title">{tr(`Où installer les mods de ${gameName} ?`, `Where should ${gameName} mods be installed?`)}</p>
 
   {#if suggestion && !locked}
     <div class="suggestion" class:active={usingSuggestion}>
       <p class="small">
-        <span class="strong">Dossier habituel des mods de {gameName}</span>
+        <span class="strong">{tr(`Dossier habituel des mods de ${gameName}`, `Usual mods folder for ${gameName}`)}</span>
         <span class="path">{suggestion.path}</span>
-        {#if !suggestion.exists}<span class="muted">Il n'existe pas encore : ModStudio le créera.</span>{/if}
+        {#if !suggestion.exists}<span class="muted">{tr("Il n'existe pas encore : ModStudio le créera.", "It doesn't exist yet: ModStudio will create it.")}</span>{/if}
       </p>
       {#if !usingSuggestion}
-        <button class="btn btn-primary" type="button" onclick={useSuggestion}>Utiliser ce dossier</button>
+        <button class="btn btn-primary" type="button" onclick={useSuggestion}>{tr("Utiliser ce dossier", "Use this folder")}</button>
       {:else}
-        <span class="chip chip-ok">Choisi</span>
+        <span class="chip chip-ok">{tr("Choisi", "Selected")}</span>
       {/if}
     </div>
   {:else if !locked}
     <details class="help">
-      <summary>Comment trouver le bon dossier ?</summary>
+      <summary>{tr("Comment trouver le bon dossier ?", "How do I find the right folder?")}</summary>
       <ul class="small">
-        <li>Regarde la description des mods sur mod.io : les auteurs indiquent souvent où mettre leurs fichiers.</li>
         <li>
-          Cherche « {gameName} mods folder » ou consulte le guide de modding du jeu{#if guideUrl}
+          {tr(
+            "Regarde la description des mods sur mod.io : les auteurs indiquent souvent où mettre leurs fichiers.",
+            "Check the mod descriptions on mod.io: authors often say where to put their files.",
+          )}
+        </li>
+        <li>
+          {tr(
+            `Cherche « ${gameName} mods folder » ou consulte le guide de modding du jeu`,
+            `Search for "${gameName} mods folder" or check the game's modding guide`,
+          )}{#if guideUrl}
             (<button class="link" type="button" onclick={() => openUrl(guideUrl!)}
-              >guide fourni par le jeu <Icon name="external" size={12} /></button
+              >{tr("guide fourni par le jeu", "guide provided by the game")} <Icon name="external" size={12} /></button
             >){/if}.
         </li>
         <li>
-          C'est rarement le dossier d'installation du jeu (celui qui contient son .exe). Souvent, c'est un dossier
-          « Mods » dans Documents ou dans AppData.
+          {tr(
+            "C'est rarement le dossier d'installation du jeu (celui qui contient son .exe). Souvent, c'est un dossier « Mods » dans Documents ou dans AppData.",
+            "It's rarely the game's install folder (the one that contains its .exe). It's often a \"Mods\" folder in Documents or AppData.",
+          )}
         </li>
-        <li>Si le jeu gère mod.io lui-même, le plus simple est de t'abonner : il installera les mods tout seul.</li>
+        <li>
+          {tr(
+            "Si le jeu gère mod.io lui-même, le plus simple est de t'abonner : il installera les mods tout seul.",
+            "If the game supports mod.io itself, the easiest option is to subscribe: it will install the mods on its own.",
+          )}
+        </li>
       </ul>
     </details>
   {/if}
 
   <div class="folder">
-    <input class="field" readonly value={folder} placeholder="Aucun dossier choisi" aria-label="Dossier des mods" />
-    <button class="btn" type="button" onclick={pick} disabled={locked}>Choisir…</button>
+    <input
+      class="field"
+      readonly
+      value={folder}
+      placeholder={tr("Aucun dossier choisi", "No folder selected")}
+      aria-label={tr("Dossier des mods", "Mods folder")}
+    />
+    <button class="btn" type="button" onclick={pick} disabled={locked}>{tr("Choisir…", "Choose…")}</button>
   </div>
   {#if locked}
-    <p class="muted small">Pour changer de dossier, désinstalle d'abord les mods de ce jeu.</p>
+    <p class="muted small">{tr("Pour changer de dossier, désinstalle d'abord les mods de ce jeu.", "To change folders, uninstall this game's mods first.")}</p>
   {/if}
 
   {#if gameRoot && !locked}
     <p class="warning small" role="alert">
       <Icon name="warning" size={16} />
       <span>
-        Ce dossier ressemble au dossier d'installation du jeu (il contient son programme). Les jeux chargent rarement
-        leurs mods à cet endroit : vérifie que c'est bien le dossier des mods.
+        {tr(
+          "Ce dossier ressemble au dossier d'installation du jeu (il contient son programme). Les jeux chargent rarement leurs mods à cet endroit : vérifie que c'est bien le dossier des mods.",
+          "This folder looks like the game's install folder (it contains its program). Games rarely load their mods from there: make sure this really is the mods folder.",
+        )}
       </span>
     </p>
   {/if}
 
   <fieldset class="layouts">
-    <legend class="small strong">Rangement des fichiers</legend>
+    <legend class="small strong">{tr("Rangement des fichiers", "File layout")}</legend>
     {#each Object.entries(layoutLabels) as [value, label] (value)}
       <label class="layout">
         <input type="radio" name="layout-{gameId}" {value} bind:group={layout} />
@@ -163,9 +187,9 @@
 
   <div class="actions">
     <button class="btn btn-primary" type="button" onclick={save} disabled={!folder || saving}>
-      {saving ? "Vérification…" : gameRoot ? "Enregistrer quand même" : "Enregistrer"}
+      {saving ? tr("Vérification…", "Checking…") : gameRoot ? tr("Enregistrer quand même", "Save anyway") : tr("Enregistrer", "Save")}
     </button>
-    <button class="btn btn-ghost" type="button" onclick={oncancel}>Annuler</button>
+    <button class="btn btn-ghost" type="button" onclick={oncancel}>{tr("Annuler", "Cancel")}</button>
   </div>
 </div>
 

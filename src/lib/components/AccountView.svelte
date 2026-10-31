@@ -1,6 +1,7 @@
 <script lang="ts">
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api, asAppError, type AppError } from "$lib/api";
+  import { english, tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -19,7 +20,7 @@
 
   const auth = $derived(nav.auth);
   const user = $derived(auth?.user ?? null);
-  const name = $derived(user?.username ?? user?.display_name_portal ?? "ton compte");
+  const name = $derived(user?.username ?? user?.display_name_portal ?? tr("ton compte", "your account"));
 
   function choose(m: Method) {
     method = m;
@@ -82,7 +83,7 @@
 <div class="view">
   <div class="inner">
     {#if auth?.loggedIn}
-      <h1>Compte mod.io</h1>
+      <h1>{tr("Compte mod.io", "mod.io account")}</h1>
 
       <section class="profile">
         {#if user?.avatar?.thumb_100x100 || user?.avatar?.original}
@@ -93,11 +94,13 @@
         <div class="who">
           <p class="name">{name}</p>
           <p class="muted">
-            {auth.source === "manual" ? "Connecté avec un jeton d'accès créé sur mod.io" : "Connecté par code e-mail"}
+            {auth.source === "manual"
+              ? tr("Connecté avec un jeton d'accès créé sur mod.io", "Signed in with an access token created on mod.io")
+              : tr("Connecté par code e-mail", "Signed in with an email code")}
           </p>
           {#if user?.profile_url}
             <button class="link" onclick={() => openUrl(user!.profile_url!)}>
-              Voir mon profil sur mod.io <Icon name="external" size={13} />
+              {tr("Voir mon profil sur mod.io", "View my profile on mod.io")} <Icon name="external" size={13} />
             </button>
           {/if}
         </div>
@@ -107,61 +110,68 @@
         <p class="warning">{auth.storageWarning}</p>
       {:else if auth.persisted}
         <p class="muted small">
-          Ta connexion est enregistrée de façon sécurisée dans le trousseau du système (le Gestionnaire
-          d'identification sous Windows).
+          {tr(
+            "Ta connexion est enregistrée de façon sécurisée dans le trousseau du système (le Gestionnaire d'identification sous Windows).",
+            "Your sign-in is stored securely in the system keychain (Credential Manager on Windows).",
+          )}
         </p>
       {/if}
 
       <div class="row-actions">
         <button class="btn btn-primary" onclick={() => nav.openLibrary()}>
-          <Icon name="library" size={16} />Voir mes mods
+          <Icon name="library" size={16} />{tr("Voir mes mods", "View my mods")}
         </button>
-        <button class="btn" onclick={logout} disabled={busy}>{busy ? "Déconnexion…" : "Se déconnecter"}</button>
+        <button class="btn" onclick={logout} disabled={busy}>{busy ? tr("Déconnexion…", "Signing out…") : tr("Se déconnecter", "Sign out")}</button>
       </div>
       {#if auth.source === "manual"}
         <p class="muted small">
-          Se déconnecter oublie le jeton sur cet ordinateur. Pour le révoquer complètement, supprime-le sur
-          mod.io/me/access.
+          {tr(
+            "Se déconnecter oublie le jeton sur cet ordinateur. Pour le révoquer complètement, supprime-le sur mod.io/me/access.",
+            "Signing out forgets the token on this computer. To revoke it completely, delete it at mod.io/me/access.",
+          )}
         </p>
       {/if}
       {#if error}<ErrorNotice {error} />{/if}
     {:else}
-      <h1>Connexion à mod.io</h1>
+      <h1>{tr("Connexion à mod.io", "Sign in to mod.io")}</h1>
       <p class="intro">
-        Connecte ton compte pour t'abonner à des mods. Les jeux qui gèrent mod.io téléchargent tes abonnements
-        tout seuls à leur prochain lancement.
+        {tr(
+          "Connecte ton compte pour t'abonner à des mods. Les jeux qui gèrent mod.io téléchargent tes abonnements tout seuls à leur prochain lancement.",
+          "Connect your account to subscribe to mods. Games that support mod.io download your subscriptions on their own the next time they start.",
+        )}
       </p>
 
       {#if auth?.expired}
-        <p class="warning">Ta session précédente a expiré. Reconnecte-toi.</p>
+        <p class="warning">{tr("Ta session précédente a expiré. Reconnecte-toi.", "Your previous session has expired. Please sign in again.")}</p>
       {/if}
 
-      <div class="switch" role="tablist" aria-label="Méthode de connexion">
-        <button role="tab" aria-selected={method === "email"} onclick={() => choose("email")}>Code par e-mail</button>
-        <button role="tab" aria-selected={method === "token"} onclick={() => choose("token")}>Jeton d'accès</button>
+      <div class="switch" role="tablist" aria-label={tr("Méthode de connexion", "Sign-in method")}>
+        <button role="tab" aria-selected={method === "email"} onclick={() => choose("email")}>{tr("Code par e-mail", "Email code")}</button>
+        <button role="tab" aria-selected={method === "token"} onclick={() => choose("token")}>{tr("Jeton d'accès", "Access token")}</button>
       </div>
 
       {#if method === "email"}
         {#if step === "email"}
           <form class="form" onsubmit={sendCode}>
             <label class="field-row">
-              <span class="label">Adresse e-mail de ton compte mod.io</span>
+              <span class="label">{tr("Adresse e-mail de ton compte mod.io", "Your mod.io account email address")}</span>
               <input class="field" type="email" autocomplete="email" required bind:value={email} />
             </label>
             <div>
               <button class="btn btn-primary" type="submit" disabled={busy || !email.trim()}>
-                {busy ? "Envoi…" : "Recevoir un code"}
+                {busy ? tr("Envoi…", "Sending…") : tr("Recevoir un code", "Get a code")}
               </button>
             </div>
           </form>
         {:else}
           <form class="form" onsubmit={submitCode}>
             <p>
-              {resent ? "Un nouveau code a été envoyé" : "Un code a été envoyé"} à <strong>{email.trim()}</strong>.
-              Il n'est valable que peu de temps.
+              {resent ? tr("Un nouveau code a été envoyé", "A new code was sent") : tr("Un code a été envoyé", "A code was sent")}
+              {tr("à", "to")} <strong>{email.trim()}</strong>.
+              {tr("Il n'est valable que peu de temps.", "It's only valid for a short time.")}
             </p>
             <label class="field-row">
-              <span class="label">Code reçu par e-mail</span>
+              <span class="label">{tr("Code reçu par e-mail", "Code received by email")}</span>
               <input
                 class="field code"
                 autocomplete="one-time-code"
@@ -173,13 +183,13 @@
             </label>
             <div class="row-actions">
               <button class="btn btn-primary" type="submit" disabled={busy || !code.trim()}>
-                {busy ? "Connexion…" : "Se connecter"}
+                {busy ? tr("Connexion…", "Signing in…") : tr("Se connecter", "Sign in")}
               </button>
               <button class="btn btn-ghost" type="button" onclick={() => sendCode()} disabled={busy}>
-                Renvoyer un code
+                {tr("Renvoyer un code", "Resend code")}
               </button>
               <button class="btn btn-ghost" type="button" onclick={() => ((step = "email"), (error = null))}>
-                Changer d'adresse
+                {tr("Changer d'adresse", "Change email")}
               </button>
             </div>
           </form>
@@ -188,26 +198,34 @@
         <form class="form" onsubmit={submitToken}>
           {#if emailRefused}
             <p class="warning">
-              mod.io refuse la connexion par e-mail avec ta clé API personnelle. Un jeton d'accès fait la même chose.
+              {tr(
+                "mod.io refuse la connexion par e-mail avec ta clé API personnelle. Un jeton d'accès fait la même chose.",
+                "mod.io doesn't allow email sign-in with your personal API key. An access token does the same thing.",
+              )}
             </p>
           {/if}
           <ol class="steps">
             <li>
-              Ouvre
+              {tr("Ouvre", "Open")}
               <button class="link" type="button" onclick={() => openUrl("https://mod.io/me/access")}>
                 mod.io/me/access <Icon name="external" size={13} />
               </button>
             </li>
-            <li>Dans la section OAuth 2, crée un jeton d'accès avec les droits de lecture et d'écriture.</li>
-            <li>Copie le jeton et colle-le ici.</li>
+            <li>
+              {tr(
+                "Dans la section OAuth 2, crée un jeton d'accès avec les droits de lecture et d'écriture.",
+                "In the OAuth 2 section, create an access token with read and write permissions.",
+              )}
+            </li>
+            <li>{tr("Copie le jeton et colle-le ici.", "Copy the token and paste it here.")}</li>
           </ol>
           <label class="field-row">
-            <span class="label">Jeton d'accès</span>
+            <span class="label">{tr("Jeton d'accès", "Access token")}</span>
             <input class="field" type="password" autocomplete="off" spellcheck="false" required bind:value={token} />
           </label>
           <div>
             <button class="btn btn-primary" type="submit" disabled={busy || !token.trim()}>
-              {busy ? "Vérification…" : "Se connecter"}
+              {busy ? tr("Vérification…", "Checking…") : tr("Se connecter", "Sign in")}
             </button>
           </div>
         </form>
@@ -216,11 +234,19 @@
       {#if error}<ErrorNotice {error} />{/if}
 
       <p class="muted small">
-        En te connectant, tu acceptes les
-        <button class="link" onclick={() => openUrl("https://mod.io/terms")}>conditions d'utilisation</button>
-        et la
-        <button class="link" onclick={() => openUrl("https://mod.io/privacy")}>politique de confidentialité</button>
-        de mod.io. ModStudio n'enregistre ni ton adresse e-mail ni ton mot de passe.
+        {#if english}
+          By signing in, you accept the mod.io
+          <button class="link" onclick={() => openUrl("https://mod.io/terms")}>terms of use</button>
+          and
+          <button class="link" onclick={() => openUrl("https://mod.io/privacy")}>privacy policy</button>.
+          ModStudio doesn't store your email address or your password.
+        {:else}
+          En te connectant, tu acceptes les
+          <button class="link" onclick={() => openUrl("https://mod.io/terms")}>conditions d'utilisation</button>
+          et la
+          <button class="link" onclick={() => openUrl("https://mod.io/privacy")}>politique de confidentialité</button>
+          de mod.io. ModStudio n'enregistre ni ton adresse e-mail ni ton mot de passe.
+        {/if}
       </p>
     {/if}
   </div>

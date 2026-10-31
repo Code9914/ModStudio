@@ -1,5 +1,6 @@
 // Descriptions Nexus Mods : du BBCode (avec quelques <br />) converti en HTML
 // simple. Le résultat doit encore passer par DOMPurify avant affichage.
+import { tr } from "./i18n.svelte";
 
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -144,7 +145,7 @@ function youtube(value: string): string | null {
     /^([\w-]{6,20})(?:[?&](?:start|t)=(\d+))?$/.exec(v) ??
     /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/watch\?(?:.*&)?v=|youtu\.be\/)([\w-]{6,20})(?:.*[?&](?:start|t)=(\d+))?/.exec(v);
   if (!m) return null;
-  return link(`https://www.youtube.com/watch?v=${m[1]}${m[2] ? `&t=${m[2]}s` : ""}`, "Vidéo sur YouTube");
+  return link(`https://www.youtube.com/watch?v=${m[1]}${m[2] ? `&t=${m[2]}s` : ""}`, tr("Vidéo sur YouTube", "Video on YouTube"));
 }
 
 function image(url: string) {

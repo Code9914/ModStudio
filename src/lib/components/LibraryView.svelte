@@ -3,6 +3,7 @@
   import { SvelteSet } from "svelte/reactivity";
   import { api, asAppError, type AppError, type Game, type Mod, type MyMods } from "$lib/api";
   import { ago, bytes, exact } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -59,7 +60,7 @@
     }
     return [...byGame.entries()]
       .map(([id, mods]) => ({
-        game: games.get(id) ?? ({ id, name: `Jeu ${id}`, tag_options: [] } as unknown as Game),
+        game: games.get(id) ?? ({ id, name: tr(`Jeu ${id}`, `Game ${id}`), tag_options: [] } as unknown as Game),
         mods,
       }))
       .sort((a, b) => (a.game.name ?? "").localeCompare(b.game.name ?? "", "fr"));
@@ -101,24 +102,24 @@
 <div class="view">
   <header class="head">
     <div>
-      <h1>Mes mods</h1>
+      <h1>{tr("Mes mods", "My mods")}</h1>
       {#if data}
         <p class="muted">
           {exact(total)}
-          {total > 1 ? "abonnements" : "abonnement"}
-          {#if gameCount > 0}dans {gameCount} {gameCount > 1 ? "jeux" : "jeu"}{/if}
+          {tr(total > 1 ? "abonnements" : "abonnement", total === 1 ? "subscription" : "subscriptions")}
+          {#if gameCount > 0}{tr("dans", "in")} {gameCount} {tr(gameCount > 1 ? "jeux" : "jeu", gameCount === 1 ? "game" : "games")}{/if}
         </p>
       {/if}
     </div>
     {#if nav.loggedIn && data && data.mods.length > 0}
       <div class="tools">
         <label class="search">
-          <span class="visually-hidden">Filtrer mes mods</span>
+          <span class="visually-hidden">{tr("Filtrer mes mods", "Filter my mods")}</span>
           <Icon name="search" />
-          <input class="field" type="search" placeholder="Filtrer mes mods" bind:value={query} />
+          <input class="field" type="search" placeholder={tr("Filtrer mes mods", "Filter my mods")} bind:value={query} />
         </label>
         <button class="btn" onclick={load} disabled={loading}>
-          <Icon name="refresh" size={15} />{loading ? "Actualisation…" : "Actualiser"}
+          <Icon name="refresh" size={15} />{loading ? tr("Actualisation…", "Refreshing…") : tr("Actualiser", "Refresh")}
         </button>
       </div>
     {/if}
@@ -126,27 +127,37 @@
 
   {#if !nav.loggedIn}
     <div class="empty">
-      <p>Connecte ton compte mod.io pour retrouver tes abonnements ici.</p>
-      <button class="btn btn-primary" onclick={() => nav.openAccount({ name: "library" })}>Se connecter</button>
+      <p>{tr("Connecte ton compte mod.io pour retrouver tes abonnements ici.", "Connect your mod.io account to see your subscriptions here.")}</p>
+      <button class="btn btn-primary" onclick={() => nav.openAccount({ name: "library" })}>{tr("Se connecter", "Sign in")}</button>
     </div>
   {:else if error}
     <ErrorNotice {error} onretry={load} />
   {:else if !data}
-    <div class="skeleton" aria-busy="true" aria-label="Chargement de tes abonnements">
+    <div class="skeleton" aria-busy="true" aria-label={tr("Chargement de tes abonnements", "Loading your subscriptions")}>
       {#each Array(5) as _, i (i)}<div class="sk-row"></div>{/each}
     </div>
   {:else if data.mods.length === 0}
     <div class="empty">
-      <p>Tu n'es abonné à aucun mod pour l'instant. Ouvre un jeu, choisis un mod et clique sur « S'abonner ».</p>
-      <button class="btn btn-primary" onclick={() => nav.openGames()}>Parcourir les jeux</button>
+      <p>
+        {tr(
+          "Tu n'es abonné à aucun mod pour l'instant. Ouvre un jeu, choisis un mod et clique sur « S'abonner ».",
+          "You aren't subscribed to any mods yet. Open a game, pick a mod and click \"Subscribe\".",
+        )}
+      </p>
+      <button class="btn btn-primary" onclick={() => nav.openGames()}>{tr("Parcourir les jeux", "Browse games")}</button>
     </div>
   {:else}
-    <p class="hint muted">Les jeux qui gèrent mod.io téléchargent ces mods à leur prochain lancement.</p>
+    <p class="hint muted">
+      {tr(
+        "Les jeux qui gèrent mod.io téléchargent ces mods à leur prochain lancement.",
+        "Games that support mod.io download these mods the next time they start.",
+      )}
+    </p>
 
     {#if groups.length === 0}
       <div class="empty">
-        <p>Aucun de tes mods ne correspond à « {query.trim()} ».</p>
-        <button class="btn" onclick={() => (query = "")}>Effacer le filtre</button>
+        <p>{tr(`Aucun de tes mods ne correspond à « ${query.trim()} ».`, `None of your mods match "${query.trim()}".`)}</p>
+        <button class="btn" onclick={() => (query = "")}>{tr("Effacer le filtre", "Clear filter")}</button>
       </div>
     {/if}
 
@@ -158,7 +169,7 @@
           {/if}
           <h2>{g.game.name}</h2>
           <span class="muted count">{g.mods.length}</span>
-          <button class="btn btn-ghost browse" onclick={() => nav.openGame(g.game)}>Parcourir ce jeu</button>
+          <button class="btn btn-ghost browse" onclick={() => nav.openGame(g.game)}>{tr("Parcourir ce jeu", "Browse this game")}</button>
         </div>
 
         <ul class="rows">
@@ -170,20 +181,20 @@
                   <Thumb src={m.logo?.thumb_320x180 ?? m.logo?.original} label={m.name ?? ""} />
                 </span>
                 <span class="row-text">
-                  <span class="row-name">{m.name ?? "Sans nom"}</span>
+                  <span class="row-name">{m.name ?? tr("Sans nom", "Untitled")}</span>
                   <span class="row-meta">
-                    {#if author(m)}<span>par {author(m)}</span>{/if}
-                    <span>mis à jour {ago(m.date_updated)}</span>
+                    {#if author(m)}<span>{tr("par", "by")} {author(m)}</span>{/if}
+                    <span>{tr("mis à jour", "updated")} {ago(m.date_updated)}</span>
                     {#if m.modfile?.version}<span>version {m.modfile.version}</span>{/if}
                     {#if m.modfile?.filesize}<span>{bytes(m.modfile.filesize)}</span>{/if}
                   </span>
                 </span>
               </button>
               <div class="row-action">
-                {#if failed.has(m.id)}<span class="row-error">Échec, réessaie</span>{/if}
-                {#if gone}<span class="muted small">Désabonné</span>{/if}
+                {#if failed.has(m.id)}<span class="row-error">{tr("Échec, réessaie", "Failed, try again")}</span>{/if}
+                {#if gone}<span class="muted small">{tr("Désabonné", "Unsubscribed")}</span>{/if}
                 <button class="btn" class:btn-ghost={!gone} onclick={() => toggle(g.game, m)} disabled={busy.has(m.id)}>
-                  {#if busy.has(m.id)}…{:else if gone}Se réabonner{:else}Se désabonner{/if}
+                  {#if busy.has(m.id)}…{:else if gone}{tr("Se réabonner", "Resubscribe")}{:else}{tr("Se désabonner", "Unsubscribe")}{/if}
                 </button>
               </div>
             </li>
@@ -193,7 +204,7 @@
     {/each}
 
     {#if data.truncated}
-      <p class="muted small">Seuls les 3 000 premiers abonnements sont affichés.</p>
+      <p class="muted small">{tr("Seuls les 3 000 premiers abonnements sont affichés.", "Only the first 3,000 subscriptions are shown.")}</p>
     {/if}
   {/if}
 </div>

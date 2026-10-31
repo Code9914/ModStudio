@@ -12,6 +12,7 @@ import {
   type ProfileEdit,
 } from "./api";
 import { bytes } from "./format";
+import { tr } from "./i18n.svelte";
 
 export interface Progress {
   label: string;
@@ -22,20 +23,23 @@ export interface Progress {
 export function describe(e: InstallEvent): Progress {
   switch (e.phase) {
     case "preparing":
-      return { label: "Préparation…", ratio: null };
+      return { label: tr("Préparation…", "Preparing…"), ratio: null };
     case "downloading": {
       const ratio = e.total > 0 ? Math.min(1, e.received / e.total) : null;
-      const amount = e.total > 0 ? `${bytes(e.received)} sur ${bytes(e.total)}` : bytes(e.received);
-      return { label: `Téléchargement : ${amount}`, ratio };
+      const amount =
+        e.total > 0
+          ? tr(`${bytes(e.received)} sur ${bytes(e.total)}`, `${bytes(e.received)} of ${bytes(e.total)}`)
+          : bytes(e.received);
+      return { label: tr(`Téléchargement : ${amount}`, `Downloading: ${amount}`), ratio };
     }
     case "verifying":
-      return { label: "Vérification du fichier…", ratio: null };
+      return { label: tr("Vérification du fichier…", "Verifying file…"), ratio: null };
     case "extracting":
-      return { label: "Extraction…", ratio: e.total > 0 ? e.done / e.total : null };
+      return { label: tr("Extraction…", "Extracting…"), ratio: e.total > 0 ? e.done / e.total : null };
     case "finishing":
-      return { label: "Mise en place des fichiers…", ratio: null };
+      return { label: tr("Mise en place des fichiers…", "Setting up files…"), ratio: null };
     case "step":
-      return { label: `${e.name} (${e.index} sur ${e.total})…`, ratio: null };
+      return { label: tr(`${e.name} (${e.index} sur ${e.total})…`, `${e.name} (${e.index} of ${e.total})…`), ratio: null };
   }
 }
 
@@ -91,7 +95,7 @@ class Installs {
 
   /** `requiredBy` : mod qui a besoin de celui-ci (installation d'un mod nécessaire). */
   async install(gameId: number, modId: number, requiredBy: number | null = null): Promise<InstalledMod> {
-    this.progress[modId] = { label: "Préparation…", ratio: null };
+    this.progress[modId] = { label: tr("Préparation…", "Preparing…"), ratio: null };
     try {
       const record = await api.installMod(
         gameId,
@@ -158,15 +162,21 @@ export const installs = new Installs();
 
 export const layoutLabels: Record<Layout, { title: string; help: string }> = {
   subfolder: {
-    title: "Un sous-dossier par mod",
-    help: "Chaque mod est extrait dans son propre dossier. Le plus simple à ranger et à retirer.",
+    title: tr("Un sous-dossier par mod", "One subfolder per mod"),
+    help: tr(
+      "Chaque mod est extrait dans son propre dossier. Le plus simple à ranger et à retirer.",
+      "Each mod is extracted into its own folder. The easiest to organise and remove.",
+    ),
   },
   flat: {
-    title: "Extraire directement dans le dossier",
-    help: "Pour les jeux qui veulent le contenu des mods directement dans leur dossier de mods.",
+    title: tr("Extraire directement dans le dossier", "Extract directly into the folder"),
+    help: tr(
+      "Pour les jeux qui veulent le contenu des mods directement dans leur dossier de mods.",
+      "For games that want the mod contents directly in their mods folder.",
+    ),
   },
   archive: {
-    title: "Garder l'archive telle quelle",
-    help: "Pour les jeux qui chargent les fichiers .zip sans les extraire.",
+    title: tr("Garder l'archive telle quelle", "Keep the archive as is"),
+    help: tr("Pour les jeux qui chargent les fichiers .zip sans les extraire.", "For games that load .zip files without extracting them."),
   },
 };

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, asAppError, pcFileId, type AppError, type Dependency, type Game, type Mod, type Modfile } from "$lib/api";
   import { bytes } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import { installs } from "$lib/installs.svelte";
   import { nav } from "$lib/nav.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
@@ -44,7 +45,10 @@
     try {
       await api.subscribe(game.id, mod.id);
       nav.subs.add(mod.id);
-      note = `Abonné. ${game.name ?? "Le jeu"} le téléchargera à son prochain lancement.`;
+      note = tr(
+        `Abonné. ${game.name ?? "Le jeu"} le téléchargera à son prochain lancement.`,
+        `Subscribed. ${game.name ?? "The game"} will download it the next time it starts.`,
+      );
     } catch (e) {
       error = asAppError(e);
     } finally {
@@ -83,7 +87,7 @@
       await installs.install(game.id, mod.id);
     } catch (e) {
       const err = asAppError(e);
-      if (err.kind === "cancelled") note = "Installation annulée.";
+      if (err.kind === "cancelled") note = tr("Installation annulée.", "Installation cancelled.");
       else if (err.kind === "no_game_folder") setupOpen = true;
       else error = err;
       return;
@@ -91,7 +95,8 @@
     let failed = 0;
     for (const [i, d] of extra.entries()) {
       depId = d.mod_id;
-      depLabel = `Mod nécessaire ${i + 1} sur ${extra.length} : ${d.name ?? `mod ${d.mod_id}`}`;
+      const depName = d.name ?? `mod ${d.mod_id}`;
+      depLabel = tr(`Mod nécessaire ${i + 1} sur ${extra.length} : ${depName}`, `Required mod ${i + 1} of ${extra.length}: ${depName}`);
       try {
         await installs.install(game.id, d.mod_id, mod.id);
       } catch {
@@ -100,10 +105,20 @@
     }
     depId = null;
     depLabel = null;
-    const parts = [updating ? "Mis à jour." : "Installé."];
+    const parts = [updating ? tr("Mis à jour.", "Updated.") : tr("Installé.", "Installed.")];
     const added = extra.length - failed;
-    if (added) parts.push(added > 1 ? `${added} mods nécessaires installés aussi.` : "Le mod nécessaire a été installé aussi.");
-    if (failed) parts.push(failed > 1 ? `${failed} mods nécessaires n'ont pas pu être installés.` : "Un mod nécessaire n'a pas pu être installé.");
+    if (added)
+      parts.push(
+        added > 1
+          ? tr(`${added} mods nécessaires installés aussi.`, `${added} required mods were also installed.`)
+          : tr("Le mod nécessaire a été installé aussi.", "The required mod was also installed."),
+      );
+    if (failed)
+      parts.push(
+        failed > 1
+          ? tr(`${failed} mods nécessaires n'ont pas pu être installés.`, `${failed} required mods couldn't be installed.`)
+          : tr("Un mod nécessaire n'a pas pu être installé.", "One required mod couldn't be installed."),
+      );
     note = parts.join(" ");
   }
 
@@ -127,8 +142,11 @@
     try {
       const r = await installs.uninstall(game.id, mod.id);
       note = r.leftFolder
-        ? `Désinstallé. Le dossier « ${r.leftFolder} » contient des fichiers ajoutés depuis, il a été laissé en place.`
-        : "Désinstallé.";
+        ? tr(
+            `Désinstallé. Le dossier « ${r.leftFolder} » contient des fichiers ajoutés depuis, il a été laissé en place.`,
+            `Uninstalled. The "${r.leftFolder}" folder contains files added since then, so it was left in place.`,
+          )
+        : tr("Désinstallé.", "Uninstalled.");
       orphans = r.orphans;
     } catch (e) {
       error = asAppError(e);
@@ -154,8 +172,11 @@
     removingOrphans = false;
     orphans = [];
     note = failed.length
-      ? `Impossible de désinstaller : ${failed.join(", ")}. Ferme le jeu puis réessaie depuis la page Installés.`
-      : "Désinstallé, avec les mods nécessaires qui ne servaient plus.";
+      ? tr(
+          `Impossible de désinstaller : ${failed.join(", ")}. Ferme le jeu puis réessaie depuis la page Installés.`,
+          `Couldn't uninstall: ${failed.join(", ")}. Close the game, then try again from the Installed page.`,
+        )
+      : tr("Désinstallé, avec les mods nécessaires qui ne servaient plus.", "Uninstalled, along with the required mods that were no longer needed.");
   }
 
   const parents = $derived(
@@ -185,13 +206,13 @@
   }
 </script>
 
-<section class="panel" aria-label="Installation sur ce PC">
-  <h2>Sur ce PC</h2>
+<section class="panel" aria-label={tr("Installation sur ce PC", "Installation on this PC")}>
+  <h2>{tr("Sur ce PC", "On this PC")}</h2>
 
   {#if setupOpen}
     <FolderSetup
       gameId={game.id}
-      gameName={game.name ?? `Jeu ${game.id}`}
+      gameName={game.name ?? tr(`Jeu ${game.id}`, `Game ${game.id}`)}
       icon={icon()}
       guideUrl={game.instructions_url}
       onsaved={() => {
@@ -211,81 +232,99 @@
     <ProgressBar {progress} oncancel={cancel} />
   {:else if record}
     <p class="status">
-      {#if record.disabled}<span class="chip">Désactivé</span>{:else}<span class="chip chip-ok">Installé</span>{/if}
+      {#if record.disabled}<span class="chip">{tr("Désactivé", "Disabled")}</span>{:else}<span class="chip chip-ok">{tr("Installé", "Installed")}</span>{/if}
       <span class="small muted">
-        {record.version ? `version ${record.version}` : "version sans numéro"}, {bytes(record.size)}
+        {record.version ? `version ${record.version}` : tr("version sans numéro", "unnumbered version")}, {bytes(record.size)}
       </span>
     </p>
     {#if record.disabled}
-      <p class="small muted">Ses fichiers sont mis de côté : le jeu ne le charge plus.</p>
+      <p class="small muted">{tr("Ses fichiers sont mis de côté : le jeu ne le charge plus.", "Its files are set aside: the game no longer loads it.")}</p>
     {/if}
     {#if record.auto && parents.length}
-      <p class="small muted">Installé comme mod nécessaire de « {parents.join(" », « ")} ».</p>
+      <p class="small muted">
+        {tr(`Installé comme mod nécessaire de « ${parents.join(" », « ")} ».`, `Installed as a required mod for "${parents.join('", "')}".`)}
+      </p>
     {/if}
     {#if outdated}
-      <p class="small">Une nouvelle version est disponible{fileVersion ? ` (${fileVersion})` : ""}.</p>
+      <p class="small">
+        {tr(
+          `Une nouvelle version est disponible${fileVersion ? ` (${fileVersion})` : ""}.`,
+          `A new version is available${fileVersion ? ` (${fileVersion})` : ""}.`,
+        )}
+      </p>
       <button class="btn btn-primary" onclick={start} disabled={busy}>
-        <Icon name="download" size={15} />Mettre à jour
+        <Icon name="download" size={15} />{tr("Mettre à jour", "Update")}
       </button>
     {/if}
     {#if config}
-      <p class="small muted folder" title={config.folder}>Dans {config.folder}</p>
+      <p class="small muted folder" title={config.folder}>{tr("Dans", "In")} {config.folder}</p>
     {/if}
     <div class="row">
       <button class="btn" onclick={() => setEnabled(!!record?.disabled)} disabled={toggling || removing}>
-        {toggling ? "…" : record.disabled ? "Réactiver" : "Désactiver"}
+        {toggling ? "…" : record.disabled ? tr("Réactiver", "Re-enable") : tr("Désactiver", "Disable")}
       </button>
-      <button class="btn" onclick={() => reveal(true)} disabled={record.disabled}>Ouvrir le dossier</button>
+      <button class="btn" onclick={() => reveal(true)} disabled={record.disabled}>{tr("Ouvrir le dossier", "Open folder")}</button>
       <button class="btn" class:danger={confirming} onclick={uninstall} disabled={removing}>
-        {removing ? "Désinstallation…" : confirming ? "Confirmer" : "Désinstaller"}
+        {removing ? tr("Désinstallation…", "Uninstalling…") : confirming ? tr("Confirmer", "Confirm") : tr("Désinstaller", "Uninstall")}
       </button>
     </div>
   {:else if managed && !showManual}
     <div class="managed">
       <p class="small">
-        <span class="strong">{game.name} installe ses mods lui-même grâce à mod.io.</span>
-        Abonne-toi : le jeu téléchargera ce mod à son prochain lancement.
+        <span class="strong">{tr(`${game.name} installe ses mods lui-même grâce à mod.io.`, `${game.name} installs its own mods through mod.io.`)}</span>
+        {tr("Abonne-toi : le jeu téléchargera ce mod à son prochain lancement.", "Subscribe and the game will download this mod the next time it starts.")}
       </p>
       <p class="small muted folder" title={managed.folder}>
-        Dossier du jeu : {managed.folder}{managed.mods > 0
-          ? `, ${managed.mods} ${managed.mods > 1 ? "mods déjà téléchargés" : "mod déjà téléchargé"}`
+        {tr("Dossier du jeu :", "Game folder:")} {managed.folder}{managed.mods > 0
+          ? `, ${managed.mods} ${tr(
+              managed.mods > 1 ? "mods déjà téléchargés" : "mod déjà téléchargé",
+              managed.mods === 1 ? "mod already downloaded" : "mods already downloaded",
+            )}`
           : ""}
       </p>
       {#if subscribed}
-        <span class="chip chip-ok">Abonné</span>
+        <span class="chip chip-ok">{tr("Abonné", "Subscribed")}</span>
       {:else}
         <button class="btn btn-primary wide" onclick={subscribe} disabled={subBusy}>
-          {#if !nav.loggedIn}Se connecter pour s'abonner{:else if subBusy}Abonnement…{:else}<Icon
+          {#if !nav.loggedIn}{tr("Se connecter pour s'abonner", "Sign in to subscribe")}{:else if subBusy}{tr("Abonnement…", "Subscribing…")}{:else}<Icon
               name="plus"
               size={15}
-            />S'abonner{/if}
+            />{tr("S'abonner", "Subscribe")}{/if}
         </button>
       {/if}
     </div>
-    <button class="link small manual" onclick={() => (showManual = true)}>Installer quand même à la main</button>
+    <button class="link small manual" onclick={() => (showManual = true)}>{tr("Installer quand même à la main", "Install manually anyway")}</button>
   {:else}
     {#if !fileId}
-      <p class="small muted">Ce mod n'a pas de fichier pour PC (Windows) : il est peut-être réservé à une autre plateforme.</p>
+      <p class="small muted">
+        {tr(
+          "Ce mod n'a pas de fichier pour PC (Windows) : il est peut-être réservé à une autre plateforme.",
+          "This mod has no file for PC (Windows): it may be meant for another platform.",
+        )}
+      </p>
     {:else}
       <button class="btn btn-primary wide" onclick={start} disabled={busy}>
-        <Icon name="download" size={15} />Installer{fileVersion ? ` la version ${fileVersion}` : ""}
+        <Icon name="download" size={15} />{tr(
+          `Installer${fileVersion ? ` la version ${fileVersion}` : ""}`,
+          `Install${fileVersion ? ` version ${fileVersion}` : ""}`,
+        )}
       </button>
     {/if}
     {#if fileId && missingDeps.length > 0}
       <label class="check">
         <input type="checkbox" bind:checked={withDeps} />
         {missingDeps.length > 1
-          ? `Installer aussi les ${missingDeps.length} mods nécessaires`
-          : "Installer aussi le mod nécessaire"}
+          ? tr(`Installer aussi les ${missingDeps.length} mods nécessaires`, `Also install the ${missingDeps.length} required mods`)
+          : tr("Installer aussi le mod nécessaire", "Also install the required mod")}
       </label>
     {/if}
     {#if config}
       <p class="small muted folder">
-        Dans <span title={config.folder}>{config.folder}</span>
-        <button class="link" onclick={() => (setupOpen = true)}>Changer</button>
+        {tr("Dans", "In")} <span title={config.folder}>{config.folder}</span>
+        <button class="link" onclick={() => (setupOpen = true)}>{tr("Changer", "Change")}</button>
       </p>
     {:else}
-      <p class="small muted">Tu choisiras ensuite le dossier des mods de {game.name}.</p>
+      <p class="small muted">{tr(`Tu choisiras ensuite le dossier des mods de ${game.name}.`, `Next, you'll choose the mods folder for ${game.name}.`)}</p>
     {/if}
   {/if}
 
@@ -295,15 +334,21 @@
     <div class="orphans">
       <p class="small">
         {orphans.length > 1
-          ? `${orphans.map((o) => `« ${o.name} »`).join(", ")} avaient été installés avec ce mod et ne servent plus à aucun autre.`
-          : `« ${orphans[0].name} » avait été installé avec ce mod et ne sert plus à aucun autre.`}
-        {orphans.length > 1 ? "Les désinstaller aussi ?" : "Le désinstaller aussi ?"}
+          ? tr(
+              `${orphans.map((o) => `« ${o.name} »`).join(", ")} avaient été installés avec ce mod et ne servent plus à aucun autre.`,
+              `${orphans.map((o) => `"${o.name}"`).join(", ")} were installed with this mod and are no longer needed by any other.`,
+            )
+          : tr(
+              `« ${orphans[0].name} » avait été installé avec ce mod et ne sert plus à aucun autre.`,
+              `"${orphans[0].name}" was installed with this mod and is no longer needed by any other.`,
+            )}
+        {orphans.length > 1 ? tr("Les désinstaller aussi ?", "Uninstall them too?") : tr("Le désinstaller aussi ?", "Uninstall it too?")}
       </p>
       <div class="row">
         <button class="btn btn-primary" onclick={removeOrphans} disabled={removingOrphans}>
-          {removingOrphans ? "Désinstallation…" : "Désinstaller aussi"}
+          {removingOrphans ? tr("Désinstallation…", "Uninstalling…") : tr("Désinstaller aussi", "Uninstall too")}
         </button>
-        <button class="btn btn-ghost" onclick={() => (orphans = [])}>Garder</button>
+        <button class="btn btn-ghost" onclick={() => (orphans = [])}>{tr("Garder", "Keep")}</button>
       </div>
     </div>
   {/if}

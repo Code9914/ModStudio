@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import { api, gameClosed, type Game, type GameSort } from "$lib/api";
   import { count, exact } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import { PagedList } from "$lib/paged.svelte";
   import Icon from "./Icon.svelte";
@@ -38,37 +39,41 @@
 <div class="view">
   <header class="head">
     <div>
-      <h1>Jeux</h1>
+      <h1>{tr("Jeux", "Games")}</h1>
       {#if list.loaded}
-        <p class="muted">{exact(list.total)} jeux {search ? `pour « ${search} »` : "sur mod.io"}</p>
+        <p class="muted">
+          {exact(list.total)}
+          {tr("jeux", list.total === 1 ? "game" : "games")}
+          {search ? tr(`pour « ${search} »`, `for "${search}"`) : tr("sur mod.io", "on mod.io")}
+        </p>
       {/if}
     </div>
     <div class="tools">
       <label class="search">
-        <span class="visually-hidden">Rechercher un jeu</span>
+        <span class="visually-hidden">{tr("Rechercher un jeu", "Search games")}</span>
         <Icon name="search" />
-        <input class="field" type="search" placeholder="Rechercher un jeu" bind:value={query} />
+        <input class="field" type="search" placeholder={tr("Rechercher un jeu", "Search games")} bind:value={query} />
       </label>
       <label>
-        <span class="visually-hidden">Trier les jeux</span>
+        <span class="visually-hidden">{tr("Trier les jeux", "Sort games")}</span>
         <select class="field" bind:value={sort}>
-          <option value="name">Nom (A à Z)</option>
-          <option value="-date_updated">Récemment mis à jour</option>
+          <option value="name">{tr("Nom (A à Z)", "Name (A to Z)")}</option>
+          <option value="-date_updated">{tr("Récemment mis à jour", "Recently updated")}</option>
         </select>
       </label>
     </div>
   </header>
 
   {#if !list.loaded && !list.error}
-    <ul class="card-grid" aria-busy="true" aria-label="Chargement des jeux">
+    <ul class="card-grid" aria-busy="true" aria-label={tr("Chargement des jeux", "Loading games")}>
       {#each Array(12) as _, i (i)}
         <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
       {/each}
     </ul>
   {:else if list.loaded && list.items.length === 0}
     <div class="empty">
-      <p>Aucun jeu ne correspond à « {search} ».</p>
-      <button class="btn" onclick={() => (query = "")}>Effacer la recherche</button>
+      <p>{tr(`Aucun jeu ne correspond à « ${search} ».`, `No games match "${search}".`)}</p>
+      <button class="btn" onclick={() => (query = "")}>{tr("Effacer la recherche", "Clear search")}</button>
     </div>
   {:else}
     <ul class="card-grid">
@@ -78,9 +83,9 @@
             <Thumb
               src={logo(game)}
               label={game.name ?? ""}
-              badges={gameClosed(game) ? [{ text: "Sur mod.io uniquement", tone: "neutral" }] : []}
+              badges={gameClosed(game) ? [{ text: tr("Sur mod.io uniquement", "Only on mod.io"), tone: "neutral" }] : []}
             />
-            <span class="card-title">{game.name ?? "Sans nom"}</span>
+            <span class="card-title">{game.name ?? tr("Sans nom", "Untitled")}</span>
             <span class="card-meta">
               <span>{exact(game.stats?.mods_count_total)} {game.ugc_name?.toLowerCase() || "mods"}</span>
               <span><Icon name="download" size={14} />{count(game.stats?.mods_downloads_total)}</span>
@@ -91,7 +96,7 @@
     </ul>
   {/if}
 
-  <LoadMore {list} noun="jeux" />
+  <LoadMore {list} noun={tr("jeux", "games")} />
 </div>
 
 <style>

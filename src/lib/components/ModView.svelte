@@ -3,6 +3,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api, asAppError, pcFileId, type AppError, type Dependency, type Game, type Mod, type Modfile } from "$lib/api";
   import { ago, bytes, count, date, exact, platformName } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -84,15 +85,15 @@
   const author = $derived(mod?.submitted_by?.username ?? mod?.submitted_by?.display_name_portal ?? null);
 
   const ratingLabels: Record<string, string> = {
-    "Overwhelmingly Positive": "Extrêmement positives",
-    "Very Positive": "Très positives",
-    "Mostly Positive": "Plutôt positives",
-    Positive: "Positives",
-    Mixed: "Mitigées",
-    Negative: "Négatives",
-    "Mostly Negative": "Plutôt négatives",
-    "Very Negative": "Très négatives",
-    "Overwhelmingly Negative": "Extrêmement négatives",
+    "Overwhelmingly Positive": tr("Extrêmement positives", "Overwhelmingly positive"),
+    "Very Positive": tr("Très positives", "Very positive"),
+    "Mostly Positive": tr("Plutôt positives", "Mostly positive"),
+    Positive: tr("Positives", "Positive"),
+    Mixed: tr("Mitigées", "Mixed"),
+    Negative: tr("Négatives", "Negative"),
+    "Mostly Negative": tr("Plutôt négatives", "Mostly negative"),
+    "Very Negative": tr("Très négatives", "Very negative"),
+    "Overwhelmingly Negative": tr("Extrêmement négatives", "Overwhelmingly negative"),
   };
 
   const rating = $derived.by(() => {
@@ -101,6 +102,12 @@
     const text = s.ratings_display_text ?? "";
     return { label: ratingLabels[text] ?? text, percent: s.ratings_percentage_positive, total: s.ratings_total };
   });
+
+  /** Suffixe ordinal anglais : 1st, 2nd, 3rd, 4th, 11th… */
+  function ordinalSuffix(n: number) {
+    if (n % 100 >= 11 && n % 100 <= 13) return "th";
+    return n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th";
+  }
 
   // Fichier PC actuel : `modfile`, ou celui indiqué pour Windows quand le jeu
   // publie un fichier par plateforme.
@@ -147,7 +154,7 @@
       if (nav.subs.has(target.id)) {
         await api.unsubscribe(game.id, target.id);
         nav.subs.delete(target.id);
-        subNote = "Désabonné.";
+        subNote = tr("Désabonné.", "Unsubscribed.");
       } else {
         const deps = withDeps ? missingDeps : [];
         await api.subscribe(game.id, target.id);
@@ -163,9 +170,24 @@
             failed++;
           }
         }
-        const parts = ["Abonné. Le jeu téléchargera ce mod à son prochain lancement s'il gère mod.io."];
-        if (added) parts.push(added > 1 ? `Les ${added} mods nécessaires ont aussi été ajoutés.` : "Le mod nécessaire a aussi été ajouté.");
-        if (failed) parts.push(failed > 1 ? `${failed} mods nécessaires n'ont pas pu être ajoutés.` : "Un mod nécessaire n'a pas pu être ajouté.");
+        const parts = [
+          tr(
+            "Abonné. Le jeu téléchargera ce mod à son prochain lancement s'il gère mod.io.",
+            "Subscribed. The game will download this mod the next time it starts, if it supports mod.io.",
+          ),
+        ];
+        if (added)
+          parts.push(
+            added > 1
+              ? tr(`Les ${added} mods nécessaires ont aussi été ajoutés.`, `The ${added} required mods were also added.`)
+              : tr("Le mod nécessaire a aussi été ajouté.", "The required mod was also added."),
+          );
+        if (failed)
+          parts.push(
+            failed > 1
+              ? tr(`${failed} mods nécessaires n'ont pas pu être ajoutés.`, `${failed} required mods couldn't be added.`)
+              : tr("Un mod nécessaire n'a pas pu être ajouté.", "One required mod couldn't be added."),
+          );
         subNote = parts.join(" ");
       }
     } catch (e) {
@@ -190,9 +212,9 @@
   }
 
   function scanLabel(f: Modfile): { text: string; warn: boolean } | null {
-    if (f.virus_positive === 1) return { text: "Signalé par l'antivirus", warn: true };
-    if (f.virus_status === 0) return { text: "Analyse antivirus en attente", warn: false };
-    if (f.virus_status >= 2) return { text: "Non analysé par l'antivirus", warn: false };
+    if (f.virus_positive === 1) return { text: tr("Signalé par l'antivirus", "Flagged by the antivirus"), warn: true };
+    if (f.virus_status === 0) return { text: tr("Analyse antivirus en attente", "Virus scan pending"), warn: false };
+    if (f.virus_status >= 2) return { text: tr("Non analysé par l'antivirus", "Not scanned by the antivirus"), warn: false };
     return null;
   }
 </script>
@@ -201,19 +223,19 @@
   <div class="top">
     <button class="btn btn-ghost crumb" onclick={() => nav.back()}>
       <Icon name="back" />{nav.modStack.length > 1
-        ? "Retour"
+        ? tr("Retour", "Back")
         : nav.modOrigin === "library"
-          ? "Retour à Mes mods"
+          ? tr("Retour à Mes mods", "Back to My mods")
           : nav.modOrigin === "installed"
-            ? "Retour aux mods installés"
-            : `Retour à ${game.name}`}
+            ? tr("Retour aux mods installés", "Back to installed mods")
+            : tr(`Retour à ${game.name}`, `Back to ${game.name}`)}
     </button>
   </div>
 
   {#if error}
     <div class="pad"><ErrorNotice {error} onretry={() => attempt++} /></div>
   {:else if !mod}
-    <div class="pad skeleton" aria-busy="true" aria-label="Chargement du mod">
+    <div class="pad skeleton" aria-busy="true" aria-label={tr("Chargement du mod", "Loading mod")}>
       <div class="line title"></div>
       <div class="line short"></div>
       <div class="hero"></div>
@@ -223,33 +245,33 @@
       <div class="head-text">
         <h1>{mod.name}</h1>
         <p class="byline">
-          {#if author}<span>par <strong>{author}</strong></span>{/if}
-          <span class="muted">mis à jour {ago(mod.date_updated)}</span>
-          {#if subscribed}<span class="chip chip-ok">Abonné</span>{/if}
-          {#if mod.maturity_option > 0}<span class="chip chip-warn">Contenu adulte</span>{/if}
+          {#if author}<span>{tr("par", "by")} <strong>{author}</strong></span>{/if}
+          <span class="muted">{tr("mis à jour", "updated")} {ago(mod.date_updated)}</span>
+          {#if subscribed}<span class="chip chip-ok">{tr("Abonné", "Subscribed")}</span>{/if}
+          {#if mod.maturity_option > 0}<span class="chip chip-warn">{tr("Contenu adulte", "Adult content")}</span>{/if}
         </p>
       </div>
       <div class="head-side">
         <div class="actions">
           {#if mod.homepage_url}
             <button class="btn" onclick={() => open(mod?.homepage_url)}>
-              Site de l'auteur <Icon name="external" size={14} />
+              {tr("Site de l'auteur", "Author's website")} <Icon name="external" size={14} />
             </button>
           {/if}
           {#if mod.profile_url}
             <button class="btn" onclick={() => open(mod?.profile_url)}>
-              Ouvrir sur mod.io <Icon name="external" size={14} />
+              {tr("Ouvrir sur mod.io", "Open on mod.io")} <Icon name="external" size={14} />
             </button>
           {/if}
           {#if !nav.loggedIn}
-            <button class="btn btn-primary" onclick={toggleSubscription}>Se connecter pour s'abonner</button>
+            <button class="btn btn-primary" onclick={toggleSubscription}>{tr("Se connecter pour s'abonner", "Sign in to subscribe")}</button>
           {:else if subscribed}
             <button class="btn" onclick={toggleSubscription} disabled={subBusy}>
-              {subBusy ? "Désabonnement…" : "Se désabonner"}
+              {subBusy ? tr("Désabonnement…", "Unsubscribing…") : tr("Se désabonner", "Unsubscribe")}
             </button>
           {:else}
             <button class="btn btn-primary" onclick={toggleSubscription} disabled={subBusy}>
-              <Icon name="plus" size={15} />{subBusy ? "Abonnement…" : "S'abonner"}
+              <Icon name="plus" size={15} />{subBusy ? tr("Abonnement…", "Subscribing…") : tr("S'abonner", "Subscribe")}
             </button>
           {/if}
         </div>
@@ -257,8 +279,11 @@
           <label class="with-deps">
             <input type="checkbox" bind:checked={withDeps} />
             {missingDeps.length > 1
-              ? `M'abonner aussi aux ${missingDeps.length} mods nécessaires`
-              : "M'abonner aussi au mod nécessaire"}
+              ? tr(
+                  `M'abonner aussi aux ${missingDeps.length} mods nécessaires`,
+                  `Also subscribe to the ${missingDeps.length} required mods`,
+                )
+              : tr("M'abonner aussi au mod nécessaire", "Also subscribe to the required mod")}
           </label>
         {/if}
       </div>
@@ -281,11 +306,11 @@
             <Thumb src={gallery[active]?.full} label={mod.name ?? ""} />
           </div>
           {#if gallery.length > 1}
-            <div class="strip" role="group" aria-label="Images du mod">
+            <div class="strip" role="group" aria-label={tr("Images du mod", "Mod images")}>
               {#each gallery as img, i (img.full)}
                 <button
                   class="strip-item"
-                  aria-label="Image {i + 1} sur {gallery.length}"
+                  aria-label={tr(`Image ${i + 1} sur ${gallery.length}`, `Image ${i + 1} of ${gallery.length}`)}
                   aria-pressed={i === active}
                   onclick={() => (active = i)}
                 >
@@ -300,7 +325,7 @@
           <div class="videos">
             {#each mod.media.youtube as url, i (url)}
               <button class="btn" onclick={() => open(url)}>
-                Vidéo {mod.media.youtube.length > 1 ? i + 1 : ""} sur YouTube <Icon name="external" size={14} />
+                {tr("Vidéo", "Video")} {mod.media.youtube.length > 1 ? i + 1 : ""} {tr("sur YouTube", "on YouTube")} <Icon name="external" size={14} />
               </button>
             {/each}
           </div>
@@ -322,17 +347,17 @@
           {#if filesError}
             <ErrorNotice error={filesError} onretry={() => attempt++} />
           {:else if !files}
-            <p class="muted">Chargement des versions…</p>
+            <p class="muted">{tr("Chargement des versions…", "Loading versions…")}</p>
           {:else if files.length === 0}
-            <p class="muted">Aucun fichier publié pour ce mod.</p>
+            <p class="muted">{tr("Aucun fichier publié pour ce mod.", "No files published for this mod.")}</p>
           {:else}
             <ol class="file-list">
               {#each files as f (f.id)}
                 {@const scan = scanLabel(f)}
                 <li class="file">
                   <div class="file-head">
-                    <span class="file-version">{f.version || "Sans numéro"}</span>
-                    {#if f.id === latest?.id}<span class="chip">Version actuelle</span>{/if}
+                    <span class="file-version">{f.version || tr("Sans numéro", "Unnumbered")}</span>
+                    {#if f.id === latest?.id}<span class="chip">{tr("Version actuelle", "Current version")}</span>{/if}
                     {#if scan}<span class="chip" class:chip-warn={scan.warn}>{scan.text}</span>{/if}
                   </div>
                   <p class="file-meta muted">
@@ -342,7 +367,7 @@
                   </p>
                   {#if f.changelog?.trim()}
                     <details>
-                      <summary>Notes de version</summary>
+                      <summary>{tr("Notes de version", "Release notes")}</summary>
                       <p class="changelog">{f.changelog}</p>
                     </details>
                   {/if}
@@ -359,47 +384,49 @@
         {/key}
         <dl class="stats">
           <div>
-            <dt>Téléchargements</dt>
+            <dt>{tr("Téléchargements", "Downloads")}</dt>
             <dd>{exact(mod.stats?.downloads_total)}</dd>
-            <dd class="muted small">{exact(mod.stats?.downloads_today)} aujourd'hui</dd>
+            <dd class="muted small">{tr(`${exact(mod.stats?.downloads_today)} aujourd'hui`, `${exact(mod.stats?.downloads_today)} today`)}</dd>
           </div>
           <div>
-            <dt>Abonnés</dt>
+            <dt>{tr("Abonnés", "Subscribers")}</dt>
             <dd>{exact(mod.stats?.subscribers_total)}</dd>
           </div>
           {#if mod.stats?.popularity_rank_position}
             <div>
-              <dt>Popularité</dt>
-              <dd>{exact(mod.stats.popularity_rank_position)}<sup>{mod.stats.popularity_rank_position === 1 ? "er" : "e"}</sup></dd>
-              <dd class="muted small">sur {exact(mod.stats.popularity_rank_total_mods)} {game.ugc_name?.toLowerCase() || "mods"}</dd>
+              <dt>{tr("Popularité", "Popularity")}</dt>
+              <dd>{exact(mod.stats.popularity_rank_position)}<sup>{tr(mod.stats.popularity_rank_position === 1 ? "er" : "e", ordinalSuffix(mod.stats.popularity_rank_position))}</sup></dd>
+              <dd class="muted small">{tr("sur", "of")} {exact(mod.stats.popularity_rank_total_mods)} {game.ugc_name?.toLowerCase() || "mods"}</dd>
             </div>
           {/if}
           <div>
-            <dt>Évaluations</dt>
+            <dt>{tr("Évaluations", "Ratings")}</dt>
             {#if rating}
-              <dd>{rating.percent} % positives</dd>
+              <dd>{tr(`${rating.percent} % positives`, `${rating.percent}% positive`)}</dd>
               <dd class="meter" aria-hidden="true"><span style="width: {rating.percent}%"></span></dd>
-              <dd class="muted small">{rating.label}, {count(rating.total)} avis</dd>
+              <dd class="muted small">
+                {rating.label}, {tr(`${count(rating.total)} avis`, `${count(rating.total)} ${rating.total === 1 ? "rating" : "ratings"}`)}
+              </dd>
             {:else}
-              <dd class="muted">Pas encore évalué</dd>
+              <dd class="muted">{tr("Pas encore évalué", "Not rated yet")}</dd>
             {/if}
           </div>
           {#if latest}
             <div>
-              <dt>Dernière version</dt>
-              <dd>{latest.version || "Sans numéro"}</dd>
-              <dd class="muted small">{bytes(latest.filesize)}, le {date(latest.date_added)}</dd>
+              <dt>{tr("Dernière version", "Latest version")}</dt>
+              <dd>{latest.version || tr("Sans numéro", "Unnumbered")}</dd>
+              <dd class="muted small">{bytes(latest.filesize)}, {tr("le", "on")} {date(latest.date_added)}</dd>
             </div>
           {/if}
           <div>
-            <dt>Publié le</dt>
+            <dt>{tr("Publié le", "Published")}</dt>
             <dd>{date(mod.date_live ?? mod.date_added)}</dd>
           </div>
         </dl>
 
         {#if mod.platforms.length}
           <section class="side-block">
-            <h2>Plateformes</h2>
+            <h2>{tr("Plateformes", "Platforms")}</h2>
             <div class="chips">
               {#each mod.platforms as p (p.platform)}
                 <span class="chip">{platformName(p.platform)}</span>
@@ -421,13 +448,13 @@
 
         {#if mod.dependencies}
           <section class="side-block">
-            <h2>Nécessite aussi</h2>
+            <h2>{tr("Nécessite aussi", "Also requires")}</h2>
             {#if depsError}
               <ErrorNotice error={depsError} onretry={() => attempt++} />
             {:else if !deps}
-              <p class="muted">Chargement…</p>
+              <p class="muted">{tr("Chargement…", "Loading…")}</p>
             {:else if deps.length === 0}
-              <p class="muted">Aucune dépendance listée.</p>
+              <p class="muted">{tr("Aucune dépendance listée.", "No dependencies listed.")}</p>
             {:else}
               <ul class="deps">
                 {#each deps as d (d.mod_id)}
@@ -436,7 +463,7 @@
                       <span class="dep-thumb"><Thumb src={d.logo?.thumb_320x180} label={d.name ?? ""} /></span>
                       <span class="dep-text">
                         <span class="dep-name">{d.name ?? `Mod ${d.mod_id}`}</span>
-                        {#if nav.subs.has(d.mod_id)}<span class="dep-sub">Abonné</span>{/if}
+                        {#if nav.subs.has(d.mod_id)}<span class="dep-sub">{tr("Abonné", "Subscribed")}</span>{/if}
                       </span>
                     </button>
                   </li>
