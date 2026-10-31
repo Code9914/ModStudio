@@ -5,6 +5,9 @@ name: Build
 on:
   push:
     branches: [main]
+    # Une modification de la documentation seule ne republie pas de version.
+    paths-ignore:
+      - "**.md"
   workflow_dispatch:
 
 permissions:
