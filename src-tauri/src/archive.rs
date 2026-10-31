@@ -47,7 +47,7 @@ pub fn extract(
         ArchiveKind::Zip => installer::extract_zip(archive, dest, max_total, cancel, progress),
         ArchiveKind::SevenZip => extract_7z(archive, dest, max_total, cancel, progress),
         ArchiveKind::Rar => extract_rar(archive, dest, max_total, cancel, progress),
-        ArchiveKind::Unknown => Err(AppError::UnsupportedArchive("ce n'est pas une archive zip, 7z ou RAR".into())),
+        ArchiveKind::Unknown => Err(AppError::UnsupportedArchive(crate::tr!("ce n'est pas une archive zip, 7z ou RAR", "not a zip, 7z or RAR archive"))),
     }
 }
 
@@ -135,7 +135,7 @@ fn extract_7z(
             return Ok(true);
         }
         let Some(rel) = safe_rel(&name) else {
-            failure = Some(AppError::BadArchive(format!("chemin dangereux dans l'archive : {name}")));
+            failure = Some(AppError::BadArchive(crate::tr!("chemin dangereux dans l'archive : {name}", "unsafe path in the archive: {name}")));
             return Err(stop());
         };
         done += 1;
@@ -161,12 +161,12 @@ fn extract_7z(
         match copied {
             Ok(n) => written += n,
             Err(e) => {
-                failure = Some(AppError::Io(format!("{name} : {e}")));
+                failure = Some(AppError::Io(crate::tr!("{name} : {e}", "{name}: {e}")));
                 return Err(stop());
             }
         }
         if written > max_total {
-            failure = Some(AppError::BadArchive("contenu bien plus gros qu'annoncé".into()));
+            failure = Some(AppError::BadArchive(crate::tr!("contenu bien plus gros qu'annoncé", "content much larger than announced")));
             return Err(stop());
         }
         progress(done, total);
@@ -178,7 +178,7 @@ fn extract_7z(
     }
     result.map_err(|e| match e {
         SzError::PasswordRequired | SzError::MaybeBadPassword(_) => {
-            AppError::UnsupportedArchive("archive protégée par un mot de passe".into())
+            AppError::UnsupportedArchive(crate::tr!("archive protégée par un mot de passe", "password-protected archive"))
         }
         other => AppError::BadArchive(other.to_string()),
     })?;
@@ -199,9 +199,12 @@ fn extract_rar(
     use unrar::error::{Code, UnrarError};
 
     let map = |e: UnrarError| match e.code {
-        Code::MissingPassword | Code::BadPassword => AppError::UnsupportedArchive("archive protégée par un mot de passe".into()),
-        Code::EOpen => AppError::UnsupportedArchive("archive RAR en plusieurs parties : il manque les autres parties".into()),
-        _ => AppError::BadArchive(format!("archive RAR illisible ({e})")),
+        Code::MissingPassword | Code::BadPassword => AppError::UnsupportedArchive(crate::tr!("archive protégée par un mot de passe", "password-protected archive")),
+        Code::EOpen => AppError::UnsupportedArchive(crate::tr!(
+            "archive RAR en plusieurs parties : il manque les autres parties",
+            "multi-part RAR archive: the other parts are missing"
+        )),
+        _ => AppError::BadArchive(crate::tr!("archive RAR illisible ({e})", "unreadable RAR archive ({e})")),
     };
 
     // Premier passage : liste et taille totale, avant d'écrire quoi que ce soit.
@@ -209,24 +212,27 @@ fn extract_rar(
     let mut size: u64 = 0;
     let mut listing = unrar::Archive::new(archive).open_for_listing().map_err(map)?;
     if listing.is_locked() || listing.has_encrypted_headers() {
-        return Err(AppError::UnsupportedArchive("archive protégée par un mot de passe".into()));
+        return Err(AppError::UnsupportedArchive(crate::tr!("archive protégée par un mot de passe", "password-protected archive")));
     }
     for entry in &mut listing {
         let entry = entry.map_err(map)?;
         if entry.is_split() {
-            return Err(AppError::UnsupportedArchive("archive RAR en plusieurs parties : il manque les autres parties".into()));
+            return Err(AppError::UnsupportedArchive(crate::tr!(
+                "archive RAR en plusieurs parties : il manque les autres parties",
+                "multi-part RAR archive: the other parts are missing"
+            )));
         }
         if entry.is_encrypted() {
-            return Err(AppError::UnsupportedArchive("archive protégée par un mot de passe".into()));
+            return Err(AppError::UnsupportedArchive(crate::tr!("archive protégée par un mot de passe", "password-protected archive")));
         }
         total += 1;
         size = size.saturating_add(entry.unpacked_size);
     }
     if total == 0 {
-        return Err(AppError::BadArchive("archive RAR vide ou illisible".into()));
+        return Err(AppError::BadArchive(crate::tr!("archive RAR vide ou illisible", "empty or unreadable RAR archive")));
     }
     if size > max_total {
-        return Err(AppError::BadArchive("contenu bien plus gros qu'annoncé".into()));
+        return Err(AppError::BadArchive(crate::tr!("contenu bien plus gros qu'annoncé", "content much larger than announced")));
     }
 
     fs::create_dir_all(dest).map_err(io_err)?;
@@ -239,7 +245,7 @@ fn extract_rar(
         }
         let name = header.entry().filename.to_string_lossy().into_owned();
         let Some(rel) = safe_rel(&name) else {
-            return Err(AppError::BadArchive(format!("chemin dangereux dans l'archive : {name}")));
+            return Err(AppError::BadArchive(crate::tr!("chemin dangereux dans l'archive : {name}", "unsafe path in the archive: {name}")));
         };
         done += 1;
         let out = dest.join(&rel);
@@ -257,13 +263,13 @@ fn extract_rar(
         match fs::symlink_metadata(&out) {
             Ok(meta) if meta.file_type().is_symlink() => {
                 let _ = fs::remove_file(&out);
-                return Err(AppError::BadArchive(format!("lien symbolique dans l'archive : {name}")));
+                return Err(AppError::BadArchive(crate::tr!("lien symbolique dans l'archive : {name}", "symbolic link in the archive: {name}")));
             }
             Ok(meta) => written += meta.len(),
             Err(_) => {}
         }
         if written > max_total {
-            return Err(AppError::BadArchive("contenu bien plus gros qu'annoncé".into()));
+            return Err(AppError::BadArchive(crate::tr!("contenu bien plus gros qu'annoncé", "content much larger than announced")));
         }
         progress(done, total);
     }

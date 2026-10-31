@@ -53,12 +53,19 @@ struct RawStatus {
 /// Messages de refus de Nexus pour une recommandation, en clair.
 fn endorse_refusal(message: &str) -> String {
     match message.trim() {
-        "NOT_DOWNLOADED_MOD" => "Nexus Mods n'accepte une recommandation qu'une fois le mod téléchargé.".into(),
-        "TOO_SOON_AFTER_DOWNLOAD" => {
-            "Nexus Mods demande d'attendre un peu après le téléchargement avant de recommander un mod. Réessaie dans quelques minutes.".into()
-        }
-        "IS_OWN_MOD" => "Tu ne peux pas recommander un mod que tu as publié.".into(),
-        other => format!("Nexus Mods a refusé : {other}"),
+        "NOT_DOWNLOADED_MOD" => crate::tr!(
+            "Nexus Mods n'accepte une recommandation qu'une fois le mod téléchargé.",
+            "Nexus Mods only accepts an endorsement once you've downloaded the mod."
+        ),
+        "TOO_SOON_AFTER_DOWNLOAD" => crate::tr!(
+            "Nexus Mods demande d'attendre un peu après le téléchargement avant de recommander un mod. Réessaie dans quelques minutes.",
+            "Nexus Mods asks you to wait a bit after downloading before endorsing a mod. Try again in a few minutes."
+        ),
+        "IS_OWN_MOD" => crate::tr!(
+            "Tu ne peux pas recommander un mod que tu as publié.",
+            "You can't endorse a mod you published."
+        ),
+        other => crate::tr!("Nexus Mods a refusé : {other}", "Nexus Mods refused: {other}"),
     }
 }
 
@@ -87,7 +94,7 @@ impl NexusState {
     pub async fn set_tracked(&self, domain: &str, mod_id: i64, tracked: bool) -> AppResult<()> {
         check_domain(domain)?;
         if mod_id <= 0 {
-            return Err(AppError::InvalidArgument(format!("identifiant {mod_id}")));
+            return Err(AppError::InvalidArgument(crate::tr!("identifiant {mod_id}", "ID {mod_id}")));
         }
         let key = self.key()?;
         let method = if tracked { Method::POST } else { Method::DELETE };
@@ -106,7 +113,7 @@ impl NexusState {
     pub async fn endorse(&self, domain: &str, mod_id: i64, version: Option<String>, endorse: bool) -> AppResult<String> {
         check_domain(domain)?;
         if mod_id <= 0 {
-            return Err(AppError::InvalidArgument(format!("identifiant {mod_id}")));
+            return Err(AppError::InvalidArgument(crate::tr!("identifiant {mod_id}", "ID {mod_id}")));
         }
         let key = self.key()?;
         let action = if endorse { "endorse" } else { "abstain" };

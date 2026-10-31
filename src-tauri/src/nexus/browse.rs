@@ -30,12 +30,12 @@ pub fn check_domain(domain: &str) -> AppResult<()> {
     if ok {
         Ok(())
     } else {
-        Err(AppError::InvalidArgument(format!("jeu « {domain} »")))
+        Err(AppError::InvalidArgument(crate::tr!("jeu « {domain} »", "game \"{domain}\"")))
     }
 }
 
 fn check_id(id: i64) -> AppResult<()> {
-    if id > 0 { Ok(()) } else { Err(AppError::InvalidArgument(format!("identifiant {id}"))) }
+    if id > 0 { Ok(()) } else { Err(AppError::InvalidArgument(crate::tr!("identifiant {id}", "ID {id}"))) }
 }
 
 fn clamp(limit: u32) -> u32 {
@@ -63,7 +63,7 @@ fn game_sort(sort: Option<&str>) -> AppResult<Value> {
         "downloads" => json!([{ "downloads": { "direction": "DESC" } }]),
         "mods" => json!([{ "mods": { "direction": "DESC" } }]),
         "name" => json!([{ "name": { "direction": "ASC" } }]),
-        other => return Err(AppError::InvalidArgument(format!("tri « {other} »"))),
+        other => return Err(AppError::InvalidArgument(crate::tr!("tri « {other} »", "sort \"{other}\""))),
     })
 }
 
@@ -75,7 +75,7 @@ fn mod_sort(sort: Option<&str>) -> AppResult<Value> {
         "updated" => json!([{ "updatedAt": { "direction": "DESC" } }]),
         "created" => json!([{ "createdAt": { "direction": "DESC" } }]),
         "name" => json!([{ "name": { "direction": "ASC" } }]),
-        other => return Err(AppError::InvalidArgument(format!("tri « {other} »"))),
+        other => return Err(AppError::InvalidArgument(crate::tr!("tri « {other} »", "sort \"{other}\""))),
     })
 }
 

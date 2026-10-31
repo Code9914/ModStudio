@@ -342,7 +342,7 @@ async fn download_inner(
             .await
             .ok()
             .and_then(|b| b.error.message)
-            .unwrap_or_else(|| status.canonical_reason().unwrap_or("erreur").to_string());
+            .unwrap_or_else(|| status.canonical_reason().unwrap_or(crate::i18n::pick("erreur", "error")).to_string());
         return Err(match status {
             StatusCode::UNAUTHORIZED if req.token.is_some() => AppError::SessionExpired,
             StatusCode::UNAUTHORIZED => AppError::LoginRequiredForDownload,
@@ -381,7 +381,7 @@ async fn download_inner(
         hasher.update(&chunk);
         received += chunk.len() as u64;
         if received > limit {
-            return Err(AppError::DownloadRefused("taille de fichier inattendue".into()));
+            return Err(AppError::DownloadRefused(crate::tr!("taille de fichier inattendue", "unexpected file size")));
         }
         if last.elapsed() >= Duration::from_millis(120) {
             progress(received, total);
@@ -426,9 +426,9 @@ pub fn extract_zip(
             return Err(AppError::Cancelled);
         }
         let mut entry = zip.by_index(i).map_err(|e| AppError::BadArchive(e.to_string()))?;
-        let name = entry.name().map(|n| n.into_owned()).unwrap_or_else(|_| format!("entrée {i}"));
+        let name = entry.name().map(|n| n.into_owned()).unwrap_or_else(|_| crate::tr!("entrée {i}", "entry {i}"));
         let Some(rel) = entry.enclosed_name() else {
-            return Err(AppError::BadArchive(format!("chemin dangereux dans l'archive : {name}")));
+            return Err(AppError::BadArchive(crate::tr!("chemin dangereux dans l'archive : {name}", "unsafe path in the archive: {name}")));
         };
         if entry.is_symlink() {
             // Les liens symboliques pourraient pointer hors du dossier : ignorés.
@@ -442,13 +442,13 @@ pub fn extract_zip(
         if let Some(parent) = out.parent() {
             fs::create_dir_all(parent).map_err(io_err)?;
         }
-        let mut target = File::create(&out).map_err(|e| AppError::Io(format!("{name} : {e}")))?;
+        let mut target = File::create(&out).map_err(|e| AppError::Io(crate::tr!("{name} : {e}", "{name}: {e}")))?;
         let remaining = max_total.saturating_sub(written);
         let copied = io::copy(&mut (&mut entry).take(remaining + 1), &mut target)
-            .map_err(|e| AppError::BadArchive(format!("{name} : {e}")))?;
+            .map_err(|e| AppError::BadArchive(crate::tr!("{name} : {e}", "{name}: {e}")))?;
         written += copied;
         if written > max_total {
-            return Err(AppError::BadArchive("contenu bien plus gros qu'annoncé".into()));
+            return Err(AppError::BadArchive(crate::tr!("contenu bien plus gros qu'annoncé", "content much larger than announced")));
         }
         progress(i as u64 + 1, count);
     }
@@ -545,7 +545,7 @@ pub fn layout_moves(input: &PlaceInput<'_>) -> AppResult<(Option<String>, Vec<(P
         Layout::Subfolder | Layout::Flat => {
             let extracted = input
                 .extracted
-                .ok_or_else(|| AppError::BadArchive("archive non extraite".into()))?;
+                .ok_or_else(|| AppError::BadArchive(crate::tr!("archive non extraite", "archive not extracted")))?;
             let mut base = extracted.to_path_buf();
             if input.layout == Layout::Subfolder {
                 // Archive qui contient un seul dossier : on ne l'imbrique pas une
@@ -604,7 +604,7 @@ pub struct PlacedBatch {
 /// avant de toucher au moindre fichier.
 pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
     if batches.iter().all(|b| b.moves.is_empty()) {
-        return Err(AppError::BadArchive("l'archive est vide".into()));
+        return Err(AppError::BadArchive(crate::tr!("l'archive est vide", "the archive is empty")));
     }
 
     // 1. Conflits : rien n'est écrasé, sauf les fichiers de la version précédente.
@@ -613,11 +613,11 @@ pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
         let old: BTreeSet<&str> = b.old_files.iter().map(String::as_str).collect();
         let mut seen = BTreeSet::new();
         for (_, rel) in &b.moves {
-            let abs = resolve_rel(&b.folder, rel).ok_or_else(|| AppError::BadArchive(format!("chemin invalide : {rel}")))?;
+            let abs = resolve_rel(&b.folder, rel).ok_or_else(|| AppError::BadArchive(crate::tr!("chemin invalide : {rel}", "invalid path: {rel}")))?;
             if !seen.insert(rel.to_ascii_lowercase()) {
-                conflicts.push(format!("{rel} (présent deux fois dans l'archive)"));
+                conflicts.push(crate::tr!("{rel} (présent deux fois dans l'archive)", "{rel} (appears twice in the archive)"));
             } else if let Some(owner) = b.others.get(rel) {
-                conflicts.push(format!("{rel} (déjà installé par « {owner} »)"));
+                conflicts.push(crate::tr!("{rel} (déjà installé par « {owner} »)", "{rel} (already installed by \"{owner}\")"));
             } else if abs.exists() && !old.contains(rel.as_str()) {
                 conflicts.push(rel.clone());
             }
@@ -627,7 +627,7 @@ pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
         let more = conflicts.len().saturating_sub(3);
         let mut text = conflicts.into_iter().take(3).collect::<Vec<_>>().join(", ");
         if more > 0 {
-            text.push_str(&format!(" et {more} autres"));
+            text.push_str(&crate::tr!(" et {more} autres", " and {more} others"));
         }
         return Err(AppError::Conflict(text));
     }
@@ -639,7 +639,7 @@ pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
                 match fs::remove_file(&abs) {
                     Ok(()) => {}
                     Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                    Err(e) => return Err(AppError::Io(format!("{rel} : {e} (le jeu est-il ouvert ?)"))),
+                    Err(e) => return Err(AppError::Io(crate::tr!("{rel} : {e} (le jeu est-il ouvert ?)", "{rel}: {e} (is the game running?)"))),
                 }
             }
         }
@@ -791,18 +791,19 @@ pub fn uninstall_all(game: &GameInstall, record: &InstalledMod) -> FullRemoval {
 /// Vérifie qu'un dossier choisi par l'utilisateur peut recevoir des mods.
 pub fn check_folder(path: &Path) -> AppResult<()> {
     if !path.is_absolute() {
-        return Err(AppError::InvalidArgument("le dossier doit être un chemin complet.".into()));
+        return Err(AppError::InvalidArgument(crate::tr!("le dossier doit être un chemin complet.", "the folder must be a full path.")));
     }
     if path.parent().is_none() {
-        return Err(AppError::InvalidArgument(
-            "choisis un dossier, pas la racine d'un disque.".into(),
-        ));
+        return Err(AppError::InvalidArgument(crate::tr!(
+            "choisis un dossier, pas la racine d'un disque.",
+            "choose a folder, not the root of a drive."
+        )));
     }
     if !path.is_dir() {
-        return Err(AppError::InvalidArgument("ce dossier n'existe pas.".into()));
+        return Err(AppError::InvalidArgument(crate::tr!("ce dossier n'existe pas.", "this folder doesn't exist.")));
     }
     let probe = path.join(".modstudio-write-test");
-    fs::write(&probe, b"ok").map_err(|e| AppError::Io(format!("impossible d'écrire dans ce dossier ({e})")))?;
+    fs::write(&probe, b"ok").map_err(|e| AppError::Io(crate::tr!("impossible d'écrire dans ce dossier ({e})", "unable to write to this folder ({e})")))?;
     let _ = fs::remove_file(&probe);
     Ok(())
 }

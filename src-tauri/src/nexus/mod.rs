@@ -178,14 +178,14 @@ pub async fn nexus_open_download(
     bounds: Option<window::Bounds>,
 ) -> AppResult<window::Placement> {
     let url = window::file_page(&domain, mod_id, file_id)?;
-    window::show(&app, &url, "Télécharger sur Nexus Mods", bounds)
+    window::show(&app, &url, crate::i18n::pick("Télécharger sur Nexus Mods", "Download from Nexus Mods"), bounds)
 }
 
 /// Première connexion au site, dans ModStudio : la session y reste ouverte
 /// pour les téléchargements suivants, et la clé API s'y copie.
 #[tauri::command]
 pub async fn nexus_open_login(app: AppHandle, bounds: Option<window::Bounds>) -> AppResult<window::Placement> {
-    window::show(&app, window::LOGIN_PAGE, "Connexion à Nexus Mods", bounds)
+    window::show(&app, window::LOGIN_PAGE, crate::i18n::pick("Connexion à Nexus Mods", "Sign in to Nexus Mods"), bounds)
 }
 
 /// La zone d'affichage de la page Nexus a changé (fenêtre redimensionnée).

@@ -89,7 +89,7 @@ impl AppState {
                 }
             },
             Ok(None) => {}
-            Err(e) => a.storage_warning = Some(format!("Trousseau du système inaccessible : {e}")),
+            Err(e) => a.storage_warning = Some(crate::tr!("Trousseau du système inaccessible : {e}", "System keychain unavailable: {e}")),
         }
     }
 
@@ -122,7 +122,10 @@ impl AppState {
         a.loaded = true;
         a.persisted = saved.is_ok();
         a.storage_warning = saved.err().map(|e| {
-            format!("Ta connexion n'a pas pu être enregistrée dans le trousseau du système ({e}). Tu devras te reconnecter au prochain lancement.")
+            crate::tr!(
+                "Ta connexion n'a pas pu être enregistrée dans le trousseau du système ({e}). Tu devras te reconnecter au prochain lancement.",
+                "Your sign-in couldn't be saved in the system keychain ({e}). You'll need to sign in again next time you start the app."
+            )
         });
         a.token = Some(token);
         a.user = Some(user);
@@ -173,7 +176,7 @@ pub async fn status(state: &AppState) -> AppResult<AuthView> {
 
 pub async fn request_code(state: &AppState, email: &str) -> AppResult<()> {
     let email = auth::normalize_email(email)
-        .ok_or_else(|| AppError::InvalidArgument("cette adresse e-mail n'est pas valide.".into()))?;
+        .ok_or_else(|| AppError::InvalidArgument(crate::tr!("cette adresse e-mail n'est pas valide.", "this email address isn't valid.")))?;
     let result: AppResult<IgnoredAny> = state
         .client
         .post_form(&state.api_config(), Auth::ApiKey, "/oauth/emailrequest", &[("email", email)])
@@ -193,24 +196,34 @@ pub async fn request_code(state: &AppState, email: &str) -> AppResult<()> {
 
 pub async fn exchange_code(state: &AppState, code: &str) -> AppResult<AuthView> {
     let code = auth::normalize_code(code)
-        .ok_or_else(|| AppError::InvalidCode("Ce code n'a pas le bon format : recopie les caractères reçus par e-mail.".into()))?;
+        .ok_or_else(|| AppError::InvalidCode(crate::tr!(
+            "Ce code n'a pas le bon format : recopie les caractères reçus par e-mail.",
+            "This code isn't in the right format: copy the characters you received by email."
+        )))?;
     let cfg = state.api_config();
     let token: AccessToken = state
         .client
         .post_form(&cfg, Auth::ApiKey, "/oauth/emailexchange", &[("security_code", code)])
         .await
         .map_err(|e| match e.error_ref() {
-            Some(11011) => AppError::InvalidCode("Ce code a déjà été utilisé. Demande un nouveau code.".into()),
-            Some(11012) => AppError::InvalidCode("Ce code a expiré. Demande un nouveau code.".into()),
-            Some(11013) => AppError::InvalidCode(
-                "Ce code a été demandé avec une autre clé API. Demande un nouveau code.".into(),
-            ),
-            Some(11014) => AppError::InvalidCode("Ce code n'est pas valide. Vérifie-le ou demande un nouveau code.".into()),
-            _ if e.status() == Some(401) => AppError::InvalidCode("mod.io a refusé ce code.".into()),
+            Some(11011) => AppError::InvalidCode(crate::tr!(
+                "Ce code a déjà été utilisé. Demande un nouveau code.",
+                "This code has already been used. Request a new code."
+            )),
+            Some(11012) => AppError::InvalidCode(crate::tr!("Ce code a expiré. Demande un nouveau code.", "This code has expired. Request a new code.")),
+            Some(11013) => AppError::InvalidCode(crate::tr!(
+                "Ce code a été demandé avec une autre clé API. Demande un nouveau code.",
+                "This code was requested with a different API key. Request a new code."
+            )),
+            Some(11014) => AppError::InvalidCode(crate::tr!(
+                "Ce code n'est pas valide. Vérifie-le ou demande un nouveau code.",
+                "This code isn't valid. Check it or request a new code."
+            )),
+            _ if e.status() == Some(401) => AppError::InvalidCode(crate::tr!("mod.io a refusé ce code.", "mod.io rejected this code.")),
             _ => e,
         })?;
     if token.access_token.trim().is_empty() {
-        return Err(AppError::Decode("mod.io n'a pas renvoyé de jeton.".into()));
+        return Err(AppError::Decode(crate::tr!("mod.io n'a pas renvoyé de jeton.", "mod.io didn't return a token.")));
     }
 
     let user: User = state
@@ -393,7 +406,7 @@ fn check_ids(game_id: i64, mod_id: i64) -> AppResult<()> {
     if game_id > 0 && mod_id > 0 {
         Ok(())
     } else {
-        Err(AppError::InvalidArgument(format!("identifiants {game_id}/{mod_id}")))
+        Err(AppError::InvalidArgument(crate::tr!("identifiants {game_id}/{mod_id}", "IDs {game_id}/{mod_id}")))
     }
 }
 

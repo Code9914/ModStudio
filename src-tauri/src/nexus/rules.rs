@@ -103,7 +103,7 @@ fn parts(rel: &Path) -> Vec<String> {
 pub fn bonelab_plan(extracted: &Path, mod_name: &str) -> AppResult<RulePlan> {
     let files: Vec<Vec<String>> = installer::walk_files(extracted)?.iter().map(|p| parts(p)).collect();
     if files.is_empty() {
-        return Err(AppError::BadArchive("l'archive est vide".into()));
+        return Err(AppError::BadArchive(crate::tr!("l'archive est vide", "the archive is empty")));
     }
     let mut plan = RulePlan::default();
 
@@ -130,9 +130,10 @@ pub fn bonelab_plan(extracted: &Path, mod_name: &str) -> AppResult<RulePlan> {
             .filter(|d| d.is_empty() || !is_quest_path(&d[..d.len() - 1]))
             .collect();
         if pc.is_empty() {
-            return Err(AppError::WrongPlatform(
-                "Ce fichier contient la version Quest de ce mod. Choisis la version PC dans la liste des fichiers.".into(),
-            ));
+            return Err(AppError::WrongPlatform(crate::tr!(
+                "Ce fichier contient la version Quest de ce mod. Choisis la version PC dans la liste des fichiers.",
+                "This file contains the Quest version of this mod. Pick the PC version in the file list."
+            )));
         }
         let mut names: BTreeMap<String, ()> = BTreeMap::new();
         for dir in pc {
@@ -141,8 +142,9 @@ pub fn bonelab_plan(extracted: &Path, mod_name: &str) -> AppResult<RulePlan> {
                 None => root_pallet_name(&files).unwrap_or_else(|| safe_name(mod_name)),
             };
             if names.insert(name.to_ascii_lowercase(), ()).is_some() {
-                return Err(AppError::UnknownLayout(format!(
-                    "L'archive contient plusieurs variantes du même contenu (« {name} ») : installe la bonne à la main en suivant la page du mod."
+                return Err(AppError::UnknownLayout(crate::tr!(
+                    "L'archive contient plusieurs variantes du même contenu (« {name} ») : installe la bonne à la main en suivant la page du mod.",
+                    "The archive contains several variants of the same content (\"{name}\"): install the right one manually by following the mod page."
                 )));
             }
             for f in files.iter().filter(|f| f.len() > dir.len() && f.starts_with(dir)) {
@@ -166,13 +168,19 @@ pub fn bonelab_plan(extracted: &Path, mod_name: &str) -> AppResult<RulePlan> {
     if plan.batches.values().all(Vec::is_empty) {
         let save = files.iter().any(|f| f.last().is_some_and(|n| n.to_ascii_lowercase().ends_with(".save.json")));
         return Err(AppError::UnknownLayout(if save {
-            "C'est une sauvegarde de partie (fichier .save.json) : ModStudio ne remplace pas tes sauvegardes. \
-             Pour l'utiliser, garde une copie de la tienne puis suis les instructions de la page du mod."
-                .into()
+            crate::tr!(
+                "C'est une sauvegarde de partie (fichier .save.json) : ModStudio ne remplace pas tes sauvegardes. \
+                 Pour l'utiliser, garde une copie de la tienne puis suis les instructions de la page du mod.",
+                "This is a game save (.save.json file): ModStudio doesn't replace your saves. \
+                 To use it, keep a copy of yours, then follow the instructions on the mod page."
+            )
         } else {
-            "ModStudio ne sait pas où installer ce fichier : il ne contient ni contenu Bonelab (pallet) ni mod MelonLoader (.dll). \
-             Suis les instructions de la page du mod."
-                .into()
+            crate::tr!(
+                "ModStudio ne sait pas où installer ce fichier : il ne contient ni contenu Bonelab (pallet) ni mod MelonLoader (.dll). \
+                 Suis les instructions de la page du mod.",
+                "ModStudio doesn't know where to install this file: it contains neither Bonelab content (pallet) nor a MelonLoader mod (.dll). \
+                 Follow the instructions on the mod page."
+            )
         }));
     }
     Ok(plan)
@@ -202,9 +210,10 @@ fn code_moves(extracted: &Path, files: &[&Vec<String>]) -> AppResult<Vec<(PathBu
         f.iter().any(|c| c.eq_ignore_ascii_case("MelonLoader"))
             || f.last().is_some_and(|n| n.eq_ignore_ascii_case("version.dll"))
     }) {
-        return Err(AppError::UnknownLayout(
-            "Ce fichier contient MelonLoader lui-même : installe-le avec l'installeur officiel de MelonLoader.".into(),
-        ));
+        return Err(AppError::UnknownLayout(crate::tr!(
+            "Ce fichier contient MelonLoader lui-même : installe-le avec l'installeur officiel de MelonLoader.",
+            "This file contains MelonLoader itself: install it with the official MelonLoader installer."
+        )));
     }
 
     // Retire les dossiers d'emballage (`MonMod-v1/Mods/x.dll` → `Mods/x.dll`).
@@ -233,8 +242,9 @@ fn code_moves(extracted: &Path, files: &[&Vec<String>]) -> AppResult<Vec<(PathBu
                 // Fichier à côté des dossiers MelonLoader (lisez-moi…) : ignoré.
                 _ if inner.len() == 1 && is_doc(&inner[0]) => continue,
                 _ => {
-                    return Err(AppError::UnknownLayout(format!(
+                    return Err(AppError::UnknownLayout(crate::tr!(
                         "ModStudio ne sait pas où ranger « {} » : suis les instructions de la page du mod.",
+                        "ModStudio doesn't know where to put \"{}\": follow the instructions on the mod page.",
                         inner.join("/")
                     )));
                 }

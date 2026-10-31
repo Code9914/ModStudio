@@ -118,7 +118,7 @@ pub const LOGIN_PAGE: &str = "https://www.nexusmods.com/settings/api-keys";
 pub fn file_page(domain: &str, mod_id: i64, file_id: i64) -> AppResult<String> {
     check_domain(domain)?;
     if mod_id <= 0 || file_id <= 0 {
-        return Err(AppError::InvalidArgument("fichier inconnu".into()));
+        return Err(AppError::InvalidArgument(crate::tr!("fichier inconnu", "unknown file")));
     }
     Ok(download_page(domain, mod_id, file_id))
 }
@@ -156,7 +156,10 @@ fn navigation_handler(handle: AppHandle) -> impl Fn(&Url) -> bool + Send + 'stat
 /// et que c'est possible, sinon dans une fenêtre séparée.
 pub fn show(app: &AppHandle, url: &str, title: &str, bounds: Option<Bounds>) -> AppResult<Placement> {
     let page = nexus_page(url)
-        .ok_or_else(|| AppError::InvalidArgument("seules les pages de Nexus Mods peuvent s'ouvrir ici.".into()))?;
+        .ok_or_else(|| AppError::InvalidArgument(crate::tr!(
+            "seules les pages de Nexus Mods peuvent s'ouvrir ici.",
+            "only Nexus Mods pages can be opened here."
+        )))?;
     if let Some(b) = bounds.and_then(Bounds::sane) {
         if embed(app, page.clone(), b).is_ok() {
             // Une éventuelle fenêtre séparée restée ouverte n'a plus lieu d'être.
@@ -181,7 +184,7 @@ fn embed(app: &AppHandle, page: Url, b: Bounds) -> AppResult<()> {
     }
     let main = app
         .get_window("main")
-        .ok_or_else(|| AppError::Io("fenêtre principale introuvable".into()))?;
+        .ok_or_else(|| AppError::Io(crate::tr!("fenêtre principale introuvable", "main window not found")))?;
     let builder = WebviewBuilder::new(NEXUS_EMBED, WebviewUrl::External(page)).on_navigation(navigation_handler(app.clone()));
     let view = main
         .add_child(builder, LogicalPosition::new(b.x, b.y), LogicalSize::new(b.width, b.height))

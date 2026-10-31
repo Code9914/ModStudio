@@ -115,12 +115,16 @@ pub fn normalize_api_path(input: &str) -> AppResult<String> {
     };
 
     let url = Url::parse(&with_scheme)
-        .map_err(|_| AppError::InvalidApiPath(format!("« {trimmed} » n'est pas une adresse valide.")))?;
+        .map_err(|_| AppError::InvalidApiPath(crate::tr!(
+            "« {trimmed} » n'est pas une adresse valide.",
+            "\"{trimmed}\" isn't a valid address."
+        )))?;
 
     if url.scheme() != "https" {
-        return Err(AppError::InvalidApiPath(
-            "l'adresse doit commencer par https://".into(),
-        ));
+        return Err(AppError::InvalidApiPath(crate::tr!(
+            "l'adresse doit commencer par https://",
+            "the address must start with https://"
+        )));
     }
 
     let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
@@ -129,8 +133,9 @@ pub fn normalize_api_path(input: &str) -> AppResult<String> {
         || host.ends_with(".test.mod.io")
         || host == "api.test.mod.io";
     if !allowed {
-        return Err(AppError::InvalidApiPath(format!(
-            "le domaine « {host} » n'appartient pas à mod.io."
+        return Err(AppError::InvalidApiPath(crate::tr!(
+            "le domaine « {host} » n'appartient pas à mod.io.",
+            "the domain \"{host}\" doesn't belong to mod.io."
         )));
     }
 

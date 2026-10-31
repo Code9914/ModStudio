@@ -155,7 +155,7 @@ impl<B: RawBackend> SecretStore for ChunkedStore<B> {
         };
         String::from_utf8(bytes)
             .map(Some)
-            .map_err(|_| "contenu du trousseau illisible".to_string())
+            .map_err(|_| crate::tr!("contenu du trousseau illisible", "unreadable keychain content"))
     }
 
     fn save(&self, value: &str) -> Result<(), String> {
@@ -166,7 +166,7 @@ impl<B: RawBackend> SecretStore for ChunkedStore<B> {
         }
         let parts: Vec<&[u8]> = bytes.chunks(CHUNK_SIZE).collect();
         if parts.len() > MAX_CHUNKS {
-            return Err("jeton trop long pour le trousseau".into());
+            return Err(crate::tr!("jeton trop long pour le trousseau", "token too long for the keychain"));
         }
         for (i, part) in parts.iter().enumerate() {
             self.backend.set(&self.chunk_account(i), part)?;

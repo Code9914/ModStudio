@@ -170,7 +170,7 @@ impl ModioClient {
             .unwrap_or_default();
         let message = detail
             .message
-            .unwrap_or_else(|| status.canonical_reason().unwrap_or("erreur inconnue").to_string());
+            .unwrap_or_else(|| status.canonical_reason().unwrap_or(crate::i18n::pick("erreur inconnue", "unknown error")).to_string());
         Err(map_status(status, detail.error_ref, message, retry_after, auth))
     }
 }

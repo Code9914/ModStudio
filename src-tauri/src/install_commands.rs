@@ -106,7 +106,7 @@ pub fn set_folder(
     create: bool,
 ) -> AppResult<GameInstall> {
     if game_id <= 0 {
-        return Err(AppError::InvalidArgument(format!("jeu {game_id}")));
+        return Err(AppError::InvalidArgument(crate::tr!("jeu {game_id}", "game {game_id}")));
     }
     let folder = PathBuf::from(folder.trim());
     // Création demandée explicitement (dossier habituel pas encore créé par le jeu).
@@ -127,9 +127,10 @@ pub fn set_folder(
     });
     if entry.folder != folder && !entry.mods.is_empty() {
         let n = entry.mods.len();
-        return Err(AppError::InvalidArgument(format!(
+        return Err(AppError::InvalidArgument(crate::tr!(
             "désinstalle d'abord {} de ce jeu pour changer de dossier.",
-            if n > 1 { format!("les {n} mods") } else { "le mod".to_string() }
+            "uninstall {} from this game first to change folders.",
+            if n > 1 { crate::tr!("les {n} mods", "the {n} mods") } else { crate::tr!("le mod", "the mod") }
         )));
     }
     entry.folder = folder;
@@ -170,7 +171,7 @@ pub async fn install(
     emit: Arc<dyn Fn(InstallEvent) + Send + Sync>,
 ) -> AppResult<InstalledMod> {
     if game_id <= 0 || mod_id <= 0 {
-        return Err(AppError::InvalidArgument(format!("identifiants {game_id}/{mod_id}")));
+        return Err(AppError::InvalidArgument(crate::tr!("identifiants {game_id}/{mod_id}", "IDs {game_id}/{mod_id}")));
     }
     let (folder, layout, old, others, set_aside) = {
         let lib = state.library.lock().expect("library");
@@ -193,8 +194,9 @@ pub async fn install(
         (game.folder.clone(), game.layout, old, others, set_aside)
     };
     if !folder.is_dir() {
-        return Err(AppError::Io(format!(
+        return Err(AppError::Io(crate::tr!(
             "le dossier des mods n'existe plus : {}",
+            "the mods folder no longer exists: {}",
             folder.display()
         )));
     }
@@ -234,9 +236,9 @@ pub async fn install(
         .download
         .as_ref()
         .and_then(|d| d.binary_url.clone())
-        .ok_or_else(|| AppError::DownloadRefused("aucun lien de téléchargement fourni".into()))?;
+        .ok_or_else(|| AppError::DownloadRefused(crate::tr!("aucun lien de téléchargement fourni", "no download link provided")))?;
     if !installer::download_url_allowed(&url, &cfg.api_path) {
-        return Err(AppError::DownloadRefused("lien de téléchargement inattendu".into()));
+        return Err(AppError::DownloadRefused(crate::tr!("lien de téléchargement inattendu", "unexpected download link")));
     }
 
     // Téléchargement dans le dossier de travail.
@@ -381,8 +383,9 @@ pub fn remove(state: &AppState, game_id: i64, mod_id: i64) -> AppResult<Uninstal
             r.files = removal.remaining;
         }
         state.save_library(&lib)?;
-        return Err(AppError::Io(format!(
-            "{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie."
+        return Err(AppError::Io(crate::tr!(
+            "{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie.",
+            "{n} file(s) couldn't be deleted, including {first}. Close the game and try again."
         )));
     }
     game.mods.remove(&mod_id);

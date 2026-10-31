@@ -39,6 +39,7 @@ pub struct ToolDef {
     pub id: &'static str,
     pub name: &'static str,
     pub description: &'static str,
+    pub description_en: &'static str,
     pub source: Source,
     /// Nom sous lequel `engine::present_tools` signale l'outil.
     pub present: &'static str,
@@ -58,6 +59,7 @@ pub const TOOLS: &[ToolDef] = &[
         id: "ue4ss",
         name: "UE4SS",
         description: "chargeur de mods Lua et Blueprint pour les jeux Unreal Engine",
+        description_en: "Lua and Blueprint mod loader for Unreal Engine games",
         // Les versions « expérimentales » gèrent Unreal Engine 5.4 et plus récent.
         source: Source::GitHub { repo: "UE4SS-RE/RE-UE4SS", tag: Some("experimental-latest") },
         present: "ue4ss",
@@ -66,6 +68,7 @@ pub const TOOLS: &[ToolDef] = &[
         id: "bepinex5",
         name: "BepInEx 5",
         description: "chargeur de plugins pour les jeux Unity (Mono)",
+        description_en: "plugin loader for Unity games (Mono)",
         source: Source::GitHub { repo: "BepInEx/BepInEx", tag: None },
         present: "bepinex",
     },
@@ -73,6 +76,7 @@ pub const TOOLS: &[ToolDef] = &[
         id: "bepinex6",
         name: "BepInEx 6 (IL2CPP)",
         description: "chargeur de plugins pour les jeux Unity compilés en IL2CPP",
+        description_en: "plugin loader for Unity games compiled with IL2CPP",
         // La version 6.0.0-pre.2 de GitHub ne gère pas les versions récentes d'Unity.
         source: Source::BepInExBleedingEdge,
         present: "bepinex",
@@ -81,10 +85,18 @@ pub const TOOLS: &[ToolDef] = &[
         id: "melonloader",
         name: "MelonLoader",
         description: "chargeur de mods pour les jeux Unity",
+        description_en: "mod loader for Unity games",
         source: Source::GitHub { repo: "LavaGang/MelonLoader", tag: None },
         present: "melonloader",
     },
 ];
+
+impl ToolDef {
+    /// Description dans la langue de l'interface.
+    pub fn description(&self) -> &'static str {
+        crate::i18n::pick(self.description, self.description_en)
+    }
+}
 
 pub fn tool(id: &str) -> Option<&'static ToolDef> {
     TOOLS.iter().find(|t| t.id == id)
@@ -254,7 +266,7 @@ impl NexusState {
         tool_id: &str,
         emit: Arc<dyn Fn(InstallEvent) + Send + Sync>,
     ) -> AppResult<InstalledTool> {
-        let def = tool(tool_id).ok_or_else(|| AppError::InvalidArgument(format!("outil « {tool_id} »")))?;
+        let def = tool(tool_id).ok_or_else(|| AppError::InvalidArgument(crate::tr!("outil « {tool_id} »", "tool \"{tool_id}\"")))?;
         let config = self
             .library
             .lock()
@@ -266,8 +278,9 @@ impl NexusState {
         let (key, root) = tool_root(&config).ok_or_else(|| AppError::NeedGameDir(config.game_name.clone()))?;
         let domain = config.domain.clone().unwrap_or_default();
         let info = detect_engine(&root, &domain).ok_or_else(|| {
-            AppError::ToolMismatch(format!(
+            AppError::ToolMismatch(crate::tr!(
                 "ModStudio ne reconnaît pas le jeu dans {} : choisis le dossier où le jeu est installé.",
+                "ModStudio doesn't recognize the game in {}: choose the folder where the game is installed.",
                 root.display()
             ))
         })?;
@@ -275,7 +288,11 @@ impl NexusState {
             ("ue4ss", Engine::Unreal) => engine::unreal_win64(info.project.as_deref().unwrap_or_default()),
             ("bepinex5" | "melonloader", Engine::UnityMono | Engine::UnityIl2cpp) | ("bepinex6", Engine::UnityIl2cpp) => String::new(),
             _ => {
-                return Err(AppError::ToolMismatch(format!("{} ne convient pas au moteur de ce jeu.", def.name)));
+                return Err(AppError::ToolMismatch(crate::tr!(
+                    "{} ne convient pas au moteur de ce jeu.",
+                    "{} isn't suited to this game's engine.",
+                    def.name
+                )));
             }
         };
         // Déjà installé par ModStudio : mise à jour (les anciens fichiers sont remplacés).
@@ -285,8 +302,9 @@ impl NexusState {
         }
         // Un seul chargeur Unity à la fois.
         if let Some(other) = ["bepinex", "melonloader"].into_iter().find(|t| *t != def.present && info.tools.iter().any(|x| x == t)) {
-            return Err(AppError::ToolMismatch(format!(
+            return Err(AppError::ToolMismatch(crate::tr!(
                 "Ce jeu utilise déjà {} : installer aussi {} empêcherait ses mods de se charger.",
+                "This game already uses {}: also installing {} would stop its mods from loading.",
                 if other == "bepinex" { "BepInEx" } else { "MelonLoader" },
                 def.name
             )));
@@ -352,7 +370,11 @@ impl NexusState {
         }
 
         if !root.is_dir() {
-            return Err(AppError::Io(format!("le dossier du jeu n'existe plus : {}", root.display())));
+            return Err(AppError::Io(crate::tr!(
+                "le dossier du jeu n'existe plus : {}",
+                "the game folder no longer exists: {}",
+                root.display()
+            )));
         }
         // Fichiers des mods et des autres outils : jamais écrasés.
         let mut without_this = config.clone();
@@ -450,12 +472,17 @@ impl NexusState {
                     .client
                     .fetch_json(&format!("{}{path}", self.github_api))
                     .await
-                    .map_err(|e| AppError::ToolUnavailable(format!("{} sur GitHub ({e})", def.name)))?;
+                    .map_err(|e| AppError::ToolUnavailable(crate::tr!("{} sur GitHub ({e})", "{} from GitHub ({e})", def.name)))?;
                 let asset = release
                     .assets
                     .iter()
                     .find(|a| asset_matches(def.id, &a.name, arch))
-                    .ok_or_else(|| AppError::ToolUnavailable(format!("{} pour Windows {} (aucun fichier publié)", def.name, arch.as_str())))?;
+                    .ok_or_else(|| AppError::ToolUnavailable(crate::tr!(
+                        "{} pour Windows {} (aucun fichier publié)",
+                        "{} for Windows {} (no published file)",
+                        def.name,
+                        arch.as_str()
+                    )))?;
                 ToolRelease {
                     // La version « experimental-latest » d'UE4SS garde toujours le même nom : on prend celui du fichier.
                     version: if def.id == "ue4ss" { asset.name.trim_end_matches(".zip").to_string() } else { release.tag_name.clone() },
@@ -469,13 +496,18 @@ impl NexusState {
                     .client
                     .fetch_bytes(&self.bepinex_builds)
                     .await
-                    .map_err(|e| AppError::ToolUnavailable(format!("{} sur builds.bepinex.dev ({e})", def.name)))?;
+                    .map_err(|e| AppError::ToolUnavailable(crate::tr!("{} sur builds.bepinex.dev ({e})", "{} from builds.bepinex.dev ({e})", def.name)))?;
                 let builds = parse_be_builds(&String::from_utf8_lossy(&html), arch);
                 let (build, file) = wanted
                     .and_then(|w| builds.iter().find(|(b, _)| *b == w))
                     .or_else(|| builds.first())
                     .cloned()
-                    .ok_or_else(|| AppError::ToolUnavailable(format!("{} pour Windows {} (aucune version trouvée)", def.name, arch.as_str())))?;
+                    .ok_or_else(|| AppError::ToolUnavailable(crate::tr!(
+                        "{} pour Windows {} (aucune version trouvée)",
+                        "{} for Windows {} (no version found)",
+                        def.name,
+                        arch.as_str()
+                    )))?;
                 ToolRelease {
                     version: format!("6.0.0-be.{build}"),
                     url: format!("{}/{build}/{file}", self.bepinex_builds.trim_end_matches('/')),
@@ -485,7 +517,7 @@ impl NexusState {
             }
         };
         if !tool_url_allowed(&release.url, &[&self.github_api, &self.bepinex_builds]) {
-            return Err(AppError::DownloadRefused("lien de téléchargement inattendu".into()));
+            return Err(AppError::DownloadRefused(crate::tr!("lien de téléchargement inattendu", "unexpected download link")));
         }
         self.releases.lock().expect("releases").insert(key, (now(), release.clone()));
         Ok(release)
@@ -505,7 +537,10 @@ impl NexusState {
                 t.files = removal.remaining;
             }
             lib.save(&self.library_path)?;
-            return Err(AppError::Io(format!("{n} fichier(s) n'ont pas pu être supprimés. Ferme le jeu puis réessaie.")));
+            return Err(AppError::Io(crate::tr!(
+                "{n} fichier(s) n'ont pas pu être supprimés. Ferme le jeu puis réessaie.",
+                "{n} file(s) couldn't be deleted. Close the game and try again."
+            )));
         }
         game.tools.remove(tool_id);
         lib.save(&self.library_path)?;

@@ -134,9 +134,10 @@ pub async fn save_settings(
     let api_key = match api_key.map(|k| k.trim().to_string()) {
         Some(k) if !k.is_empty() => {
             if k.chars().any(char::is_whitespace) {
-                return Err(AppError::InvalidArgument(
-                    "la clé API ne doit pas contenir d'espaces.".into(),
-                ));
+                return Err(AppError::InvalidArgument(crate::tr!(
+                    "la clé API ne doit pas contenir d'espaces.",
+                    "the API key must not contain spaces."
+                )));
             }
             k
         }
@@ -329,8 +330,11 @@ pub async fn open_modio_window(app: tauri::AppHandle, url: String, title: Option
     use tauri::Manager;
 
     let page = modio_page(&url)
-        .ok_or_else(|| AppError::InvalidArgument("seules les pages de mod.io peuvent s'ouvrir ici.".into()))?;
-    let title = format!("{} sur mod.io", title.unwrap_or_else(|| "Mods".into()));
+        .ok_or_else(|| AppError::InvalidArgument(crate::tr!(
+            "seules les pages de mod.io peuvent s'ouvrir ici.",
+            "only mod.io pages can be opened here."
+        )))?;
+    let title = crate::tr!("{} sur mod.io", "{} on mod.io", title.unwrap_or_else(|| "Mods".into()));
 
     if let Some(window) = app.get_webview_window(MODIO_WINDOW) {
         window.navigate(page).map_err(|e| AppError::Io(e.to_string()))?;
@@ -358,7 +362,7 @@ fn check_id(id: i64) -> AppResult<()> {
     if id > 0 {
         Ok(())
     } else {
-        Err(AppError::InvalidArgument(format!("identifiant {id}")))
+        Err(AppError::InvalidArgument(crate::tr!("identifiant {id}", "ID {id}")))
     }
 }
 
@@ -366,7 +370,7 @@ fn pick(value: Option<String>, allowed: &[&str], default: &str) -> AppResult<Str
     match value {
         None => Ok(default.to_string()),
         Some(v) if allowed.contains(&v.as_str()) => Ok(v),
-        Some(v) => Err(AppError::InvalidArgument(format!("tri « {v} »"))),
+        Some(v) => Err(AppError::InvalidArgument(crate::tr!("tri « {v} »", "sort \"{v}\""))),
     }
 }
 

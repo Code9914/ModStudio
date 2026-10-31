@@ -35,7 +35,7 @@ fn is_doc(name: &str) -> bool {
 fn files_of(extracted: &Path) -> AppResult<Vec<Vec<String>>> {
     let files: Vec<Vec<String>> = installer::walk_files(extracted)?.iter().map(|p| split(p)).collect();
     if files.is_empty() {
-        return Err(AppError::BadArchive("l'archive est vide".into()));
+        return Err(AppError::BadArchive(crate::tr!("l'archive est vide", "the archive is empty")));
     }
     Ok(files)
 }
@@ -139,15 +139,17 @@ pub fn unreal_plan(extracted: &Path, game_root: &Path, project: &str, mod_name: 
         if is_doc(name) {
             continue;
         }
-        return Err(AppError::UnknownLayout(format!(
+        return Err(AppError::UnknownLayout(crate::tr!(
             "ModStudio ne sait pas où ranger « {} » dans ce jeu Unreal : suis les instructions de la page du mod.",
+            "ModStudio doesn't know where to put \"{}\" in this Unreal game: follow the instructions on the mod page.",
             inner.join("/")
         )));
     }
     if plan.is_empty() {
-        return Err(AppError::UnknownLayout(
-            "Cette archive ne contient aucun fichier de mod Unreal (.pak) ni mod UE4SS.".into(),
-        ));
+        return Err(AppError::UnknownLayout(crate::tr!(
+            "Cette archive ne contient aucun fichier de mod Unreal (.pak) ni mod UE4SS.",
+            "This archive contains no Unreal mod file (.pak) or UE4SS mod."
+        )));
     }
     // UE4SS charge un mod si son dossier contient `enabled.txt`.
     for dir in &ue4ss_dirs {
@@ -203,10 +205,13 @@ pub fn unity_plan(extracted: &Path, loader: UnityLoader, mod_name: &str, present
             // BepInEx fourni avec le mod alors qu'il est déjà installé : on ne garde que le mod.
         } else if game_has("bepinex") || game_has("melonloader") {
             let current = if game_has("bepinex") { "BepInEx" } else { "MelonLoader" };
-            return Err(AppError::UnknownLayout(format!(
+            return Err(AppError::UnknownLayout(crate::tr!(
                 "Ce fichier est la version « autonome » du mod : il apporte son propre chargeur (winhttp.dll, \
                  version.dll…), qui entrerait en conflit avec {current}, déjà installé dans ce jeu. Choisis la version \
-                 {current} du mod dans la liste des fichiers."
+                 {current} du mod dans la liste des fichiers.",
+                "This file is the \"standalone\" version of the mod: it brings its own loader (winhttp.dll, \
+                 version.dll…), which would conflict with {current}, already installed in this game. Pick the \
+                 {current} version of the mod in the file list."
             )));
         } else {
             // Aucun chargeur dans le jeu : le mod s'installe tel quel dans le dossier du jeu.
@@ -293,7 +298,7 @@ pub fn unity_plan(extracted: &Path, loader: UnityLoader, mod_name: &str, present
         plan.push_root(extracted.join(f.join("/")), dest);
     }
     if plan.is_empty() {
-        return Err(AppError::UnknownLayout("Cette archive ne contient aucun fichier de mod.".into()));
+        return Err(AppError::UnknownLayout(crate::tr!("Cette archive ne contient aucun fichier de mod.", "This archive contains no mod files.")));
     }
     Ok((plan, needs))
 }
@@ -322,11 +327,12 @@ pub fn bethesda_plan(extracted: &Path, game: &BethesdaGame) -> AppResult<(RulePl
     // Installateur FOMOD trop enfoui dans l'archive pour être lu (ceux qu'on trouve passent par `fomod.rs`).
     let installer = files.iter().any(|f| f.last().is_some_and(|n| lower(n) == "moduleconfig.xml"));
     if installer {
-        return Err(AppError::UnknownLayout(
+        return Err(AppError::UnknownLayout(crate::tr!(
             "Ce mod a un installateur avec des options (FOMOD) que ModStudio n'a pas trouvé à l'endroit habituel : \
-             installe-le à la main en suivant la page du mod."
-                .into(),
-        ));
+             installe-le à la main en suivant la page du mod.",
+            "This mod has an installer with options (FOMOD) that ModStudio didn't find in the usual place: \
+             install it manually by following the mod page."
+        )));
     }
 
     let keep = |c: &str| {
@@ -358,8 +364,9 @@ pub fn bethesda_plan(extracted: &Path, game: &BethesdaGame) -> AppResult<(RulePl
         } else if is_extender {
             continue;
         } else {
-            return Err(AppError::UnknownLayout(format!(
+            return Err(AppError::UnknownLayout(crate::tr!(
                 "ModStudio ne sait pas où ranger « {} » : suis les instructions de la page du mod.",
+                "ModStudio doesn't know where to put \"{}\": follow the instructions on the mod page.",
                 inner.join("/")
             )));
         };
@@ -370,7 +377,7 @@ pub fn bethesda_plan(extracted: &Path, game: &BethesdaGame) -> AppResult<(RulePl
         plan.push_root(extracted.join(f.join("/")), dest);
     }
     if plan.is_empty() {
-        return Err(AppError::UnknownLayout("Cette archive ne contient aucun fichier de mod.".into()));
+        return Err(AppError::UnknownLayout(crate::tr!("Cette archive ne contient aucun fichier de mod.", "This archive contains no mod files.")));
     }
     Ok((plan, plugins))
 }

@@ -364,26 +364,30 @@ fn nesting_depth(xml: &str) -> usize {
 pub fn parse(root: &Path, config: &Path, game: &GameState) -> AppResult<Installer> {
     let raw = fs::read(config).map_err(installer::io_err)?;
     if raw.len() > 8 * 1024 * 1024 {
-        return Err(AppError::UnknownLayout("L'installateur de ce mod (FOMOD) est démesuré.".into()));
+        return Err(AppError::UnknownLayout(crate::tr!("L'installateur de ce mod (FOMOD) est démesuré.", "This mod's installer (FOMOD) is far too large.")));
     }
     let xml = decode(&raw);
     // Un fichier imbriqué à l'extrême ferait déborder la lecture.
     if nesting_depth(&xml) > 256 {
-        return Err(AppError::UnknownLayout("L'installateur de ce mod (FOMOD) est illisible (imbrication anormale).".into()));
+        return Err(AppError::UnknownLayout(crate::tr!(
+            "L'installateur de ce mod (FOMOD) est illisible (imbrication anormale).",
+            "This mod's installer (FOMOD) is unreadable (abnormal nesting)."
+        )));
     }
     let doc = Document::parse_with_options(
         &xml,
         roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() },
     )
-    .map_err(|e| AppError::UnknownLayout(format!("L'installateur de ce mod (FOMOD) est illisible : {e}")))?;
+    .map_err(|e| AppError::UnknownLayout(crate::tr!("L'installateur de ce mod (FOMOD) est illisible : {e}", "This mod's installer (FOMOD) is unreadable: {e}")))?;
     let cfg = doc.root_element();
     let mut images = Images { root, budget: 32 * 1024 * 1024 };
 
     if let Some(deps) = child(&cfg, "moduleDependencies") {
         if !parse_deps(&deps, game).eval(&HashMap::new()) {
-            return Err(AppError::UnknownLayout(
-                "Ce mod demande d'autres mods ou une autre version du jeu (conditions de son installateur FOMOD non remplies).".into(),
-            ));
+            return Err(AppError::UnknownLayout(crate::tr!(
+                "Ce mod demande d'autres mods ou une autre version du jeu (conditions de son installateur FOMOD non remplies).",
+                "This mod requires other mods or another version of the game (its FOMOD installer's conditions aren't met)."
+            )));
         }
     }
 
@@ -527,13 +531,14 @@ pub fn resolve(inst: &Installer, selections: &[Vec<Vec<usize>>]) -> AppResult<Ve
                 _ => false,
             };
             if invalid && !group.plugins.is_empty() {
-                return Err(AppError::InvalidArgument(format!(
+                return Err(AppError::InvalidArgument(crate::tr!(
                     "choix incomplet dans « {} » ({}).",
+                    "incomplete choice in \"{}\" ({}).",
                     if group.name.is_empty() { &step.name } else { &group.name },
                     match kind.as_str() {
-                        "selectexactlyone" => "une option exactement",
-                        "selectatleastone" => "au moins une option",
-                        _ => "une option au plus",
+                        "selectexactlyone" => crate::i18n::pick("une option exactement", "exactly one option"),
+                        "selectatleastone" => crate::i18n::pick("au moins une option", "at least one option"),
+                        _ => crate::i18n::pick("une option au plus", "at most one option"),
                     }
                 )));
             }
@@ -573,8 +578,9 @@ pub fn expand(root: &Path, items: &[FileItem], scratch: &Path) -> AppResult<Vec<
         let source = clean(&item.source);
         let src = if source.is_empty() { Some(root.to_path_buf()) } else { resolve_ci(root, &source) };
         let Some(src) = src.filter(|p| p.exists()) else {
-            return Err(AppError::UnknownLayout(format!(
+            return Err(AppError::UnknownLayout(crate::tr!(
                 "L'installateur de ce mod demande « {} », absent de l'archive.",
+                "This mod's installer asks for \"{}\", which isn't in the archive.",
                 item.source
             )));
         };
@@ -614,7 +620,7 @@ pub fn expand(root: &Path, items: &[FileItem], scratch: &Path) -> AppResult<Vec<
     let mut out: Vec<(usize, PathBuf, String)> = chosen.into_values().map(|(_, o, s, d)| (o, s, d)).collect();
     out.sort_by_key(|(o, _, _)| *o);
     if out.is_empty() {
-        return Err(AppError::UnknownLayout("Les options choisies n'installent aucun fichier.".into()));
+        return Err(AppError::UnknownLayout(crate::tr!("Les options choisies n'installent aucun fichier.", "The selected options don't install any files.")));
     }
     let mut used: HashSet<PathBuf> = HashSet::new();
     let mut moves = Vec::with_capacity(out.len());

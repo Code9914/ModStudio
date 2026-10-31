@@ -70,11 +70,14 @@ impl NexusAuth {
 pub fn normalize_key(raw: &str) -> AppResult<String> {
     let key = raw.trim();
     if key.is_empty() {
-        return Err(AppError::InvalidArgument("colle ta clé API Nexus Mods.".into()));
+        return Err(AppError::InvalidArgument(crate::tr!("colle ta clé API Nexus Mods.", "paste your Nexus Mods API key.")));
     }
     if key.len() > 1024 || key.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err(AppError::InvalidArgument(
-            "cette clé ne ressemble pas à une clé API Nexus Mods (elle ne doit pas contenir d'espaces).".into(),
+            crate::tr!(
+                "cette clé ne ressemble pas à une clé API Nexus Mods (elle ne doit pas contenir d'espaces).",
+                "this doesn't look like a Nexus Mods API key (it must not contain spaces)."
+            ),
         ));
     }
     Ok(key.to_string())
@@ -93,7 +96,7 @@ impl NexusState {
                 auth.persisted = true;
             }
             Ok(_) => {}
-            Err(e) => auth.storage_warning = Some(format!("Trousseau du système illisible : {e}")),
+            Err(e) => auth.storage_warning = Some(crate::tr!("Trousseau du système illisible : {e}", "Unable to read the system keychain: {e}")),
         }
     }
 
@@ -148,8 +151,9 @@ impl NexusState {
             Ok(()) => (true, None),
             Err(e) => (
                 false,
-                Some(format!(
-                    "La clé n'a pas pu être rangée dans le trousseau du système ({e}) : elle sera oubliée à la fermeture."
+                Some(crate::tr!(
+                    "La clé n'a pas pu être rangée dans le trousseau du système ({e}) : elle sera oubliée à la fermeture.",
+                    "The key couldn't be saved in the system keychain ({e}): it will be forgotten when you close the app."
                 )),
             ),
         };
@@ -165,7 +169,7 @@ impl NexusState {
     /// Oublie la clé (elle reste valable sur Nexus Mods tant qu'elle n'y est pas supprimée).
     pub fn forget_key(&self) -> AppResult<NexusAuthView> {
         self.ensure_loaded();
-        let warning = self.secrets.clear().err().map(|e| format!("La clé n'a pas pu être retirée du trousseau : {e}"));
+        let warning = self.secrets.clear().err().map(|e| crate::tr!("La clé n'a pas pu être retirée du trousseau : {e}", "The key couldn't be removed from the keychain: {e}"));
         let mut auth = self.auth.write().expect("compte nexus");
         *auth = NexusAuth {
             loaded: true,

@@ -90,7 +90,7 @@ fn move_all(moves: &[(PathBuf, PathBuf, String)]) -> AppResult<()> {
             for (s, d) in done.into_iter().rev() {
                 let _ = installer::move_file_io(d, s);
             }
-            return Err(AppError::Io(format!("{rel} : {e} (le jeu est-il ouvert ?)")));
+            return Err(AppError::Io(crate::tr!("{rel} : {e} (le jeu est-il ouvert ?)", "{rel}: {e} (is the game running?)")));
         }
         done.push((src, dst));
     }
@@ -191,7 +191,7 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
                 continue;
             }
             if let Some(owner) = owned.and_then(|o| o.get(&rel)) {
-                conflicts.push(format!("{rel} (installé par « {owner} »)"));
+                conflicts.push(crate::tr!("{rel} (installé par « {owner} »)", "{rel} (installed by \"{owner}\")"));
             } else if dst.exists() {
                 conflicts.push(rel.clone());
             } else {
@@ -205,7 +205,7 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
         let more = conflicts.len().saturating_sub(3);
         let mut text = conflicts.into_iter().take(3).collect::<Vec<_>>().join(", ");
         if more > 0 {
-            text.push_str(&format!(" et {more} autres"));
+            text.push_str(&crate::tr!(" et {more} autres", " and {more} others"));
         }
         return Err(AppError::Conflict(text));
     }
@@ -289,7 +289,10 @@ pub fn edit_profiles(game: &mut GameInstall, edit: &ProfileEdit) -> AppResult<()
 fn check_name(name: &str) -> AppResult<String> {
     let n = name.trim();
     if n.is_empty() || n.chars().count() > 40 {
-        return Err(AppError::InvalidArgument("nom de profil vide ou trop long (40 caractères au plus).".into()));
+        return Err(AppError::InvalidArgument(crate::tr!(
+            "nom de profil vide ou trop long (40 caractères au plus).",
+            "profile name empty or too long (40 characters max)."
+        )));
     }
     Ok(n.to_string())
 }
@@ -320,7 +323,7 @@ pub fn forget_mod(game: &mut GameInstall, mod_id: i64) {
 pub fn create_profile(game: &mut GameInstall, name: &str) -> AppResult<()> {
     let name = check_name(name)?;
     if game.profiles.iter().any(|p| p.name.eq_ignore_ascii_case(&name)) {
-        return Err(AppError::InvalidArgument(format!("le profil « {name} » existe déjà.")));
+        return Err(AppError::InvalidArgument(crate::tr!("le profil « {name} » existe déjà.", "the profile \"{name}\" already exists.")));
     }
     let enabled = enabled_mods(game);
     if game.profiles.is_empty() && !name.eq_ignore_ascii_case("Principal") {
@@ -338,7 +341,10 @@ pub fn create_profile(game: &mut GameInstall, name: &str) -> AppResult<()> {
 pub fn create_profile_with(game: &mut GameInstall, name: &str, mods: &[i64]) -> AppResult<()> {
     let name = check_name(name)?;
     if name.eq_ignore_ascii_case("Principal") {
-        return Err(AppError::InvalidArgument("« Principal » garde tes mods d'avant l'import : choisis un autre nom.".into()));
+        return Err(AppError::InvalidArgument(crate::tr!(
+            "« Principal » garde tes mods d'avant l'import : choisis un autre nom.",
+            "your \"Principal\" profile keeps your mods from before the import: choose another name."
+        )));
     }
     let wanted: Vec<i64> = mods.iter().copied().filter(|id| game.mods.contains_key(id)).collect();
     if game.active_profile.is_some() {
@@ -362,7 +368,7 @@ pub fn create_profile_with(game: &mut GameInstall, name: &str, mods: &[i64]) -> 
 pub fn rename_profile(game: &mut GameInstall, old: &str, new: &str) -> AppResult<()> {
     let new = check_name(new)?;
     if game.profiles.iter().any(|p| p.name != old && p.name.eq_ignore_ascii_case(&new)) {
-        return Err(AppError::InvalidArgument(format!("le profil « {new} » existe déjà.")));
+        return Err(AppError::InvalidArgument(crate::tr!("le profil « {new} » existe déjà.", "the profile \"{new}\" already exists.")));
     }
     let p = game.profiles.iter_mut().find(|p| p.name == old).ok_or(AppError::NotFound)?;
     p.name = new.clone();

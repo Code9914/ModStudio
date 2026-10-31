@@ -108,10 +108,10 @@ impl NexusClient {
                 .and_then(|b| b.errors.first())
                 .map(|e| e.message.clone())
                 .filter(|m| !m.is_empty())
-                .unwrap_or_else(|| status.canonical_reason().unwrap_or("erreur").to_string());
+                .unwrap_or_else(|| status.canonical_reason().unwrap_or(crate::i18n::pick("erreur", "error")).to_string());
             return Err(map_status(status, message, retry, false));
         }
-        let body = body.ok_or_else(|| AppError::NexusDecode("réponse GraphQL illisible".into()))?;
+        let body = body.ok_or_else(|| AppError::NexusDecode(crate::tr!("réponse GraphQL illisible", "unreadable GraphQL response")))?;
         match body.data {
             Some(data) if !data.is_null() => {
                 serde_json::from_value(data).map_err(|e| AppError::NexusDecode(e.to_string()))
@@ -122,7 +122,7 @@ impl NexusClient {
                     .errors
                     .first()
                     .map(|e| e.message.clone())
-                    .unwrap_or_else(|| "réponse vide".into()),
+                    .unwrap_or_else(|| crate::tr!("réponse vide", "empty response")),
             }),
         }
     }
@@ -139,14 +139,14 @@ impl NexusClient {
             .map_err(|e| e.without_url().to_string())?;
         let status = response.status();
         if !status.is_success() {
-            return Err(format!("erreur {}", status.as_u16()));
+            return Err(crate::tr!("erreur {}", "error {}", status.as_u16()));
         }
         response.bytes().await.map(|b| b.to_vec()).map_err(|e| e.without_url().to_string())
     }
 
     pub async fn fetch_json<T: DeserializeOwned>(&self, url: &str) -> Result<T, String> {
         let raw = self.fetch_bytes(url).await?;
-        serde_json::from_slice(&raw).map_err(|e| format!("réponse illisible ({e})"))
+        serde_json::from_slice(&raw).map_err(|e| crate::tr!("réponse illisible ({e})", "unreadable response ({e})"))
     }
 
     /// GET sur l'API REST v1 avec la clé API de l'utilisateur.
@@ -201,7 +201,7 @@ impl NexusClient {
             .await
             .ok()
             .and_then(|b| b.message)
-            .unwrap_or_else(|| status.canonical_reason().unwrap_or("erreur").to_string());
+            .unwrap_or_else(|| status.canonical_reason().unwrap_or(crate::i18n::pick("erreur", "error")).to_string());
         Err(map_status(status, message, retry, true))
     }
 }

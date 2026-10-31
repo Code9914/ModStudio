@@ -217,7 +217,10 @@ fn archive_choice(mod_name: &str, paths: &[PathBuf]) -> fomod::Installer {
             let file = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             fomod::Plugin {
                 name: p.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| file.clone()),
-                description: format!("Archive « {file} », contenue dans le fichier téléchargé."),
+                description: crate::tr!(
+                    "Archive « {file} », contenue dans le fichier téléchargé.",
+                    "Archive \"{file}\", contained in the downloaded file."
+                ),
                 image: None,
                 flags: Vec::new(),
                 type_default: "Optional".into(),
@@ -230,9 +233,13 @@ fn archive_choice(mod_name: &str, paths: &[PathBuf]) -> fomod::Installer {
         module_name: mod_name.to_string(),
         image: None,
         steps: vec![fomod::Step {
-            name: "Ce fichier contient plusieurs archives".into(),
+            name: crate::tr!("Ce fichier contient plusieurs archives", "This file contains several archives"),
             visible: None,
-            groups: vec![fomod::Group { name: "Archives à installer".into(), kind: "SelectAtLeastOne".into(), plugins }],
+            groups: vec![fomod::Group {
+                name: crate::tr!("Archives à installer", "Archives to install"),
+                kind: "SelectAtLeastOne".into(),
+                plugins,
+            }],
         }],
         required: Vec::new(),
         conditional: Vec::new(),
@@ -265,7 +272,7 @@ fn plan_extracted(
     }
     let config = &ctx.config;
     let mod_id = ctx.mod_id;
-    let unpacked = || extracted.ok_or_else(|| AppError::Io("archive non extraite".into()));
+    let unpacked = || extracted.ok_or_else(|| AppError::Io(crate::tr!("archive non extraite", "archive not extracted")));
 
     // Installateur FOMOD : options à choisir (sauf BONELAB, qui a ses règles).
     let fomod_allowed = config.rules.as_deref() != Some("bonelab");
@@ -304,7 +311,7 @@ fn plan_extracted(
             ruled = Some(engine_rules::unity_plan(unpacked()?, loader, &ctx.mod_name, &info.tools)?.0);
         }
         (Some("bethesda"), Some(_)) => {
-            let game = engine::bethesda(&ctx.domain).ok_or_else(|| AppError::UnknownLayout("jeu Bethesda inconnu".into()))?;
+            let game = engine::bethesda(&ctx.domain).ok_or_else(|| AppError::UnknownLayout(crate::tr!("jeu Bethesda inconnu", "unknown Bethesda game")))?;
             let (plan, p) = engine_rules::bethesda_plan(unpacked()?, game)?;
             plugins = p;
             ruled = Some(plan);
@@ -506,7 +513,7 @@ impl NexusState {
         game_dir: Option<String>,
     ) -> AppResult<GameInstall> {
         if game_id <= 0 {
-            return Err(AppError::InvalidArgument(format!("jeu {game_id}")));
+            return Err(AppError::InvalidArgument(crate::tr!("jeu {game_id}", "game {game_id}")));
         }
         check_domain(domain)?;
         let folder = PathBuf::from(folder.trim());
@@ -518,7 +525,7 @@ impl NexusState {
             Some(d) => {
                 let p = PathBuf::from(d);
                 if !p.is_absolute() || !p.is_dir() {
-                    return Err(AppError::InvalidArgument("le dossier du jeu n'existe pas.".into()));
+                    return Err(AppError::InvalidArgument(crate::tr!("le dossier du jeu n'existe pas.", "the game folder doesn't exist.")));
                 }
                 Some(p)
             }
@@ -538,9 +545,10 @@ impl NexusState {
             let moving_game = game_dir.is_some() && entry.extra_folders.get(GAME_DIR) != game_dir.as_ref();
             if moving_mods || (moving_game && entry.extra_folders.contains_key(GAME_DIR)) {
                 let n = entry.mods.len();
-                return Err(AppError::InvalidArgument(format!(
+                return Err(AppError::InvalidArgument(crate::tr!(
                     "désinstalle d'abord {} de ce jeu pour changer de dossier.",
-                    if n > 1 { format!("les {n} mods") } else { "le mod".to_string() }
+                    "uninstall {} from this game first to change folders.",
+                    if n > 1 { crate::tr!("les {n} mods", "the {n} mods") } else { crate::tr!("le mod", "the mod") }
                 )));
             }
         }
@@ -588,7 +596,10 @@ impl NexusState {
             .into_iter()
             .map(|l| l.uri)
             .find(|u| super::client::download_url_allowed(u, self.client.base()))
-            .ok_or_else(|| AppError::DownloadRefused("aucun lien de téléchargement Nexus Mods valable".into()))
+            .ok_or_else(|| AppError::DownloadRefused(crate::tr!(
+                "aucun lien de téléchargement Nexus Mods valable",
+                "no valid Nexus Mods download link"
+            )))
     }
 
     pub async fn install(
@@ -599,7 +610,7 @@ impl NexusState {
     ) -> AppResult<InstallOutcome> {
         check_domain(&req.game_domain)?;
         if req.game_id <= 0 || req.mod_id <= 0 || req.file_id <= 0 {
-            return Err(AppError::InvalidArgument("identifiants invalides".into()));
+            return Err(AppError::InvalidArgument(crate::tr!("identifiants invalides", "invalid IDs")));
         }
         let mod_id = req.mod_id;
         let config = {
@@ -607,7 +618,11 @@ impl NexusState {
             lib.games.get(&req.game_id).cloned().ok_or(AppError::NoGameFolder)?
         };
         if !config.folder.is_dir() {
-            return Err(AppError::Io(format!("le dossier des mods n'existe plus : {}", config.folder.display())));
+            return Err(AppError::Io(crate::tr!(
+                "le dossier des mods n'existe plus : {}",
+                "the mods folder no longer exists: {}",
+                config.folder.display()
+            )));
         }
 
         let cancel = Arc::new(AtomicBool::new(false));
@@ -924,8 +939,9 @@ impl NexusState {
     fn engine_for(&self, config: &GameInstall, domain: &str) -> AppResult<Option<EngineInfo>> {
         Ok(match config.rules.as_deref() {
             Some("unreal" | "unity" | "bethesda") => Some(local::detect_engine(&config.folder, domain).ok_or_else(|| {
-                AppError::UnknownLayout(format!(
+                AppError::UnknownLayout(crate::tr!(
                     "ModStudio ne reconnaît plus le jeu dans {}. Vérifie le dossier du jeu.",
+                    "ModStudio no longer recognizes the game in {}. Check the game folder.",
                     config.folder.display()
                 ))
             })?),
@@ -1015,8 +1031,9 @@ impl NexusState {
                     Ok(added) => record.plugins = kept.into_iter().chain(added).collect(),
                     Err(e) => {
                         record.plugins = kept;
-                        notice = Some(format!(
-                            "Les plugins de ce mod n'ont pas pu être activés ({e}). Active-les depuis le menu Mods du jeu."
+                        notice = Some(crate::tr!(
+                            "Les plugins de ce mod n'ont pas pu être activés ({e}). Active-les depuis le menu Mods du jeu.",
+                            "This mod's plugins couldn't be enabled ({e}). Enable them from the game's Mods menu."
                         ));
                     }
                 }
@@ -1217,8 +1234,9 @@ impl NexusState {
                 r.parts = removal.remaining_parts;
             }
             self.save_library(&lib)?;
-            return Err(AppError::Io(format!(
-                "{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie."
+            return Err(AppError::Io(crate::tr!(
+                "{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie.",
+                "{n} file(s) couldn't be deleted, including {first}. Close the game and try again."
             )));
         }
         game.mods.remove(&mod_id);

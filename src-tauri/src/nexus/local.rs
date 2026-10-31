@@ -56,7 +56,7 @@ impl ToolOffer {
         Some(ToolOffer {
             id: def.id.to_string(),
             name: def.name.to_string(),
-            description: def.description.to_string(),
+            description: def.description().to_string(),
             present: info.is_some_and(|i| i.tools.iter().any(|t| t == def.present)),
             managed: record.is_some(),
             nexus_mod: None,
@@ -78,7 +78,10 @@ impl ToolOffer {
         Some(ToolOffer {
             id: g.extender.to_string(),
             name: g.extender_name.to_string(),
-            description: "script extender, nécessaire aux mods qui ajoutent du code au jeu".to_string(),
+            description: crate::tr!(
+                "script extender, nécessaire aux mods qui ajoutent du code au jeu",
+                "script extender, required by mods that add code to the game"
+            ),
             present: info.is_some_and(|i| i.tools.iter().any(|t| t == g.extender)),
             managed: false,
             nexus_mod: g.extender_mod,
