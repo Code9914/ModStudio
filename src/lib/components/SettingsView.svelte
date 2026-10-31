@@ -3,6 +3,7 @@
   import { api, type AppError } from "$lib/api";
   import { nav } from "$lib/nav.svelte";
   import { updates } from "$lib/updates.svelte";
+  import { tr } from "$lib/i18n.svelte";
   import AppearanceSettings from "./AppearanceSettings.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -50,64 +51,78 @@
 <div class="view">
   <div class="inner">
     {#if first}
-      <h1>Bienvenue dans ModStudio</h1>
+      <h1>{tr("Bienvenue dans ModStudio", "Welcome to ModStudio")}</h1>
       <p class="intro">
-        ModStudio parcourt les mods de mod.io depuis ton bureau. Pour commencer, il lui faut ta clé API mod.io :
-        elle est gratuite et donne un accès en lecture seule.
+        {tr(
+          "ModStudio parcourt les mods de mod.io depuis ton bureau. Pour commencer, il lui faut ta clé API mod.io : elle est gratuite et donne un accès en lecture seule.",
+          "ModStudio browses mod.io mods from your desktop. To get started, it needs your mod.io API key: it's free and gives read-only access.",
+        )}
       </p>
     {:else}
-      <h1>Réglages</h1>
+      <h1>{tr("Réglages", "Settings")}</h1>
       <AppearanceSettings />
     {/if}
 
     <section class="block">
-      <h2>Clé API mod.io</h2>
+      <h2>{tr("Clé API mod.io", "mod.io API key")}</h2>
       <ol class="steps">
         <li>
-          Ouvre la page
+          {tr("Ouvre la page", "Open the page")}
           <button class="link" type="button" onclick={() => openUrl("https://mod.io/me/access")}>
             mod.io/me/access <Icon name="external" size={13} />
           </button>
-          et connecte-toi.
+          {tr("et connecte-toi.", "and sign in.")}
         </li>
-        <li>Dans la section API, crée une clé si tu n'en as pas encore.</li>
-        <li>Copie la clé et le chemin d'API affiché juste à côté, puis colle-les ici.</li>
+        <li>{tr("Dans la section API, crée une clé si tu n'en as pas encore.", "In the API section, create a key if you don't have one yet.")}</li>
+        <li>
+          {tr(
+            "Copie la clé et le chemin d'API affiché juste à côté, puis colle-les ici.",
+            "Copy the key and the API path shown right next to it, then paste them here.",
+          )}
+        </li>
       </ol>
 
       <form class="form" onsubmit={save}>
         <label class="row">
-          <span class="label">Clé API</span>
+          <span class="label">{tr("Clé API", "API key")}</span>
           <span class="key">
             <input
               class="field"
               type={showKey ? "text" : "password"}
               autocomplete="off"
               spellcheck="false"
-              placeholder={nav.settings?.apiKeyHint ? `Clé enregistrée (${nav.settings.apiKeyHint})` : "32 caractères"}
+              placeholder={nav.settings?.apiKeyHint
+                ? tr(`Clé enregistrée (${nav.settings.apiKeyHint})`, `Saved key (${nav.settings.apiKeyHint})`)
+                : tr("32 caractères", "32 characters")}
               bind:value={apiKey}
               required={first}
             />
             <button class="btn btn-ghost" type="button" onclick={() => (showKey = !showKey)}>
-              {showKey ? "Masquer" : "Afficher"}
+              {showKey ? tr("Masquer", "Hide") : tr("Afficher", "Show")}
             </button>
           </span>
           {#if !first}
-            <span class="help muted">Laisse vide pour garder la clé actuelle.</span>
+            <span class="help muted">{tr("Laisse vide pour garder la clé actuelle.", "Leave empty to keep the current key.")}</span>
           {/if}
         </label>
 
         <label class="row">
-          <span class="label">Chemin d'API</span>
+          <span class="label">{tr("Chemin d'API", "API path")}</span>
           <input class="field" type="url" spellcheck="false" bind:value={apiPath} />
-          <span class="help muted">De la forme https://u-12345.modapi.io/v1. Par défaut : https://api.mod.io/v1.</span>
+          <span class="help muted">
+            {tr(
+              "De la forme https://u-12345.modapi.io/v1. Par défaut : https://api.mod.io/v1.",
+              "In the form https://u-12345.modapi.io/v1. Default: https://api.mod.io/v1.",
+            )}
+          </span>
         </label>
 
         <div class="submit">
           <button class="btn btn-primary" type="submit" disabled={saving}>
-            {saving ? "Test de la clé…" : "Enregistrer et tester"}
+            {saving ? tr("Test de la clé…", "Testing the key…") : tr("Enregistrer et tester", "Save and test")}
           </button>
           {#if saved}
-            <p class="ok" role="status">Clé enregistrée, mod.io répond.</p>
+            <p class="ok" role="status">{tr("Clé enregistrée, mod.io répond.", "Key saved, mod.io is responding.")}</p>
           {/if}
         </div>
 
@@ -121,52 +136,68 @@
       <AppearanceSettings />
     {:else}
       <section class="block">
-        <h2>Mises à jour de ModStudio</h2>
+        <h2>{tr("Mises à jour de ModStudio", "ModStudio updates")}</h2>
         {#if !updates.enabled}
           <p class="help muted">
-            Version de développement : elle se met à jour toute seule à chaque lancement de « ModStudio (dev) ».
+            {tr(
+              "Version de développement : elle se met à jour toute seule à chaque lancement de « ModStudio (dev) ».",
+              'Development version: it updates itself every time "ModStudio (dev)" starts.',
+            )}
           </p>
         {:else}
           <p class="help muted">
-            Version installée : {updates.current ?? "…"}. ModStudio cherche une nouvelle version à chaque lancement et te
-            la propose ; la mise à jour est signée et garde tes réglages et tes mods.
+            {tr(
+              `Version installée : ${updates.current ?? "…"}. ModStudio cherche une nouvelle version à chaque lancement et te la propose ; la mise à jour est signée et garde tes réglages et tes mods.`,
+              `Installed version: ${updates.current ?? "…"}. ModStudio looks for a new version every time it starts and offers it to you; the update is signed and keeps your settings and mods.`,
+            )}
           </p>
           <div class="update-row">
             <button class="btn" type="button" onclick={() => updates.check(true)} disabled={updates.checking}>
-              <Icon name="refresh" size={15} />{updates.checking ? "Recherche…" : "Rechercher une mise à jour"}
+              <Icon name="refresh" size={15} />{updates.checking ? tr("Recherche…", "Checking…") : tr("Rechercher une mise à jour", "Check for updates")}
             </button>
             {#if updates.available && updates.packageManager}
               <span class="help">
-                Version {updates.available.version} disponible : mets ModStudio à jour avec ton gestionnaire de paquets
-                (installé depuis l'AUR).
+                {tr(
+                  `Version ${updates.available.version} disponible : mets ModStudio à jour avec ton gestionnaire de paquets (installé depuis l'AUR).`,
+                  `Version ${updates.available.version} available: update ModStudio with your package manager (installed from the AUR).`,
+                )}
               </span>
             {:else if updates.available}
               <button class="btn btn-primary" type="button" onclick={() => updates.install()} disabled={!!updates.progress}>
-                Installer la version {updates.available.version}
+                {tr(`Installer la version ${updates.available.version}`, `Install version ${updates.available.version}`)}
               </button>
             {:else if updates.checked && !updates.checking && !updates.error}
-              <span class="help muted">ModStudio est à jour.</span>
+              <span class="help muted">{tr("ModStudio est à jour.", "ModStudio is up to date.")}</span>
             {/if}
           </div>
-          {#if updates.error}<p class="help update-error">Recherche impossible : {updates.error}</p>{/if}
+          {#if updates.error}<p class="help update-error">
+              {tr(`Recherche impossible : ${updates.error}`, `Couldn't check for updates: ${updates.error}`)}
+            </p>{/if}
         {/if}
       </section>
 
       <section class="block">
-        <h2>Contenu</h2>
+        <h2>{tr("Contenu", "Content")}</h2>
         <label class="toggle">
           <input type="checkbox" checked={nav.settings?.hideMature} onchange={toggleMature} />
           <span>
-            Masquer les mods pour adultes
-            <span class="help muted">Les mods marqués comme contenu adulte par leur auteur n'apparaissent plus dans les listes.</span>
+            {tr("Masquer les mods pour adultes", "Hide mature mods")}
+            <span class="help muted">
+              {tr(
+                "Les mods marqués comme contenu adulte par leur auteur n'apparaissent plus dans les listes.",
+                "Mods marked as mature content by their author no longer appear in lists.",
+              )}
+            </span>
           </span>
         </label>
       </section>
     {/if}
 
     <p class="disclaimer muted">
-      ModStudio est un client non officiel. Il n'est ni affilié à mod.io ni soutenu par mod.io. La clé API est
-      enregistrée sur cet ordinateur uniquement.
+      {tr(
+        "ModStudio est un client non officiel. Il n'est ni affilié à mod.io ni soutenu par mod.io. La clé API est enregistrée sur cet ordinateur uniquement.",
+        "ModStudio is an unofficial client. It is not affiliated with or endorsed by mod.io. The API key is stored on this computer only.",
+      )}
     </p>
   </div>
 </div>

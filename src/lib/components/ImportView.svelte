@@ -16,6 +16,7 @@
     type SharedMod,
   } from "$lib/api";
   import { installs } from "$lib/installs.svelte";
+  import { english, tr } from "$lib/i18n.svelte";
   import { listsStore } from "$lib/lists.svelte";
   import { nav } from "$lib/nav.svelte";
   import { nexusStore } from "$lib/nexus.svelte";
@@ -85,7 +86,7 @@
 
   async function openFile() {
     readError = null;
-    const path = await open({ title: "Ouvrir un profil", multiple: false, directory: false, filters: profileFilters.open });
+    const path = await open({ title: tr("Ouvrir un profil", "Open a profile"), multiple: false, directory: false, filters: profileFilters.open });
     if (typeof path !== "string") return;
     reading = true;
     try {
@@ -130,7 +131,7 @@
     return null;
   });
 
-  const gameName = $derived(community?.name ?? clGame?.name ?? (profile?.game.name || "ce jeu"));
+  const gameName = $derived(community?.name ?? clGame?.name ?? (profile?.game.name || tr("ce jeu", "this game")));
 
   /** Ce qui manque avant de pouvoir installer. */
   const blocker = $derived.by((): string | null => {
@@ -204,15 +205,22 @@
     const r = p.record;
     switch (p.action) {
       case "install":
-        return "À installer";
+        return tr("À installer", "To install");
       case "replace":
-        return `Version ${r?.version ?? "différente"} installée : remplacée par ${p.mod.version ?? "celle du profil"}`;
+        return tr(
+          `Version ${r?.version ?? "différente"} installée : remplacée par ${p.mod.version ?? "celle du profil"}`,
+          `${r?.version == null ? "Different version" : `Version ${r.version}`} installed: replaced by ${p.mod.version ?? "the profile's version"}`,
+        );
       case "enable":
-        return "Installé mais désactivé : sera activé";
+        return tr("Installé mais désactivé : sera activé", "Installed but disabled: will be enabled");
       case "keep":
-        if (r?.disabled) return "Installé, activé avec le profil";
-        if (r && sameAs(p.mod, r) === false) return `Installé (version ${r.version ?? "différente"})`;
-        return "Déjà installé";
+        if (r?.disabled) return tr("Installé, activé avec le profil", "Installed, enabled with the profile");
+        if (r && sameAs(p.mod, r) === false)
+          return tr(
+            `Installé (version ${r.version ?? "différente"})`,
+            `Installed (${r.version == null ? "different version" : `version ${r.version}`})`,
+          );
+        return tr("Déjà installé", "Already installed");
     }
   }
 
@@ -270,35 +278,39 @@
         await installs.install(id, Number(m.id));
         return null;
       case "nexus": {
-        if (!m.file) throw fail("Fichier inconnu : installe ce mod depuis sa fiche.");
+        if (!m.file) throw fail(tr("Fichier inconnu : installe ce mod depuis sa fiche.", "Unknown file: install this mod from its page."));
         const out = await nexusStore.request(id, profile!.game.key, Number(m.id), m.file, null);
         const ok = await settle(out, Number(m.id), m.name);
-        if (!ok) throw fail(rows.get(m.id)?.message ?? "Options non choisies : mod pas installé.");
+        if (!ok) throw fail(rows.get(m.id)?.message ?? tr("Options non choisies : mod pas installé.", "No options chosen: mod not installed."));
         return null;
       }
       case "ts": {
-        if (!community) throw fail("Jeu inconnu.");
+        if (!community) throw fail(tr("Jeu inconnu.", "Unknown game."));
         if (m.id.startsWith("rml:")) {
           await tsStore.loadRml();
           const mod = tsStore.rmlMod(m.id.slice(4));
-          if (!mod) throw fail("Ce mod n'est plus dans la liste de ResoniteModLoader.");
+          if (!mod) throw fail(tr("Ce mod n'est plus dans la liste de ResoniteModLoader.", "This mod is no longer in the ResoniteModLoader list."));
           const v = version && mod.versions.some((x) => x.version === version) ? version : null;
           await tsStore.installRml(community, mod, v);
-          return version && !v ? `version ${version} plus proposée : la dernière est installée` : null;
+          return version && !v
+            ? tr(`version ${version} plus proposée : la dernière est installée`, `version ${version} no longer offered: the latest one is installed`)
+            : null;
         }
         const ref = splitFullName(m.id);
-        if (!ref) throw fail("Mod illisible.");
+        if (!ref) throw fail(tr("Mod illisible.", "Unreadable mod."));
         await tsStore.install(community, ref.namespace, ref.name, stableId(m.id), version);
         return null;
       }
       case "cl": {
-        if (!clGame) throw fail("Jeu inconnu.");
+        if (!clGame) throw fail(tr("Jeu inconnu.", "Unknown game."));
         await listsStore.loadMods(clGame);
         const mod = listsStore.mod(clGame, m.id);
-        if (!mod) throw fail("Ce mod n'est plus dans la liste.");
+        if (!mod) throw fail(tr("Ce mod n'est plus dans la liste.", "This mod is no longer in the list."));
         const v = version && mod.versions.some((x) => x.version === version) ? version : null;
         await listsStore.install(clGame, mod, v);
-        return version && !v ? `version ${version} plus proposée : la dernière est installée` : null;
+        return version && !v
+            ? tr(`version ${version} plus proposée : la dernière est installée`, `version ${version} no longer offered: the latest one is installed`)
+            : null;
       }
     }
     return null;
@@ -338,7 +350,7 @@
     const taken = new Set((config?.profiles ?? []).map((p) => p.name.toLowerCase()));
     const base = clip(profile.name, 40);
     if (base.toLowerCase() !== "principal" && !taken.has(base.toLowerCase())) return base;
-    const suffix = " (importé)";
+    const suffix = tr(" (importé)", " (imported)");
     return clip(profile.name, 40 - suffix.length) + suffix;
   });
 
@@ -388,7 +400,7 @@
       try {
         const note = action === "enable" ? (await enableOne(mod), null) : await installOne(mod);
         rows.set(mod.id, { status: "done", message: note ?? undefined });
-        if (note) notes.push(`${mod.name} : ${note}.`);
+        if (note) notes.push(tr(`${mod.name} : ${note}.`, `${mod.name}: ${note}.`));
         done++;
       } catch (e) {
         const err = asAppError(e);
@@ -398,7 +410,7 @@
           stopping = true;
         } else if (err.kind === "tool_present") {
           // Chargeur déjà installé à la main dans le jeu : il est gardé tel quel.
-          rows.set(mod.id, { status: "kept", message: "déjà installé dans le jeu (sans ModStudio)" });
+          rows.set(mod.id, { status: "kept", message: tr("déjà installé dans le jeu (sans ModStudio)", "already installed in the game (without ModStudio)") });
         } else {
           rows.set(mod.id, { status: "error", message: err.message });
           failed++;
@@ -421,11 +433,14 @@
           await store.editProfiles(gameId, { action: "createWith", name, mods: ids });
           const kept = config?.activeProfile ?? null;
           const issues = await store.applyProfile(gameId, name);
-          for (const i of issues) notes.push(`${i.name} : ${i.message}`);
+          for (const i of issues) notes.push(tr(`${i.name} : ${i.message}`, `${i.name}: ${i.message}`));
           notes.unshift(
             kept && kept !== name
-              ? `Profil « ${name} » créé et activé : tes mods d'avant sont dans le profil « ${kept} ».`
-              : `Profil « ${name} » mis à jour et activé.`,
+              ? tr(
+                  `Profil « ${name} » créé et activé : tes mods d'avant sont dans le profil « ${kept} ».`,
+                  `Profile "${name}" created and activated: your previous mods are in the "${kept}" profile.`,
+                )
+              : tr(`Profil « ${name} » mis à jour et activé.`, `Profile "${name}" updated and activated.`),
           );
         }
       }
@@ -435,7 +450,10 @@
         applyConfigs = false;
         imported.token = null;
         notes.push(
-          `${r.written} ${r.written > 1 ? "fichiers de réglages appliqués" : "fichier de réglages appliqué"}${r.backup ? ` (les anciens sont gardés dans ${r.backup})` : ""}.`,
+          tr(
+            `${r.written} ${r.written > 1 ? "fichiers de réglages appliqués" : "fichier de réglages appliqué"}${r.backup ? ` (les anciens sont gardés dans ${r.backup})` : ""}.`,
+            `${r.written} ${r.written === 1 ? "settings file applied" : "settings files applied"}${r.backup ? ` (the old ones are kept in ${r.backup})` : ""}.`,
+          ),
         );
       }
     } catch (e) {
@@ -465,30 +483,32 @@
 
 <div class="view">
   <header class="head">
-    <button class="btn btn-ghost crumb" onclick={() => nav.openInstalled()}><Icon name="back" />Installés</button>
-    <h1>Importer un profil</h1>
+    <button class="btn btn-ghost crumb" onclick={() => nav.openInstalled()}><Icon name="back" />{tr("Installés", "Installed")}</button>
+    <h1>{tr("Importer un profil", "Import a profile")}</h1>
     <p class="intro muted">
-      Colle le code qu'un ami t'a envoyé (code ModStudio « MS1-… », ou code r2modman de Thunderstore), ou ouvre un fichier
-      de profil (.modstudio, .r2z). ModStudio te montre les mods avant d'installer ceux qui te manquent.
+      {tr(
+        "Colle le code qu'un ami t'a envoyé (code ModStudio « MS1-… », ou code r2modman de Thunderstore), ou ouvre un fichier de profil (.modstudio, .r2z). ModStudio te montre les mods avant d'installer ceux qui te manquent.",
+        'Paste the code a friend sent you (a ModStudio "MS1-…" code, or a Thunderstore r2modman code), or open a profile file (.modstudio, .r2z). ModStudio shows you the mods before installing the ones you\'re missing.',
+      )}
     </p>
   </header>
 
   {#if !imported}
     <section class="panel">
-      <label class="label" for="import-code">Code du profil</label>
+      <label class="label" for="import-code">{tr("Code du profil", "Profile code")}</label>
       <textarea
         id="import-code"
         class="field code"
         rows="4"
-        placeholder="MS1-… ou 0192f0a1-…"
+        placeholder={tr("MS1-… ou 0192f0a1-…", "MS1-… or 0192f0a1-…")}
         bind:value={text}
         onkeydown={(e) => {
           if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) read();
         }}
       ></textarea>
       <div class="row">
-        <button class="btn btn-primary" onclick={read} disabled={reading || !text.trim()}>{reading ? "Lecture…" : "Lire le code"}</button>
-        <button class="btn" onclick={openFile} disabled={reading}>Ouvrir un fichier…</button>
+        <button class="btn btn-primary" onclick={read} disabled={reading || !text.trim()}>{reading ? tr("Lecture…", "Reading…") : tr("Lire le code", "Read code")}</button>
+        <button class="btn" onclick={openFile} disabled={reading}>{tr("Ouvrir un fichier…", "Open a file…")}</button>
       </div>
       {#if readError}<ErrorNotice error={readError} />{/if}
     </section>
@@ -496,29 +516,34 @@
     <section class="panel">
       <div class="summary">
         <div>
-          <p class="label">Profil</p>
+          <p class="label">{tr("Profil", "Profile")}</p>
           <h2>{profile.name}</h2>
           <div class="chips">
             <span class="chip">{source === "cl" ? (clGame?.listName ?? sourceLabels.cl) : sourceLabels[profile.source]}</span>
             {#if community || clGame || profile.game.name}<span class="chip">{gameName}</span>{/if}
             {#if imported.origin === "r2modman"}<span class="chip">r2modman</span>{/if}
-            <span class="muted small">{profile.mods.length} {profile.mods.length > 1 ? "mods" : "mod"}</span>
+            <span class="muted small"
+              >{profile.mods.length}
+              {tr(profile.mods.length > 1 ? "mods" : "mod", profile.mods.length === 1 ? "mod" : "mods")}</span
+            >
           </div>
         </div>
-        <button class="btn btn-ghost" onclick={reset} disabled={running}>Autre profil</button>
+        <button class="btn btn-ghost" onclick={reset} disabled={running}>{tr("Autre profil", "Another profile")}</button>
       </div>
 
       {#if source === "ts" && (imported.origin === "r2modman" || !profile.game.key || (tsStore.communities && !tsStore.community(profile.game.key)))}
         <label class="game-pick">
-          <span class="small">{imported.origin === "r2modman" ? "Jeu du profil (r2modman ne le précise pas)" : "Jeu"}</span>
+          <span class="small">{imported.origin === "r2modman"
+              ? tr("Jeu du profil (r2modman ne le précise pas)", "Profile's game (r2modman doesn't say)")
+              : tr("Jeu", "Game")}</span>
           <select class="field" bind:value={tsKey} disabled={running}>
-            <option value="" disabled>Choisis le jeu</option>
+            <option value="" disabled>{tr("Choisis le jeu", "Choose the game")}</option>
             {#if configuredTs.length}
-              <optgroup label="Jeux déjà configurés">
+              <optgroup label={tr("Jeux déjà configurés", "Games already set up")}>
                 {#each configuredTs as c (c.identifier)}<option value={c.identifier}>{c.name}</option>{/each}
               </optgroup>
             {/if}
-            <optgroup label="Tous les jeux de Thunderstore">
+            <optgroup label={tr("Tous les jeux de Thunderstore", "All Thunderstore games")}>
               {#each otherTs as c (c.identifier)}<option value={c.identifier}>{c.name}</option>{/each}
             </optgroup>
           </select>
@@ -526,18 +551,43 @@
       {/if}
 
       {#if blocker === "modio-key"}
-        <p class="small warn"><Icon name="warning" size={15} />Ces mods viennent de mod.io : ajoute d'abord ta clé API mod.io.</p>
-        <div><button class="btn btn-primary" onclick={() => nav.openSettings()}>Ouvrir les réglages</button></div>
+        <p class="small warn"><Icon name="warning" size={15} />{tr(
+            "Ces mods viennent de mod.io : ajoute d'abord ta clé API mod.io.",
+            "These mods come from mod.io: add your mod.io API key first.",
+          )}
+        </p>
+        <div><button class="btn btn-primary" onclick={() => nav.openSettings()}>{tr("Ouvrir les réglages", "Open settings")}</button></div>
       {:else if blocker === "nexus-key"}
-        <p class="small warn"><Icon name="warning" size={15} />Ces mods viennent de Nexus Mods : ajoute d'abord ta clé API Nexus Mods.</p>
-        <div><button class="btn btn-primary" onclick={() => nav.openNexusAccount({ name: "import" })}>Ajouter ma clé Nexus</button></div>
+        <p class="small warn"><Icon name="warning" size={15} />{tr(
+            "Ces mods viennent de Nexus Mods : ajoute d'abord ta clé API Nexus Mods.",
+            "These mods come from Nexus Mods: add your Nexus Mods API key first.",
+          )}
+        </p>
+        <div>
+          <button class="btn btn-primary" onclick={() => nav.openNexusAccount({ name: "import" })}>
+            {tr("Ajouter ma clé Nexus", "Add my Nexus key")}
+          </button>
+        </div>
       {:else if blocker === "ts-unknown"}
-        <p class="small warn"><Icon name="warning" size={15} />Ce jeu n'est pas sur Thunderstore : choisis-en un autre.</p>
+        <p class="small warn"><Icon name="warning" size={15} />{tr(
+            "Ce jeu n'est pas sur Thunderstore : choisis-en un autre.",
+            "This game isn't on Thunderstore: choose another one.",
+          )}
+        </p>
       {:else if blocker === "cl-unknown"}
-        <p class="small warn"><Icon name="warning" size={15} />Ce profil est pour un jeu que cette version de ModStudio ne connaît pas : mets ModStudio à jour.</p>
+        <p class="small warn"><Icon name="warning" size={15} />{tr(
+            "Ce profil est pour un jeu que cette version de ModStudio ne connaît pas : mets ModStudio à jour.",
+            "This profile is for a game this version of ModStudio doesn't know: update ModStudio.",
+          )}
+        </p>
       {:else if blocker === "folder" && gameId !== null}
         <div class="setup">
-          <p class="small">Indique d'abord où {gameName} est installé : les mods y seront rangés.</p>
+          <p class="small">
+            {tr(
+              `Indique d'abord où ${gameName} est installé : les mods y seront rangés.`,
+              `First tell ModStudio where ${gameName} is installed: the mods will go there.`,
+            )}
+          </p>
           {#if source === "modio"}
             <FolderSetup gameId={gameId} gameName={profile.game.name} onsaved={() => {}} oncancel={() => {}} />
           {:else if source === "nexus"}
@@ -551,7 +601,11 @@
       {/if}
 
       {#if community && !community.supported}
-        <p class="small warn"><Icon name="warning" size={15} />ModStudio ne sait pas encore installer les mods de ce jeu.</p>
+        <p class="small warn"><Icon name="warning" size={15} />{tr(
+            "ModStudio ne sait pas encore installer les mods de ce jeu.",
+            "ModStudio can't install mods for this game yet.",
+          )}
+        </p>
       {/if}
 
       {#if !blocker}
@@ -560,16 +614,26 @@
           {#if pinnable}
             <label class="check small">
               <input type="checkbox" bind:checked={sameVersions} disabled={running} />
-              Installer les mêmes versions que dans le profil (conseillé pour jouer ensemble)
+              {tr(
+                "Installer les mêmes versions que dans le profil (conseillé pour jouer ensemble)",
+                "Install the same versions as in the profile (recommended for playing together)",
+              )}
             </label>
           {/if}
           {#if withProfiles}
             <label class="check small">
               <input type="checkbox" bind:checked={makeProfile} disabled={running} />
               <span>
-                Créer le profil « {profileName} » avec ces mods : tes autres mods y sont désactivés, et tu retrouves tes
-                mods actuels dans le profil « {config?.activeProfile ??
-                  (config?.profiles?.some((p) => p.name.toLowerCase() === "principal") ? "Avant l'import" : "Principal")} ».
+                {#if english}
+                  Create the "{profileName}" profile with these mods: your other mods are disabled in it, and you'll find
+                  your current mods in the "{config?.activeProfile ??
+                    (config?.profiles?.some((p) => p.name.toLowerCase() === "principal") ? "Avant l'import" : "Principal")}"
+                  profile.
+                {:else}
+                  Créer le profil « {profileName} » avec ces mods : tes autres mods y sont désactivés, et tu retrouves tes
+                  mods actuels dans le profil « {config?.activeProfile ??
+                    (config?.profiles?.some((p) => p.name.toLowerCase() === "principal") ? "Avant l'import" : "Principal")} ».
+                {/if}
               </span>
             </label>
           {/if}
@@ -577,20 +641,33 @@
             <label class="check small">
               <input type="checkbox" bind:checked={applyConfigs} disabled={running} />
               <span>
-                Remplacer les réglages des mods par ceux du profil ({imported.configs}
-                {imported.configs > 1 ? "fichiers" : "fichier"}). Ceux que tu avais sont gardés de côté.
+                {#if english}
+                  Replace the mods' settings with the profile's ({imported.configs}
+                  {imported.configs === 1 ? "file" : "files"}). The ones you had are set aside.
+                {:else}
+                  Remplacer les réglages des mods par ceux du profil ({imported.configs}
+                  {imported.configs > 1 ? "fichiers" : "fichier"}). Ceux que tu avais sont gardés de côté.
+                {/if}
               </span>
             </label>
           {/if}
         </div>
         {#if source === "nexus" && !nexusStore.premium && toInstall > 0}
           <p class="small muted">
-            Sans compte Premium, la page de chaque fichier va s'ouvrir : clique sur « Slow download » à chaque fois.
+            {tr(
+              "Sans compte Premium, la page de chaque fichier va s'ouvrir : clique sur « Slow download » à chaque fois.",
+              'Without a Premium account, each file\'s page will open: click "Slow download" each time.',
+            )}
           </p>
         {/if}
         {#if imported.skipped.length}
           <p class="small muted">
-            {imported.skipped.length > 1 ? `${imported.skipped.length} mods désactivés dans le profil ne seront pas installés` : "Un mod désactivé dans le profil ne sera pas installé"} :
+            {imported.skipped.length > 1
+              ? tr(
+                  `${imported.skipped.length} mods désactivés dans le profil ne seront pas installés :`,
+                  `${imported.skipped.length} mods disabled in the profile won't be installed:`,
+                )
+              : tr("Un mod désactivé dans le profil ne sera pas installé :", "One mod disabled in the profile won't be installed:")}
             {imported.skipped.join(", ")}.
           </p>
         {/if}
@@ -598,23 +675,36 @@
         {#if running}
           <div class="progress">
             <p class="small strong">
-              {stopping ? "Arrêt après ce mod…" : current ? `Installation ${position} sur ${steps} : ${current.name}` : "Création du profil…"}
+              {stopping
+                ? tr("Arrêt après ce mod…", "Stopping after this mod…")
+                : current
+                  ? tr(`Installation ${position} sur ${steps} : ${current.name}`, `Installing ${position} of ${steps}: ${current.name}`)
+                  : tr("Création du profil…", "Creating the profile…")}
             </p>
             {#if waitingNexus && current}
-              <p class="small muted">En attente du clic sur « Slow download » dans la page de Nexus Mods.</p>
+              <p class="small muted">
+                {tr(
+                  "En attente du clic sur « Slow download » dans la page de Nexus Mods.",
+                  'Waiting for you to click "Slow download" on the Nexus Mods page.',
+                )}
+              </p>
               <div>
-                <button class="btn" onclick={() => nexusStore.reopen(gameId!, profile.game.key, Number(current!.id))}>Rouvrir la page</button>
+                <button class="btn" onclick={() => nexusStore.reopen(gameId!, profile.game.key, Number(current!.id))}>{tr("Rouvrir la page", "Reopen the page")}</button>
               </div>
             {:else if currentProgress}
               <ProgressBar progress={currentProgress} />
             {/if}
-            <div><button class="btn btn-ghost" onclick={stop} disabled={stopping}>Arrêter</button></div>
+            <div><button class="btn btn-ghost" onclick={stop} disabled={stopping}>{tr("Arrêter", "Stop")}</button></div>
           </div>
         {:else if summary}
           <div class="done" role="status">
             <p class="strong">
               {#if summary.done === 0 && summary.failed === 0 && summary.stopped === 0}
-                Tout était déjà installé.
+                {tr("Tout était déjà installé.", "Everything was already installed.")}
+              {:else if english}
+                {summary.done} {summary.done === 1 ? "mod installed or enabled" : "mods installed or enabled"}{summary.failed
+                  ? `, ${summary.failed} failed`
+                  : ""}{summary.stopped ? `, ${summary.stopped} not installed yet (stopped)` : ""}.
               {:else}
                 {summary.done} {summary.done > 1 ? "mods installés ou activés" : "mod installé ou activé"}{summary.failed
                   ? `, ${summary.failed} en échec`
@@ -623,9 +713,9 @@
             </p>
             {#each summary.notes as n (n)}<p class="small">{n}</p>{/each}
             <div class="row">
-              <button class="btn btn-primary" onclick={() => nav.openInstalled()}>Voir les mods installés</button>
+              <button class="btn btn-primary" onclick={() => nav.openInstalled()}>{tr("Voir les mods installés", "See installed mods")}</button>
               {#if summary.failed || summary.stopped}
-                <button class="btn" onclick={run}>{summary.failed ? "Réessayer ceux qui ont échoué" : "Reprendre"}</button>
+                <button class="btn" onclick={run}>{summary.failed ? tr("Réessayer ceux qui ont échoué", "Try the failed ones again") : tr("Reprendre", "Resume")}</button>
               {/if}
             </div>
           </div>
@@ -633,11 +723,17 @@
           {@const nothing = toInstall === 0 && toEnable === 0 && !(withProfiles && makeProfile) && !applyConfigs}
           <div class="row">
             {#if nothing}
-              <p class="small ok"><Icon name="check" size={15} />Tu as déjà tous les mods de ce profil, dans les mêmes versions.</p>
+              <p class="small ok"><Icon name="check" size={15} />{tr(
+                  "Tu as déjà tous les mods de ce profil, dans les mêmes versions.",
+                  "You already have all the mods in this profile, in the same versions.",
+                )}
+              </p>
             {:else}
               <button class="btn btn-primary big" onclick={run} disabled={!!community && !community.supported}>
                 <Icon name="download" size={16} />
-                {toInstall > 0 ? `Installer ${toInstall} ${toInstall > 1 ? "mods" : "mod"}` : "Appliquer le profil"}
+                {toInstall > 0
+                  ? tr(`Installer ${toInstall} ${toInstall > 1 ? "mods" : "mod"}`, `Install ${toInstall} ${toInstall === 1 ? "mod" : "mods"}`)
+                  : tr("Appliquer le profil", "Apply the profile")}
               </button>
             {/if}
           </div>
@@ -650,7 +746,7 @@
       {/if}
     </section>
 
-    <section class="list" aria-label="Mods du profil">
+    <section class="list" aria-label={tr("Mods du profil", "Profile mods")}>
       <ul>
         {#each plan as p (p.mod.id)}
           {@const row = rows.get(p.mod.id)}
@@ -658,22 +754,22 @@
             <span class="name">
               <span class="strong">{p.mod.name}</span>
               {#if p.mod.version}<span class="muted small">{p.mod.version}</span>{/if}
-              {#if p.mod.dep}<span class="muted small">mod nécessaire</span>{/if}
+              {#if p.mod.dep}<span class="muted small">{tr("mod nécessaire", "required mod")}</span>{/if}
             </span>
             <span class="state small">
               {#if row?.status === "running"}
-                <span class="accent">Installation…</span>
+                <span class="accent">{tr("Installation…", "Installing…")}</span>
               {:else if row?.status === "done"}
-                <span class="ok"><Icon name="check" size={14} />{p.action === "enable" ? "Activé" : "Installé"}</span>
+                <span class="ok"><Icon name="check" size={14} />{p.action === "enable" ? tr("Activé", "Enabled") : tr("Installé", "Installed")}</span>
                 {#if row.message}<span class="muted">({row.message})</span>{/if}
               {:else if row?.status === "error"}
                 <span class="error">{row.message}</span>
               {:else if row?.status === "stopped"}
-                <span class="muted">Arrêté</span>
+                <span class="muted">{tr("Arrêté", "Stopped")}</span>
               {:else if row?.status === "kept"}
-                <span class="muted">{row.message ?? (config ? stateLabel(p) : "Déjà installé")}</span>
+                <span class="muted">{row.message ?? (config ? stateLabel(p) : tr("Déjà installé", "Already installed"))}</span>
               {:else}
-                <span class="muted">{config ? stateLabel(p) : "À installer"}</span>
+                <span class="muted">{config ? stateLabel(p) : tr("À installer", "To install")}</span>
               {/if}
             </span>
           </li>

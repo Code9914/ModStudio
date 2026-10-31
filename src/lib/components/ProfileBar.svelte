@@ -1,6 +1,7 @@
 <script lang="ts">
   // Profils de mods d'un jeu : passer de l'un à l'autre, en créer, renommer, supprimer.
   import { asAppError, type GameInstall, type ProfileApplied, type ProfileEdit } from "$lib/api";
+  import { tr } from "$lib/i18n.svelte";
   import Icon from "./Icon.svelte";
 
   let {
@@ -71,51 +72,56 @@
 <div class="profiles">
   {#if mode !== "idle"}
     <form class="row" onsubmit={submit}>
-      <label class="visually-hidden" for="profile-name-{game.gameId}">Nom du profil</label>
+      <label class="visually-hidden" for="profile-name-{game.gameId}">{tr("Nom du profil", "Profile name")}</label>
       <input
         id="profile-name-{game.gameId}"
         class="field"
         maxlength="40"
-        placeholder={mode === "create" ? "Nom du nouveau profil" : "Nouveau nom"}
+        placeholder={mode === "create" ? tr("Nom du nouveau profil", "New profile name") : tr("Nouveau nom", "New name")}
         bind:value={draft}
       />
       <button class="btn btn-primary" type="submit" disabled={busy || !draft.trim()}>
-        {mode === "create" ? "Créer" : "Renommer"}
+        {mode === "create" ? tr("Créer", "Create") : tr("Renommer", "Rename")}
       </button>
-      <button class="btn btn-ghost" type="button" onclick={() => ((mode = "idle"), (draft = ""))}>Annuler</button>
+      <button class="btn btn-ghost" type="button" onclick={() => ((mode = "idle"), (draft = ""))}>{tr("Annuler", "Cancel")}</button>
     </form>
     {#if mode === "create"}
-      <p class="small muted">Le nouveau profil part des mods activés en ce moment.</p>
+      <p class="small muted">
+        {tr("Le nouveau profil part des mods activés en ce moment.", "The new profile starts from the mods enabled right now.")}
+      </p>
     {/if}
   {:else if profiles.length === 0}
-    <button class="btn btn-ghost small-btn" onclick={() => (mode = "create")} title="Garder plusieurs ensembles de mods pour ce jeu">
-      <Icon name="plus" size={14} />Créer un profil
+    <button class="btn btn-ghost small-btn" onclick={() => (mode = "create")} title={tr("Garder plusieurs ensembles de mods pour ce jeu", "Keep several sets of mods for this game")}>
+      <Icon name="plus" size={14} />{tr("Créer un profil", "Create a profile")}
     </button>
   {:else}
     <div class="row">
       <label class="select">
-        <span class="label">Profil</span>
+        <span class="label">{tr("Profil", "Profile")}</span>
         <select class="field" value={active ?? ""} onchange={(e) => apply(e.currentTarget.value)} disabled={busy}>
           {#each profiles as p (p.name)}
-            <option value={p.name}>{p.name} ({p.mods.length} {p.mods.length > 1 ? "mods" : "mod"})</option>
+            <option value={p.name}
+              >{p.name} ({p.mods.length}
+              {tr(p.mods.length > 1 ? "mods" : "mod", p.mods.length === 1 ? "mod" : "mods")})</option
+            >
           {/each}
         </select>
       </label>
-      <button class="btn btn-ghost small-btn" onclick={() => (mode = "create")} disabled={busy}><Icon name="plus" size={14} />Nouveau</button>
-      <button class="btn btn-ghost small-btn" onclick={() => ((mode = "rename"), (draft = active ?? ""))} disabled={busy || !active}>Renommer</button>
+      <button class="btn btn-ghost small-btn" onclick={() => (mode = "create")} disabled={busy}><Icon name="plus" size={14} />{tr("Nouveau", "New")}</button>
+      <button class="btn btn-ghost small-btn" onclick={() => ((mode = "rename"), (draft = active ?? ""))} disabled={busy || !active}>{tr("Renommer", "Rename")}</button>
       <button class="btn btn-ghost small-btn" class:danger={confirmDelete} onclick={remove} disabled={busy || !active}>
-        {confirmDelete ? "Confirmer" : "Supprimer"}
+        {confirmDelete ? tr("Confirmer", "Confirm") : tr("Supprimer", "Delete")}
       </button>
-      {#if busy}<span class="small muted">Changement en cours…</span>{/if}
+      {#if busy}<span class="small muted">{tr("Changement en cours…", "Switching…")}</span>{/if}
     </div>
   {/if}
   {#if error}<p class="small error">{error}</p>{/if}
   {#if issues.length}
     <div class="issues">
-      <p class="small strong">Certains mods n'ont pas pu changer d'état :</p>
+      <p class="small strong">{tr("Certains mods n'ont pas pu changer d'état :", "Some mods couldn't be switched:")}</p>
       <ul>
         {#each issues as i (i.modId)}
-          <li class="small"><span class="strong">{i.name}</span> : {i.message}</li>
+          <li class="small"><span class="strong">{i.name}</span>{tr(" : ", ": ")}{i.message}</li>
         {/each}
       </ul>
     </div>

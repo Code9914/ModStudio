@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Progress } from "$lib/installs.svelte";
+  import { tr } from "$lib/i18n.svelte";
 
   let { progress, oncancel }: { progress: Progress; oncancel?: () => void } = $props();
 
@@ -18,8 +19,8 @@
     <span class="fill" class:indeterminate={percent === null} style:width={percent === null ? "35%" : `${percent}%`}></span>
   </div>
   <div class="row">
-    <span class="label">{progress.label}{percent !== null ? ` (${percent} %)` : ""}</span>
-    {#if oncancel}<button class="btn btn-ghost cancel" onclick={oncancel}>Annuler</button>{/if}
+    <span class="label">{progress.label}{percent !== null ? tr(` (${percent} %)`, ` (${percent}%)`) : ""}</span>
+    {#if oncancel}<button class="btn btn-ghost cancel" onclick={oncancel}>{tr("Annuler", "Cancel")}</button>{/if}
   </div>
 </div>
 

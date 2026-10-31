@@ -3,6 +3,7 @@
   import { api, asAppError, type AppError } from "$lib/api";
   import { installs } from "$lib/installs.svelte";
   import { nav } from "$lib/nav.svelte";
+  import { tr } from "$lib/i18n.svelte";
   import AccountView from "$lib/components/AccountView.svelte";
   import ErrorNotice from "$lib/components/ErrorNotice.svelte";
   import GamesView from "$lib/components/GamesView.svelte";
@@ -233,7 +234,7 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="app">
-  <nav class="rail" aria-label="Navigation principale">
+  <nav class="rail" aria-label={tr("Navigation principale", "Main navigation")}>
     <p class="wordmark">ModStudio</p>
 
     <p class="section">mod.io</p>
@@ -245,7 +246,7 @@
           disabled={!ready}
           onclick={() => nav.openGames()}
         >
-          <Icon name="grid" size={18} />Jeux
+          <Icon name="grid" size={18} />{tr("Jeux", "Games")}
         </button>
       </li>
       {#if ready && appearance.value.railGames}
@@ -275,7 +276,7 @@
           disabled={!ready}
           onclick={() => nav.openLibrary()}
         >
-          <Icon name="library" size={18} />Mes mods
+          <Icon name="library" size={18} />{tr("Mes mods", "My mods")}
         </button>
       </li>
     </ul>
@@ -285,11 +286,11 @@
       <li>
         <button
           class="nav-item"
-          aria-label="Jeux Nexus Mods"
+          aria-label={tr("Jeux Nexus Mods", "Nexus Mods games")}
           aria-current={nexusGamesCurrent ? "page" : undefined}
           onclick={() => nav.openNexusGames()}
         >
-          <Icon name="grid" size={18} />Jeux
+          <Icon name="grid" size={18} />{tr("Jeux", "Games")}
         </button>
       </li>
       {#if appearance.value.railGames}
@@ -321,7 +322,7 @@
               : undefined}
             onclick={() => nav.openNexusTracked()}
           >
-            <Icon name="bell" size={18} />Mods suivis
+            <Icon name="bell" size={18} />{tr("Mods suivis", "Tracked mods")}
           </button>
         </li>
       {/if}
@@ -332,11 +333,11 @@
       <li>
         <button
           class="nav-item"
-          aria-label="Jeux Thunderstore"
+          aria-label={tr("Jeux Thunderstore", "Thunderstore games")}
           aria-current={tsGamesCurrent ? "page" : undefined}
           onclick={() => nav.openTsGames()}
         >
-          <Icon name="grid" size={18} />Jeux
+          <Icon name="grid" size={18} />{tr("Jeux", "Games")}
         </button>
       </li>
       {#if appearance.value.railGames}
@@ -366,16 +367,16 @@
       {/if}
     </ul>
 
-    <p class="section">Communautés</p>
+    <p class="section">{tr("Communautés", "Communities")}</p>
     <ul class="nav">
       <li>
         <button
           class="nav-item"
-          aria-label="Jeux des communautés"
+          aria-label={tr("Jeux des communautés", "Community games")}
           aria-current={clGamesCurrent ? "page" : undefined}
           onclick={() => nav.openClGames()}
         >
-          <Icon name="grid" size={18} />Jeux
+          <Icon name="grid" size={18} />{tr("Jeux", "Games")}
         </button>
       </li>
       {#if appearance.value.railGames}
@@ -416,8 +417,11 @@
             : undefined}
           onclick={() => nav.openInstalled()}
         >
-          <Icon name="download" size={18} />Installés
-          {#if updates > 0}<span class="badge" aria-label="{updates} mises à jour">{updates}</span>{/if}
+          <Icon name="download" size={18} />{tr("Installés", "Installed")}
+          {#if updates > 0}<span
+              class="badge"
+              aria-label={tr(`${updates} mises à jour`, updates === 1 ? "1 update" : `${updates} updates`)}>{updates}</span
+            >{/if}
         </button>
       </li>
       <li>
@@ -426,7 +430,7 @@
           aria-current={nav.view.name === "settings" ? "page" : undefined}
           onclick={() => nav.openSettings()}
         >
-          <Icon name="gear" size={18} />Réglages
+          <Icon name="gear" size={18} />{tr("Réglages", "Settings")}
         </button>
       </li>
     </ul>
@@ -436,7 +440,7 @@
         <button
           class="account"
           aria-current={nav.view.name === "account" ? "page" : undefined}
-          aria-label={nav.loggedIn ? "Mon compte mod.io" : "Se connecter à mod.io"}
+          aria-label={nav.loggedIn ? tr("Mon compte mod.io", "My mod.io account") : tr("Se connecter à mod.io", "Sign in to mod.io")}
           onclick={() => nav.openAccount()}
         >
           {#if nav.loggedIn}
@@ -446,14 +450,14 @@
               <span class="account-avatar placeholder"><Icon name="user" size={16} /></span>
             {/if}
             <span class="account-text">
-              <span class="ellipsis account-name">{user?.username ?? user?.display_name_portal ?? "Connecté"}</span>
-              <span class="account-sub">Compte mod.io</span>
+              <span class="ellipsis account-name">{user?.username ?? user?.display_name_portal ?? tr("Connecté", "Signed in")}</span>
+              <span class="account-sub">{tr("Compte mod.io", "mod.io account")}</span>
             </span>
           {:else}
             <span class="account-avatar placeholder"><Icon name="user" size={16} /></span>
             <span class="account-text">
-              <span class="account-name">Se connecter</span>
-              <span class="account-sub">pour s'abonner</span>
+              <span class="account-name">{tr("Se connecter", "Sign in")}</span>
+              <span class="account-sub">{tr("pour s'abonner", "to subscribe")}</span>
             </span>
           {/if}
         </button>
@@ -461,21 +465,21 @@
       <button
         class="account"
         aria-current={nav.view.name === "nexusAccount" ? "page" : undefined}
-        aria-label={nexusStore.ready ? "Mon compte Nexus Mods" : "Ajouter ma clé Nexus Mods"}
+        aria-label={nexusStore.ready ? tr("Mon compte Nexus Mods", "My Nexus Mods account") : tr("Ajouter ma clé Nexus Mods", "Add my Nexus Mods key")}
         onclick={() => nav.openNexusAccount()}
       >
         <span class="account-avatar placeholder nexus"><Icon name="user" size={16} /></span>
         <span class="account-text">
           {#if nexusStore.ready}
-            <span class="ellipsis account-name">{nexusStore.auth?.user?.name ?? "Clé enregistrée"}</span>
+            <span class="ellipsis account-name">{nexusStore.auth?.user?.name ?? tr("Clé enregistrée", "Key saved")}</span>
             <span class="account-sub">Nexus Mods{nexusStore.premium ? ", Premium" : ""}</span>
           {:else}
             <span class="account-name">Nexus Mods</span>
-            <span class="account-sub">ajouter ma clé</span>
+            <span class="account-sub">{tr("ajouter ma clé", "add my key")}</span>
           {/if}
         </span>
       </button>
-      <p class="version muted">Version 0.12, client non officiel</p>
+      <p class="version muted">{tr("Version 0.12, client non officiel", "Version 0.12, unofficial client")}</p>
     </div>
   </nav>
 

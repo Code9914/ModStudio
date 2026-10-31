@@ -1,5 +1,7 @@
 <script lang="ts">
   // Interrupteur « activé / désactivé » d'un mod installé.
+  import { tr } from "$lib/i18n.svelte";
+
   let {
     enabled,
     name,
@@ -14,8 +16,10 @@
   type="button"
   role="switch"
   aria-checked={enabled}
-  aria-label={`${enabled ? "Désactiver" : "Activer"} « ${name} »`}
-  title={enabled ? "Activé : clique pour désactiver sans désinstaller" : "Désactivé : clique pour réactiver"}
+  aria-label={enabled ? tr(`Désactiver « ${name} »`, `Disable "${name}"`) : tr(`Activer « ${name} »`, `Enable "${name}"`)}
+  title={enabled
+    ? tr("Activé : clique pour désactiver sans désinstaller", "Enabled: click to disable without uninstalling")
+    : tr("Désactivé : clique pour réactiver", "Disabled: click to enable again")}
   disabled={busy}
   onclick={() => ontoggle(!enabled)}
 >

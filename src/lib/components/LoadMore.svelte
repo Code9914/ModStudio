@@ -1,6 +1,7 @@
 <script lang="ts" generics="T extends { id: number }">
   import { inview, type PagedList } from "$lib/paged.svelte";
   import { exact } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
 
   let { list, noun }: { list: PagedList<T>; noun: string } = $props();
@@ -15,10 +16,15 @@
        la suite se charge aussitôt, sans attendre un défilement. -->
   {#key list.items.length}
     <div class="load-more" use:inview={() => list.more()}>
-      <p class="muted">{exact(list.items.length)} {noun} affichés sur {exact(list.total)}</p>
+      <p class="muted">
+        {tr(
+          `${exact(list.items.length)} ${noun} affichés sur ${exact(list.total)}`,
+          `Showing ${exact(list.items.length)} of ${exact(list.total)} ${noun}`,
+        )}
+      </p>
       {#if list.hasMore}
         <button class="btn" onclick={() => list.more()} disabled={list.loading}>
-          {list.loading ? "Chargement…" : "Afficher plus"}
+          {list.loading ? tr("Chargement…", "Loading…") : tr("Afficher plus", "Show more")}
         </button>
       {/if}
     </div>

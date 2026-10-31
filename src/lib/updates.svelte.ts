@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { bytes } from "./format";
+import { tr } from "./i18n.svelte";
 import type { Progress } from "./installs.svelte";
 
 class AppUpdates {
@@ -51,7 +52,7 @@ class AppUpdates {
     this.error = null;
     let received = 0;
     let total = 0;
-    this.progress = { label: "Téléchargement de la mise à jour…", ratio: null };
+    this.progress = { label: tr("Téléchargement de la mise à jour…", "Downloading the update…"), ratio: null };
     try {
       await update.downloadAndInstall((event) => {
         if (event.event === "Started") {
@@ -59,11 +60,13 @@ class AppUpdates {
         } else if (event.event === "Progress") {
           received += event.data.chunkLength;
           this.progress = {
-            label: total ? `Téléchargement : ${bytes(received)} sur ${bytes(total)}` : `Téléchargement : ${bytes(received)}`,
+            label: total
+              ? tr(`Téléchargement : ${bytes(received)} sur ${bytes(total)}`, `Downloading: ${bytes(received)} of ${bytes(total)}`)
+              : tr(`Téléchargement : ${bytes(received)}`, `Downloading: ${bytes(received)}`),
             ratio: total ? Math.min(1, received / total) : null,
           };
         } else if (event.event === "Finished") {
-          this.progress = { label: "Installation…", ratio: null };
+          this.progress = { label: tr("Installation…", "Installing…"), ratio: null };
         }
       });
       // Sous Windows, l'installateur ferme ModStudio lui-même ; ailleurs on relance.

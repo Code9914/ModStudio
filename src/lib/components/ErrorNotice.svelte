@@ -3,6 +3,7 @@
   import type { AppError } from "$lib/api";
   import { nav } from "$lib/nav.svelte";
   import { nexusStore } from "$lib/nexus.svelte";
+  import { tr } from "$lib/i18n.svelte";
   import Icon from "./Icon.svelte";
 
   let { error, onretry }: { error: AppError; onretry?: () => void } = $props();
@@ -43,21 +44,21 @@
   <div class="body">
     <p>{error.message}</p>
     {#if error.kind === "rate_limited" && remaining > 0}
-      <p class="muted">Nouvel essai possible dans {remaining} s.</p>
+      <p class="muted">{tr(`Nouvel essai possible dans ${remaining} s.`, `You can try again in ${remaining} s.`)}</p>
     {/if}
   </div>
   <div class="actions">
     {#if needsSettings}
-      <button class="btn btn-primary" onclick={() => nav.openSettings()}>Ouvrir les réglages</button>
+      <button class="btn btn-primary" onclick={() => nav.openSettings()}>{tr("Ouvrir les réglages", "Open settings")}</button>
     {/if}
     {#if needsLogin}
-      <button class="btn btn-primary" onclick={() => nav.openAccount(nav.view)}>Se connecter</button>
+      <button class="btn btn-primary" onclick={() => nav.openAccount(nav.view)}>{tr("Se connecter", "Sign in")}</button>
     {/if}
     {#if needsNexusKey && nav.view.name !== "nexusAccount"}
-      <button class="btn btn-primary" onclick={() => nav.openNexusAccount(nav.view)}>Ma clé Nexus</button>
+      <button class="btn btn-primary" onclick={() => nav.openNexusAccount(nav.view)}>{tr("Ma clé Nexus", "My Nexus key")}</button>
     {/if}
     {#if onretry}
-      <button class="btn" onclick={onretry} disabled={remaining > 0}>Réessayer</button>
+      <button class="btn" onclick={onretry} disabled={remaining > 0}>{tr("Réessayer", "Try again")}</button>
     {/if}
   </div>
 </div>
