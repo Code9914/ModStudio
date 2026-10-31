@@ -4,6 +4,7 @@
   import { SvelteSet } from "svelte/reactivity";
   import { asAppError, nexus, type AppError, type NexusMod } from "$lib/api";
   import { count } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import { nexusStore } from "$lib/nexus.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
@@ -61,23 +62,35 @@
 
 <div class="view">
   <header class="head">
-    <h1>Mods suivis</h1>
+    <h1>{tr("Mods suivis", "Tracked mods")}</h1>
     {#if mods}
       <p class="muted">
-        {shown.length === 0 ? "Aucun mod suivi" : `${shown.length} ${shown.length > 1 ? "mods suivis" : "mod suivi"}`}, sur ton compte Nexus Mods
+        {shown.length === 0
+          ? tr("Aucun mod suivi", "No tracked mods")
+          : tr(
+              `${shown.length} ${shown.length > 1 ? "mods suivis" : "mod suivi"}`,
+              `${shown.length} tracked ${shown.length > 1 ? "mods" : "mod"}`,
+            )}{tr(", sur ton compte Nexus Mods", ", on your Nexus Mods account")}
       </p>
     {/if}
   </header>
 
   {#if !nexusStore.ready}
     <div class="empty">
-      <p>Ajoute ta clé API Nexus Mods pour retrouver ici les mods que tu suis.</p>
-      <button class="btn btn-primary" onclick={() => nav.openNexusAccount({ name: "nexusTracked" })}>Ajouter ma clé</button>
+      <p>
+        {tr(
+          "Ajoute ta clé API Nexus Mods pour retrouver ici les mods que tu suis.",
+          "Add your Nexus Mods API key to see the mods you track here.",
+        )}
+      </p>
+      <button class="btn btn-primary" onclick={() => nav.openNexusAccount({ name: "nexusTracked" })}
+        >{tr("Ajouter ma clé", "Add my key")}</button
+      >
     </div>
   {:else if error}
     <ErrorNotice {error} onretry={load} />
   {:else if !mods}
-    <ul class="card-grid" aria-busy="true" aria-label="Chargement des mods suivis">
+    <ul class="card-grid" aria-busy="true" aria-label={tr("Chargement des mods suivis", "Loading tracked mods")}>
       {#each Array(6) as _, i (i)}
         <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
       {/each}
@@ -85,10 +98,12 @@
   {:else if shown.length === 0}
     <div class="empty">
       <p>
-        Tu ne suis aucun mod pour l'instant. Sur la fiche d'un mod, clique sur « Suivre » : il apparaîtra ici, et Nexus
-        Mods te préviendra de ses mises à jour.
+        {tr(
+          "Tu ne suis aucun mod pour l'instant. Sur la fiche d'un mod, clique sur « Suivre » : il apparaîtra ici, et Nexus Mods te préviendra de ses mises à jour.",
+          'You\'re not tracking any mods yet. On a mod\'s page, click "Track": it will show up here, and Nexus Mods will let you know about its updates.',
+        )}
       </p>
-      <button class="btn" onclick={() => nav.openNexusGames()}>Parcourir les jeux</button>
+      <button class="btn" onclick={() => nav.openNexusGames()}>{tr("Parcourir les jeux", "Browse games")}</button>
     </div>
   {:else}
     <ul class="card-grid">
@@ -98,20 +113,20 @@
             <Thumb
               src={m.thumbnailUrl ?? m.pictureUrl}
               label={m.name}
-              badges={m.adultContent ? [{ text: "Adulte", tone: "warn" }] : []}
+              badges={m.adultContent ? [{ text: tr("Adulte", "Adult"), tone: "warn" }] : []}
             />
             <span class="card-title">{m.name}</span>
             <span class="card-meta">
               <span class="chip">{m.game?.name ?? m.game?.domainName}</span>
-              {#if m.author}<span>par {m.author}</span>{/if}
+              {#if m.author}<span>{tr("par", "by")} {m.author}</span>{/if}
             </span>
             <span class="card-meta">
-              <span title="Recommandations"><Icon name="thumb" size={14} />{count(m.endorsements)}</span>
-              <span title="Téléchargements"><Icon name="download" size={14} />{count(m.downloads)}</span>
+              <span title={tr("Recommandations", "Endorsements")}><Icon name="thumb" size={14} />{count(m.endorsements)}</span>
+              <span title={tr("Téléchargements", "Downloads")}><Icon name="download" size={14} />{count(m.downloads)}</span>
             </span>
           </button>
           <button class="btn btn-ghost untrack" onclick={() => untrackMod(m)} disabled={removing.has(key(m))}>
-            {removing.has(key(m)) ? "…" : "Ne plus suivre"}
+            {removing.has(key(m)) ? "…" : tr("Ne plus suivre", "Stop tracking")}
           </button>
         </li>
       {/each}

@@ -3,6 +3,7 @@
   // voulues ; ModStudio installe ensuite les fichiers correspondants.
   import { untrack } from "svelte";
   import type { FomodGroup, FomodInstaller, FomodPlugin } from "$lib/api";
+  import { tr } from "$lib/i18n.svelte";
   import { fomodEval, fomodType } from "$lib/nexus.svelte";
   import Icon from "./Icon.svelte";
 
@@ -134,8 +135,8 @@
     for (const [gi, g] of step!.groups.entries()) {
       const n = selections[current][gi].length;
       const label = g.name || step!.name;
-      if (g.type === "SelectExactlyOne" && n !== 1) return `Choisis une option dans « ${label} ».`;
-      if (g.type === "SelectAtLeastOne" && n < 1) return `Choisis au moins une option dans « ${label} ».`;
+      if (g.type === "SelectExactlyOne" && n !== 1) return tr(`Choisis une option dans « ${label} ».`, `Choose an option in "${label}".`);
+      if (g.type === "SelectAtLeastOne" && n < 1) return tr(`Choisis au moins une option dans « ${label} ».`, `Choose at least one option in "${label}".`);
     }
     return null;
   }
@@ -165,10 +166,10 @@
   }
 
   const typeLabels: Record<string, string> = {
-    Required: "Obligatoire",
-    Recommended: "Conseillé",
-    NotUsable: "Indisponible",
-    CouldBeUsable: "Peut servir",
+    Required: tr("Obligatoire", "Required"),
+    Recommended: tr("Conseillé", "Recommended"),
+    NotUsable: tr("Indisponible", "Unavailable"),
+    CouldBeUsable: tr("Peut servir", "May be useful"),
   };
 
   function keydown(e: KeyboardEvent) {
@@ -182,10 +183,10 @@
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="fomod-title">
     <header class="head">
       <div>
-        <p class="eyebrow">Installation de « {modName} »</p>
+        <p class="eyebrow">{tr(`Installation de « ${modName} »`, `Installing "${modName}"`)}</p>
         <h2 id="fomod-title">{step?.name || installer.moduleName || "Options"}</h2>
       </div>
-      <p class="muted small">Étape {stepNumber}</p>
+      <p class="muted small">{tr(`Étape ${stepNumber}`, `Step ${stepNumber}`)}</p>
     </header>
 
     {#if step}
@@ -198,7 +199,13 @@
               <legend>
                 {group.name}
                 <span class="muted small">
-                  {#if group.type === "SelectExactlyOne"}une option{:else if group.type === "SelectAtMostOne"}une option au plus{:else if group.type === "SelectAtLeastOne"}au moins une{:else if group.type === "SelectAll"}tout est installé{:else}au choix{/if}
+                  {#if group.type === "SelectExactlyOne"}{tr("une option", "one option")}{:else if group.type === "SelectAtMostOne"}{tr(
+                      "une option au plus",
+                      "at most one option",
+                    )}{:else if group.type === "SelectAtLeastOne"}{tr("au moins une", "at least one")}{:else if group.type === "SelectAll"}{tr(
+                      "tout est installé",
+                      "everything is installed",
+                    )}{:else}{tr("au choix", "any")}{/if}
                 </span>
               </legend>
               {#each group.plugins as plugin, pi (pi)}
@@ -246,11 +253,11 @@
         <p class="problem small" role="alert"><Icon name="warning" size={15} /><span>{problem}</span></p>
       {/if}
       <div class="actions">
-        <button class="btn btn-ghost" onclick={oncancel} disabled={installing}>Annuler</button>
+        <button class="btn btn-ghost" onclick={oncancel} disabled={installing}>{tr("Annuler", "Cancel")}</button>
         <span class="spacer"></span>
-        <button class="btn" onclick={back} disabled={history.length === 0 || installing}>Précédent</button>
+        <button class="btn" onclick={back} disabled={history.length === 0 || installing}>{tr("Précédent", "Back")}</button>
         <button class="btn btn-primary" onclick={next} disabled={installing}>
-          {installing ? "Installation…" : isLast ? "Installer" : "Suivant"}
+          {installing ? tr("Installation…", "Installing…") : isLast ? tr("Installer", "Install") : tr("Suivant", "Next")}
         </button>
       </div>
     </footer>

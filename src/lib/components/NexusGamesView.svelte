@@ -2,6 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { nexus, nexusGameImage, type NexusGame, type NexusGameSort } from "$lib/api";
   import { count, exact } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import { launcherNames, nexusGameOf, nexusStore } from "$lib/nexus.svelte";
   import { PagedList } from "$lib/paged.svelte";
@@ -64,23 +65,27 @@
   <header class="head">
     <div>
       <p class="source">Nexus Mods</p>
-      <h1>Jeux</h1>
+      <h1>{tr("Jeux", "Games")}</h1>
       {#if list.loaded}
-        <p class="muted">{exact(list.total)} jeux {search ? `pour « ${search} »` : "sur Nexus Mods"}</p>
+        <p class="muted">
+          {exact(list.total)}
+          {tr("jeux", list.total === 1 ? "game" : "games")}
+          {search ? tr(`pour « ${search} »`, `for "${search}"`) : tr("sur Nexus Mods", "on Nexus Mods")}
+        </p>
       {/if}
     </div>
     <div class="tools">
       <label class="search">
-        <span class="visually-hidden">Rechercher un jeu sur Nexus Mods</span>
+        <span class="visually-hidden">{tr("Rechercher un jeu sur Nexus Mods", "Search for a game on Nexus Mods")}</span>
         <Icon name="search" />
-        <input class="field" type="search" placeholder="Rechercher un jeu" bind:value={query} />
+        <input class="field" type="search" placeholder={tr("Rechercher un jeu", "Search games")} bind:value={query} />
       </label>
       <label>
-        <span class="visually-hidden">Trier les jeux</span>
+        <span class="visually-hidden">{tr("Trier les jeux", "Sort games")}</span>
         <select class="field" bind:value={sort}>
-          <option value="downloads">Plus téléchargés</option>
-          <option value="mods">Plus de mods</option>
-          <option value="name">Nom (A à Z)</option>
+          <option value="downloads">{tr("Plus téléchargés", "Most downloaded")}</option>
+          <option value="mods">{tr("Plus de mods", "Most mods")}</option>
+          <option value="name">{tr("Nom (A à Z)", "Name (A to Z)")}</option>
         </select>
       </label>
     </div>
@@ -89,16 +94,18 @@
   {#if !nexusStore.ready && nexusStore.authLoaded}
     <div class="key-hint">
       <p>
-        Tu peux parcourir Nexus Mods sans compte. Pour installer des mods, ajoute ta clé API Nexus Mods : elle se
-        crée en deux clics sur le site.
+        {tr(
+          "Tu peux parcourir Nexus Mods sans compte. Pour installer des mods, ajoute ta clé API Nexus Mods : elle se crée en deux clics sur le site.",
+          "You can browse Nexus Mods without an account. To install mods, add your Nexus Mods API key: it takes two clicks to create on the site.",
+        )}
       </p>
-      <button class="btn btn-primary" onclick={() => nav.openNexusAccount(nav.view)}>Ajouter ma clé</button>
+      <button class="btn btn-primary" onclick={() => nav.openNexusAccount(nav.view)}>{tr("Ajouter ma clé", "Add my key")}</button>
     </div>
   {/if}
 
   {#if mine.length > 0 && !search}
-    <section class="mine" aria-label="Jeux avec des mods installés">
-      <h2>Tes jeux</h2>
+    <section class="mine" aria-label={tr("Jeux avec des mods installés", "Games with installed mods")}>
+      <h2>{tr("Tes jeux", "Your games")}</h2>
       <div class="mine-list">
         {#each mine as g (g.gameId)}
           <button
@@ -115,21 +122,21 @@
   {/if}
 
   {#if !search && (onPc.length > 0 || (nexusStore.detecting && nexusStore.detected === null))}
-    <section class="on-pc" aria-label="Jeux installés sur ce PC">
+    <section class="on-pc" aria-label={tr("Jeux installés sur ce PC", "Games installed on this PC")}>
       <div class="section-head">
-        <h2>Installés sur ce PC</h2>
+        <h2>{tr("Installés sur ce PC", "Installed on this PC")}</h2>
         {#if onPc.length > 0}<span class="muted">{onPc.length}</span>{/if}
         <button
           class="btn btn-ghost"
           onclick={() => nexusStore.detectGames(true)}
           disabled={nexusStore.detecting}
-          title="Chercher de nouveau les jeux Steam et Epic Games"
+          title={tr("Chercher de nouveau les jeux Steam et Epic Games", "Scan again for Steam and Epic Games games")}
         >
-          <Icon name="refresh" size={15} />{nexusStore.detecting ? "Recherche…" : "Actualiser"}
+          <Icon name="refresh" size={15} />{nexusStore.detecting ? tr("Recherche…", "Searching…") : tr("Actualiser", "Refresh")}
         </button>
       </div>
       {#if onPc.length === 0}
-        <ul class="card-grid posters" aria-busy="true" aria-label="Recherche des jeux installés">
+        <ul class="card-grid posters" aria-busy="true" aria-label={tr("Recherche des jeux installés", "Searching for installed games")}>
           {#each Array(6) as _, i (i)}
             <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
           {/each}
@@ -150,33 +157,33 @@
                   ]}
                 />
                 <span class="card-title">{g.nexus.name}</span>
-                <span class="card-meta"><span>{exact(g.nexus.mods)} mods sur Nexus</span></span>
+                <span class="card-meta"><span>{exact(g.nexus.mods)} {tr("mods sur Nexus", "mods on Nexus")}</span></span>
               </button>
             </li>
           {/each}
         </ul>
         {#if onPc.length > PC_PREVIEW}
           <button class="btn more" onclick={() => (showAllPc = !showAllPc)}>
-            {showAllPc ? "Afficher moins" : `Afficher les ${onPc.length} jeux`}
+            {showAllPc ? tr("Afficher moins", "Show less") : tr(`Afficher les ${onPc.length} jeux`, `Show all ${onPc.length} games`)}
           </button>
         {/if}
       {/if}
     </section>
-    <h2 class="all-title">Tous les jeux</h2>
+    <h2 class="all-title">{tr("Tous les jeux", "All games")}</h2>
   {/if}
 
   {#if list.error && list.items.length === 0}
     <ErrorNotice error={list.error} onretry={() => list.retry()} />
   {:else if !list.loaded}
-    <ul class="card-grid posters" aria-busy="true" aria-label="Chargement des jeux">
+    <ul class="card-grid posters" aria-busy="true" aria-label={tr("Chargement des jeux", "Loading games")}>
       {#each Array(12) as _, i (i)}
         <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
       {/each}
     </ul>
   {:else if list.items.length === 0}
     <div class="empty">
-      <p>Aucun jeu ne correspond à « {search} ».</p>
-      <button class="btn" onclick={() => (query = "")}>Effacer la recherche</button>
+      <p>{tr(`Aucun jeu ne correspond à « ${search} ».`, `No games match "${search}".`)}</p>
+      <button class="btn" onclick={() => (query = "")}>{tr("Effacer la recherche", "Clear search")}</button>
     </div>
   {:else}
     <!-- Affiches en portrait : l'image « hero » de Nexus est volontairement
@@ -189,7 +196,7 @@
             <span class="card-title">{game.name}</span>
             <span class="card-meta">
               <span>{exact(game.modCount)} mods</span>
-              <span title="Téléchargements"><Icon name="download" size={14} />{count(game.downloadCount)}</span>
+              <span title={tr("Téléchargements", "Downloads")}><Icon name="download" size={14} />{count(game.downloadCount)}</span>
             </span>
           </button>
         </li>
@@ -197,7 +204,7 @@
     </ul>
   {/if}
 
-  {#if list.items.length > 0}<LoadMore {list} noun="jeux" />{/if}
+  {#if list.items.length > 0}<LoadMore {list} noun={tr("jeux", "games")} />{/if}
 </div>
 
 <style>

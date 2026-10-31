@@ -3,6 +3,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { nexus, nexusGameImage, type NexusGame, type NexusMod, type NexusModSort } from "$lib/api";
   import { count, exact } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import { nexusStore } from "$lib/nexus.svelte";
   import { PagedList } from "$lib/paged.svelte";
@@ -60,11 +61,11 @@
   });
 
   const sorts: { value: NexusModSort; label: string }[] = [
-    { value: "endorsements", label: "Plus recommandés" },
-    { value: "downloads", label: "Plus téléchargés" },
-    { value: "updated", label: "Récemment mis à jour" },
-    { value: "created", label: "Nouveautés" },
-    { value: "name", label: "Nom (A à Z)" },
+    { value: "endorsements", label: tr("Plus recommandés", "Most endorsed") },
+    { value: "downloads", label: tr("Plus téléchargés", "Most downloaded") },
+    { value: "updated", label: tr("Récemment mis à jour", "Recently updated") },
+    { value: "created", label: tr("Nouveautés", "Newest") },
+    { value: "name", label: tr("Nom (A à Z)", "Name (A to Z)") },
   ];
 </script>
 
@@ -75,7 +76,7 @@
     {/if}
     <div class="banner-text">
       <button class="btn btn-ghost crumb" onclick={() => nav.openNexusGames()}>
-        <Icon name="back" />Tous les jeux Nexus
+        <Icon name="back" />{tr("Tous les jeux Nexus", "All Nexus games")}
       </button>
       <div class="title-row">
         {#if !posterFailed}
@@ -87,10 +88,10 @@
         <span class="chip">Nexus Mods</span>
         {#if stats}
           <span><strong>{exact(stats.modCount)}</strong> mods</span>
-          <span><strong>{count(stats.downloadCount)}</strong> téléchargements</span>
+          <span><strong>{count(stats.downloadCount)}</strong> {tr("téléchargements", "downloads")}</span>
         {/if}
         <button class="btn btn-ghost" onclick={() => openUrl(`https://www.nexusmods.com/games/${game.domainName}`)}>
-          Page du jeu sur Nexus Mods <Icon name="external" size={14} />
+          {tr("Page du jeu sur Nexus Mods", "Game page on Nexus Mods")} <Icon name="external" size={14} />
         </button>
       </div>
     </div>
@@ -101,12 +102,12 @@
 
     <div class="toolbar">
       <label class="search">
-        <span class="visually-hidden">Rechercher dans les mods de {game.name}</span>
+        <span class="visually-hidden">{tr(`Rechercher dans les mods de ${game.name}`, `Search ${game.name} mods`)}</span>
         <Icon name="search" />
-        <input class="field" type="search" placeholder="Rechercher dans les mods" bind:value={query} />
+        <input class="field" type="search" placeholder={tr("Rechercher dans les mods", "Search mods")} bind:value={query} />
       </label>
       <label>
-        <span class="visually-hidden">Trier les mods</span>
+        <span class="visually-hidden">{tr("Trier les mods", "Sort mods")}</span>
         <select class="field" bind:value={sort}>
           {#each sorts as s (s.value)}
             <option value={s.value}>{s.label}</option>
@@ -114,22 +115,27 @@
         </select>
       </label>
       {#if list.loaded}
-        <p class="muted">{exact(list.total)} résultats</p>
+        <p class="muted">{exact(list.total)} {tr("résultats", list.total === 1 ? "result" : "results")}</p>
       {/if}
     </div>
 
     {#if list.error && list.items.length === 0}
       <ErrorNotice error={list.error} onretry={() => list.retry()} />
     {:else if !list.loaded}
-      <ul class="card-grid" aria-busy="true" aria-label="Chargement des mods">
+      <ul class="card-grid" aria-busy="true" aria-label={tr("Chargement des mods", "Loading mods")}>
         {#each Array(9) as _, i (i)}
           <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
         {/each}
       </ul>
     {:else if list.items.length === 0}
       <div class="empty">
-        <p>Aucun mod ne correspond{search ? ` à « ${search} »` : ""}.</p>
-        {#if search}<button class="btn" onclick={() => (query = "")}>Effacer la recherche</button>{/if}
+        <p>
+          {tr(
+            `Aucun mod ne correspond${search ? ` à « ${search} »` : ""}.`,
+            `No mods match${search ? ` "${search}"` : ""}.`,
+          )}
+        </p>
+        {#if search}<button class="btn" onclick={() => (query = "")}>{tr("Effacer la recherche", "Clear search")}</button>{/if}
       </div>
     {:else}
       <ul class="card-grid">
@@ -142,19 +148,19 @@
                 badges={[
                   ...(nexusStore.installed(game.id, m.modId)
                     ? nexusStore.outdated(game.id, m.modId)
-                      ? [{ text: "Mise à jour", tone: "accent" as const }]
-                      : [{ text: "Installé", tone: "ok" as const }]
+                      ? [{ text: tr("Mise à jour", "Update"), tone: "accent" as const }]
+                      : [{ text: tr("Installé", "Installed"), tone: "ok" as const }]
                     : []),
-                  ...(m.adultContent ? [{ text: "Adulte", tone: "warn" as const }] : []),
+                  ...(m.adultContent ? [{ text: tr("Adulte", "Adult"), tone: "warn" as const }] : []),
                 ]}
               />
               <span class="card-title">{m.name}</span>
               <span class="card-meta">
-                {#if m.author}<span class="author">par {m.author}</span>{/if}
+                {#if m.author}<span class="author">{tr("par", "by")} {m.author}</span>{/if}
               </span>
               <span class="card-meta">
-                <span title="Recommandations"><Icon name="thumb" size={14} />{count(m.endorsements)}</span>
-                <span title="Téléchargements"><Icon name="download" size={14} />{count(m.downloads)}</span>
+                <span title={tr("Recommandations", "Endorsements")}><Icon name="thumb" size={14} />{count(m.endorsements)}</span>
+                <span title={tr("Téléchargements", "Downloads")}><Icon name="download" size={14} />{count(m.downloads)}</span>
                 {#if m.category}<span>{m.category}</span>{/if}
               </span>
             </button>

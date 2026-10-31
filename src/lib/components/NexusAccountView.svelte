@@ -1,6 +1,7 @@
 <script lang="ts">
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { asAppError, type AppError } from "$lib/api";
+  import { tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import { markWelcomeDone, nexusStore } from "$lib/nexus.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
@@ -77,24 +78,32 @@
 <div class="view">
   <div class="inner">
     {#if auth?.loggedIn}
-      <h1>Compte Nexus Mods</h1>
+      <h1>{tr("Compte Nexus Mods", "Nexus Mods account")}</h1>
       <section class="profile">
         <span class="avatar" aria-hidden="true"><Icon name="user" size={30} /></span>
         <div class="who">
-          <p class="name">{user?.name ?? "Clé enregistrée"}</p>
+          <p class="name">{user?.name ?? tr("Clé enregistrée", "Saved key")}</p>
           <p class="muted">
             {#if !user}
-              Clé enregistrée (Nexus Mods n'a pas pu être joint pour la vérifier).
+              {tr(
+                "Clé enregistrée (Nexus Mods n'a pas pu être joint pour la vérifier).",
+                "Key saved (Nexus Mods couldn't be reached to check it).",
+              )}
             {:else if user.isPremium}
-              Compte Premium : les téléchargements démarrent directement depuis ModStudio.
+              {tr(
+                "Compte Premium : les téléchargements démarrent directement depuis ModStudio.",
+                "Premium account: downloads start directly from ModStudio.",
+              )}
             {:else}
-              Compte gratuit : chaque téléchargement passe par la page du fichier sur Nexus Mods, que ModStudio ouvre
-              pour toi.
+              {tr(
+                "Compte gratuit : chaque téléchargement passe par la page du fichier sur Nexus Mods, que ModStudio ouvre pour toi.",
+                "Free account: each download goes through the file page on Nexus Mods, which ModStudio opens for you.",
+              )}
             {/if}
           </p>
           {#if user?.profileUrl}
             <button class="link" onclick={() => openUrl(user!.profileUrl!)}>
-              Voir mon profil sur Nexus Mods <Icon name="external" size={13} />
+              {tr("Voir mon profil sur Nexus Mods", "View my profile on Nexus Mods")} <Icon name="external" size={13} />
             </button>
           {/if}
         </div>
@@ -104,71 +113,89 @@
         <p class="warning">{auth.storageWarning}</p>
       {:else if auth.persisted}
         <p class="muted small">
-          Ta clé est enregistrée de façon sécurisée dans le trousseau du système (le Gestionnaire d'identification sous
-          Windows).
+          {tr(
+            "Ta clé est enregistrée de façon sécurisée dans le trousseau du système (le Gestionnaire d'identification sous Windows).",
+            "Your key is stored securely in the system keychain (Credential Manager on Windows).",
+          )}
         </p>
       {/if}
 
       <div class="row-actions">
         <button class="btn btn-primary" onclick={() => nav.openNexusGames()}>
-          <Icon name="grid" size={16} />Parcourir les jeux
+          <Icon name="grid" size={16} />{tr("Parcourir les jeux", "Browse games")}
         </button>
-        <button class="btn" onclick={forget} disabled={busy}>Oublier la clé</button>
+        <button class="btn" onclick={forget} disabled={busy}>{tr("Oublier la clé", "Forget the key")}</button>
       </div>
       <p class="muted small">
-        Oublier la clé la retire de cet ordinateur. Pour la désactiver complètement, supprime-la sur la page des clés API
-        de Nexus Mods.
+        {tr(
+          "Oublier la clé la retire de cet ordinateur. Pour la désactiver complètement, supprime-la sur la page des clés API de Nexus Mods.",
+          "Forgetting the key removes it from this computer. To disable it completely, delete it on the Nexus Mods API keys page.",
+        )}
       </p>
       {#if error}<ErrorNotice {error} />{/if}
     {:else}
       {#if welcome}
-        <p class="eyebrow">Bienvenue dans ModStudio</p>
-        <h1>Connecte ton compte Nexus Mods</h1>
+        <p class="eyebrow">{tr("Bienvenue dans ModStudio", "Welcome to ModStudio")}</p>
+        <h1>{tr("Connecte ton compte Nexus Mods", "Connect your Nexus Mods account")}</h1>
       {:else}
-        <h1>Connexion à Nexus Mods</h1>
+        <h1>{tr("Connexion à Nexus Mods", "Sign in to Nexus Mods")}</h1>
       {/if}
       <p class="intro">
-        Parcourir les mods ne demande rien. Pour les installer, connecte-toi une fois à Nexus Mods dans ModStudio et
-        donne-lui ta clé API personnelle : elle lui permet de demander les téléchargements à ton nom.
+        {tr(
+          "Parcourir les mods ne demande rien. Pour les installer, connecte-toi une fois à Nexus Mods dans ModStudio et donne-lui ta clé API personnelle : elle lui permet de demander les téléchargements à ton nom.",
+          "Browsing mods requires nothing. To install them, sign in to Nexus Mods once in ModStudio and give it your personal API key: it lets ModStudio request downloads on your behalf.",
+        )}
       </p>
 
       {#if auth?.rejected}
-        <p class="warning">Nexus Mods refuse la clé enregistrée (elle a peut-être été supprimée). Ajoute-en une nouvelle.</p>
+        <p class="warning">
+          {tr(
+            "Nexus Mods refuse la clé enregistrée (elle a peut-être été supprimée). Ajoute-en une nouvelle.",
+            "Nexus Mods rejects the saved key (it may have been deleted). Add a new one.",
+          )}
+        </p>
       {/if}
 
       <form class="form" onsubmit={save}>
         <ol class="steps">
           <li>
-            <span class="step-title">Connecte-toi à Nexus Mods.</span>
+            <span class="step-title">{tr("Connecte-toi à Nexus Mods.", "Sign in to Nexus Mods.")}</span>
             <span class="muted">
-              ModStudio garde ta connexion : tu n'auras plus à te connecter pour télécharger.
+              {tr(
+                "ModStudio garde ta connexion : tu n'auras plus à te connecter pour télécharger.",
+                "ModStudio keeps you signed in: you won't have to sign in again to download.",
+              )}
             </span>
             <span class="step-actions">
               <button class="btn btn-primary" type="button" onclick={openLogin}>
-                {windowOpened ? "Rouvrir la page Nexus Mods" : "Se connecter à Nexus Mods"}
+                {windowOpened
+                  ? tr("Rouvrir la page Nexus Mods", "Reopen the Nexus Mods page")
+                  : tr("Se connecter à Nexus Mods", "Sign in to Nexus Mods")}
               </button>
               <button class="link" type="button" onclick={() => openUrl(KEYS_PAGE)}>
-                ou dans mon navigateur <Icon name="external" size={13} />
+                {tr("ou dans mon navigateur", "or in my browser")} <Icon name="external" size={13} />
               </button>
             </span>
           </li>
           <li>
-            <span class="step-title">Copie ta clé personnelle.</span>
+            <span class="step-title">{tr("Copie ta clé personnelle.", "Copy your personal key.")}</span>
             <span class="muted">
-              Une fois connecté, tu arrives sur la page des clés API : copie la « Personal API Key » (crée-la si tu n'en
-              as pas encore), puis clique sur « J'ai copié ma clé ».
+              {tr(
+                "Une fois connecté, tu arrives sur la page des clés API : copie la « Personal API Key » (crée-la si tu n'en as pas encore), puis clique sur « J'ai copié ma clé ».",
+                'Once signed in, you land on the API keys page: copy the "Personal API Key" (create it if you don\'t have one yet), then click "I\'ve copied my key".',
+              )}
             </span>
           </li>
           <li>
-            <span class="step-title">Colle-la ici.</span>
+            <span class="step-title">{tr("Colle-la ici.", "Paste it here.")}</span>
             <label class="field-row">
-              <span class="visually-hidden">Clé API Nexus Mods</span>
+              <span class="visually-hidden">{tr("Clé API Nexus Mods", "Nexus Mods API key")}</span>
               <input
                 class="field"
                 type="password"
                 autocomplete="off"
                 spellcheck="false"
-                placeholder="Clé API"
+                placeholder={tr("Clé API", "API key")}
                 required
                 bind:this={keyField}
                 bind:value={key}
@@ -178,10 +205,10 @@
         </ol>
         <div class="row-actions">
           <button class="btn btn-primary" type="submit" disabled={busy || !key.trim()}>
-            {busy ? "Vérification…" : "Enregistrer la clé"}
+            {busy ? tr("Vérification…", "Checking…") : tr("Enregistrer la clé", "Save the key")}
           </button>
           {#if welcome}
-            <button class="btn btn-ghost" type="button" onclick={later}>Plus tard</button>
+            <button class="btn btn-ghost" type="button" onclick={later}>{tr("Plus tard", "Later")}</button>
           {/if}
         </div>
       </form>
@@ -189,15 +216,18 @@
       {#if error}<ErrorNotice {error} />{/if}
 
       <div class="explain">
-        <h2>Premium ou pas ?</h2>
+        <h2>{tr("Premium ou pas ?", "Premium or not?")}</h2>
         <p class="small">
-          Avec un compte Premium, ModStudio télécharge et installe directement. Avec un compte gratuit, Nexus Mods veut
-          que chaque téléchargement passe par son site : ModStudio ouvre la page du fichier dans une fenêtre, tu cliques
-          sur « Slow download », et l'installation démarre toute seule.
+          {tr(
+            "Avec un compte Premium, ModStudio télécharge et installe directement. Avec un compte gratuit, Nexus Mods veut que chaque téléchargement passe par son site : ModStudio ouvre la page du fichier dans une fenêtre, tu cliques sur « Slow download », et l'installation démarre toute seule.",
+            'With a Premium account, ModStudio downloads and installs directly. With a free account, Nexus Mods wants every download to go through its site: ModStudio opens the file page in a window, you click "Slow download", and the installation starts on its own.',
+          )}
         </p>
         <p class="muted small">
-          ModStudio n'envoie ta clé qu'à Nexus Mods, et ne la montre jamais. C'est un client non officiel, pour ton usage
-          personnel.
+          {tr(
+            "ModStudio n'envoie ta clé qu'à Nexus Mods, et ne la montre jamais. C'est un client non officiel, pour ton usage personnel.",
+            "ModStudio only sends your key to Nexus Mods, and never shows it. It's an unofficial client, for your personal use.",
+          )}
         </p>
       </div>
     {/if}

@@ -13,6 +13,7 @@
     type ToolOffer,
   } from "$lib/api";
   import { bytes } from "$lib/format";
+  import { english, tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import { nexusStore, recommendedFile, requirementMatches } from "$lib/nexus.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
@@ -184,12 +185,12 @@
       currentDep = { modId: r.modId, name: r.modName, index: i + 1, total: deps.length };
       try {
         const file = recommendedFile(await nexus.listFiles(game.id, r.modId), gameLoaders);
-        if (!file) throw { kind: "nexus_not_found", message: "aucun fichier à télécharger.", retryAfter: null };
+        if (!file) throw { kind: "nexus_not_found", message: tr("aucun fichier à télécharger.", "no files to download."), retryAfter: null };
         const outcome = await nexusStore.request(game.id, game.domainName, r.modId, file.fileId, file.name, mod.modId);
         const res = await settle(outcome, r.modId, r.modName);
         if (!res) {
           currentDep = null;
-          if (!error) note = `Installation annulée (mod nécessaire « ${r.modName} »).`;
+          if (!error) note = tr(`Installation annulée (mod nécessaire « ${r.modName} »).`, `Installation cancelled (required mod "${r.modName}").`);
           return null;
         }
         done.push(res.record.name);
@@ -197,8 +198,8 @@
       } catch (e) {
         const err = asAppError(e);
         currentDep = null;
-        if (err.kind === "cancelled") note = `Installation annulée (mod nécessaire « ${r.modName} »).`;
-        else error = { ...err, message: `Mod nécessaire « ${r.modName} » : ${err.message}` };
+        if (err.kind === "cancelled") note = tr(`Installation annulée (mod nécessaire « ${r.modName} »).`, `Installation cancelled (required mod "${r.modName}").`);
+        else error = { ...err, message: tr(`Mod nécessaire « ${r.modName} » : ${err.message}`, `Required mod "${r.modName}": ${err.message}`) };
         return null;
       }
     }
@@ -211,7 +212,7 @@
     error = null;
     note = null;
     const done = await runDeps();
-    if (done?.length) note = `Mods nécessaires installés : ${done.join(", ")}.`;
+    if (done?.length) note = tr(`Mods nécessaires installés : ${done.join(", ")}.`, `Required mods installed: ${done.join(", ")}.`);
   }
 
   async function run(file: NexusFile) {
@@ -224,12 +225,14 @@
       const outcome = await nexusStore.request(game.id, game.domainName, mod.modId, file.fileId, file.name);
       const r = await settle(outcome, mod.modId, mod.name);
       if (!r) {
-        if (!error) note = "Installation annulée.";
+        if (!error) note = tr("Installation annulée.", "Installation cancelled.");
         return;
       }
       note = [
-        updating ? "Mis à jour." : "Installé.",
-        deps.length ? `Mods nécessaires installés avant lui : ${deps.join(", ")}.` : null,
+        updating ? tr("Mis à jour.", "Updated.") : tr("Installé.", "Installed."),
+        deps.length
+          ? tr(`Mods nécessaires installés avant lui : ${deps.join(", ")}.`, `Required mods installed first: ${deps.join(", ")}.`)
+          : null,
         r.notice,
       ]
         .filter(Boolean)
@@ -237,7 +240,7 @@
       if (r.needsTool) neededTool = r.needsTool;
     } catch (e) {
       const err = asAppError(e);
-      if (err.kind === "cancelled") note = "Téléchargement annulé.";
+      if (err.kind === "cancelled") note = tr("Téléchargement annulé.", "Download cancelled.");
       else if (err.kind === "no_game_folder" || err.kind === "need_game_dir") {
         if (err.kind === "need_game_dir") error = err;
         pendingFile = file;
@@ -271,8 +274,14 @@
       }
     }
     note = failed.length
-      ? `Impossible de désinstaller ${failed.map((n) => `« ${n} »`).join(", ")} : ferme le jeu puis réessaie depuis « Installés ».`
-      : `${list.map((o) => `« ${o.name} »`).join(", ")} ${list.length > 1 ? "désinstallés" : "désinstallé"} aussi.`;
+      ? tr(
+          `Impossible de désinstaller ${failed.map((n) => `« ${n} »`).join(", ")} : ferme le jeu puis réessaie depuis « Installés ».`,
+          `Couldn't uninstall ${failed.map((n) => `"${n}"`).join(", ")}: close the game, then try again from "Installed".`,
+        )
+      : tr(
+          `${list.map((o) => `« ${o.name} »`).join(", ")} ${list.length > 1 ? "désinstallés" : "désinstallé"} aussi.`,
+          `${list.map((o) => `"${o.name}"`).join(", ")} uninstalled too.`,
+        );
   }
 
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
@@ -291,8 +300,11 @@
     try {
       const r = await nexusStore.uninstall(game.id, mod.modId);
       note = r.leftFolder
-        ? `Désinstallé. Le dossier « ${r.leftFolder} » contient des fichiers ajoutés depuis, il a été laissé en place.`
-        : "Désinstallé.";
+        ? tr(
+            `Désinstallé. Le dossier « ${r.leftFolder} » contient des fichiers ajoutés depuis, il a été laissé en place.`,
+            `Uninstalled. The "${r.leftFolder}" folder contains files added since, so it was left in place.`,
+          )
+        : tr("Désinstallé.", "Uninstalled.");
       orphans = r.orphans;
     } catch (e) {
       error = asAppError(e);
@@ -313,7 +325,12 @@
     note = null;
     try {
       await nexusStore.setEnabled(game.id, mod.modId, enabled);
-      note = enabled ? "Réactivé." : "Désactivé : ses fichiers sont mis de côté, le jeu ne le charge plus.";
+      note = enabled
+        ? tr("Réactivé.", "Re-enabled.")
+        : tr(
+            "Désactivé : ses fichiers sont mis de côté, le jeu ne le charge plus.",
+            "Disabled: its files are set aside, so the game no longer loads it.",
+          );
     } catch (e) {
       error = asAppError(e);
     } finally {
@@ -322,8 +339,8 @@
   }
 </script>
 
-<section class="panel" aria-label="Installation sur ce PC">
-  <h2>Sur ce PC</h2>
+<section class="panel" aria-label={tr("Installation sur ce PC", "Installation on this PC")}>
+  <h2>{tr("Sur ce PC", "On this PC")}</h2>
 
   {#if setupOpen}
     <NexusFolderSetup
@@ -347,86 +364,118 @@
   {:else if currentDep}
     <div class="dep-run" role="status">
       <p class="small">
-        <span class="strong">Mod nécessaire {currentDep.index}/{currentDep.total} : {currentDep.name}</span>
-        {#if !depWaiting && !depProgress}<span class="muted">, préparation…</span>{/if}
+        <span class="strong"
+          >{tr(
+            `Mod nécessaire ${currentDep.index}/${currentDep.total} : ${currentDep.name}`,
+            `Required mod ${currentDep.index}/${currentDep.total}: ${currentDep.name}`,
+          )}</span
+        >
+        {#if !depWaiting && !depProgress}<span class="muted">{tr(", préparation…", ", preparing…")}</span>{/if}
       </p>
       {#if depWaiting}
-        <p class="small">Clique sur « Slow download » sur la page Nexus Mods : l'installation démarrera toute seule.</p>
+        <p class="small">
+          {tr(
+            "Clique sur « Slow download » sur la page Nexus Mods : l'installation démarrera toute seule.",
+            'Click "Slow download" on the Nexus Mods page: the installation will start on its own.',
+          )}
+        </p>
         <div class="row">
-          <button class="btn" onclick={reopen}>Rouvrir la page</button>
-          <button class="btn btn-ghost" onclick={cancel}>Annuler</button>
+          <button class="btn" onclick={reopen}>{tr("Rouvrir la page", "Reopen the page")}</button>
+          <button class="btn btn-ghost" onclick={cancel}>{tr("Annuler", "Cancel")}</button>
         </div>
       {:else if depProgress}
         <ProgressBar progress={depProgress} oncancel={cancel} />
       {/if}
-      <p class="small muted">« {mod.name} » s'installera juste après.</p>
+      <p class="small muted">{tr(`« ${mod.name} » s'installera juste après.`, `"${mod.name}" will be installed right after.`)}</p>
     </div>
   {:else if waiting}
     <div class="waiting" role="status">
       <p class="small">
-        <span class="strong">Clique sur « Slow download » sur la page Nexus Mods.</span>
-        L'installation{waitingFile ? ` de « ${waitingFile.name} »` : ""} démarrera toute seule.
+        <span class="strong"
+          >{tr("Clique sur « Slow download » sur la page Nexus Mods.", 'Click "Slow download" on the Nexus Mods page.')}</span
+        >
+        {waitingFile
+          ? tr(
+              `L'installation de « ${waitingFile.name} » démarrera toute seule.`,
+              `The installation of "${waitingFile.name}" will start on its own.`,
+            )
+          : tr("L'installation démarrera toute seule.", "The installation will start on its own.")}
       </p>
       <div class="row">
-        <button class="btn" onclick={reopen}>Rouvrir la page</button>
-        <button class="btn btn-ghost" onclick={cancel}>Annuler</button>
+        <button class="btn" onclick={reopen}>{tr("Rouvrir la page", "Reopen the page")}</button>
+        <button class="btn btn-ghost" onclick={cancel}>{tr("Annuler", "Cancel")}</button>
       </div>
     </div>
   {:else if progress}
     <ProgressBar {progress} oncancel={cancel} />
   {:else if record}
     <p class="status">
-      {#if record.disabled}<span class="chip">Désactivé</span>{:else}<span class="chip chip-ok">Installé</span>{/if}
+      {#if record.disabled}<span class="chip">{tr("Désactivé", "Disabled")}</span>{:else}<span class="chip chip-ok"
+          >{tr("Installé", "Installed")}</span
+        >{/if}
       <span class="small muted">
-        {record.version ? `version ${record.version}` : "version sans numéro"}, {bytes(record.size)}
+        {record.version ? `version ${record.version}` : tr("version sans numéro", "no version number")}, {bytes(record.size)}
       </span>
     </p>
     {#if record.fileName}<p class="small">{record.fileName}</p>{/if}
     {#if outdated}
       <p class="small">
-        Ce fichier a été remplacé sur Nexus Mods par une version plus récente.
-        {#if recommended && recommended.fileId !== record.modfileId}Installe « {recommended.name} » pour mettre à jour.{/if}
+        {tr(
+          "Ce fichier a été remplacé sur Nexus Mods par une version plus récente.",
+          "This file has been replaced on Nexus Mods by a newer version.",
+        )}
+        {#if recommended && recommended.fileId !== record.modfileId}{tr(
+            `Installe « ${recommended.name} » pour mettre à jour.`,
+            `Install "${recommended.name}" to update.`,
+          )}{/if}
       </p>
       {#if recommended && recommended.fileId !== record.modfileId}
         <button class="btn btn-primary wide" onclick={() => install(recommended!)} disabled={busy}>
-          <Icon name="download" size={15} />Mettre à jour
+          <Icon name="download" size={15} />{tr("Mettre à jour", "Update")}
         </button>
       {/if}
     {/if}
     {#if config}
-      <p class="small muted folder" title={config.folder}>Dans {config.folder}</p>
+      <p class="small muted folder" title={config.folder}>{tr("Dans", "In")} {config.folder}</p>
       {#if record.parts?.length && gameDir}
-        <p class="small muted folder" title={gameDir}>Et dans le dossier du jeu : {gameDir}</p>
+        <p class="small muted folder" title={gameDir}>
+          {tr("Et dans le dossier du jeu :", "And in the game folder:")}
+          {gameDir}
+        </p>
       {/if}
     {/if}
     <div class="row">
       <button class="btn" onclick={() => setEnabled(!!record?.disabled)} disabled={toggling || removing}>
-        {toggling ? "…" : record.disabled ? "Réactiver" : "Désactiver"}
+        {toggling ? "…" : record.disabled ? tr("Réactiver", "Re-enable") : tr("Désactiver", "Disable")}
       </button>
-      <button class="btn" onclick={reveal} disabled={record.disabled}>Ouvrir le dossier</button>
+      <button class="btn" onclick={reveal} disabled={record.disabled}>{tr("Ouvrir le dossier", "Open folder")}</button>
       <button class="btn" class:danger={confirming} onclick={uninstall} disabled={removing}>
-        {removing ? "Désinstallation…" : confirming ? "Confirmer" : "Désinstaller"}
+        {removing
+          ? tr("Désinstallation…", "Uninstalling…")
+          : confirming
+            ? tr("Confirmer", "Confirm")
+            : tr("Désinstaller", "Uninstall")}
       </button>
     </div>
     {#if missingDeps.length}
       <div class="deps">
         <p class="small">
-          <span class="strong">Mods nécessaires manquants :</span>
+          <span class="strong">{tr("Mods nécessaires manquants :", "Missing required mods:")}</span>
           {missingDeps.map((r) => r.modName).join(", ")}.
         </p>
         <button class="btn" onclick={installDeps} disabled={busy}>
-          <Icon name="download" size={15} />{missingDeps.length > 1 ? "Les installer" : "L'installer"}
+          <Icon name="download" size={15} />{missingDeps.length > 1 ? tr("Les installer", "Install them") : tr("L'installer", "Install it")}
         </button>
       </div>
     {/if}
   {:else if files === null}
-    <p class="small muted">Chargement des fichiers…</p>
+    <p class="small muted">{tr("Chargement des fichiers…", "Loading files…")}</p>
   {:else if !recommended}
-    <p class="small muted">Aucun fichier à télécharger pour ce mod.</p>
+    <p class="small muted">{tr("Aucun fichier à télécharger pour ce mod.", "No files to download for this mod.")}</p>
   {:else}
     {#if missingDeps.length && nexusStore.ready}
       <div class="deps">
-        <p class="small strong">Ce mod a besoin de :</p>
+        <p class="small strong">{tr("Ce mod a besoin de :", "This mod needs:")}</p>
         {#each missingDeps as r (r.modId)}
           <label class="dep">
             <input
@@ -441,30 +490,45 @@
           </label>
         {/each}
         <p class="small muted">
-          ModStudio les installe d'abord{nexusStore.premium ? "" : ", une page Nexus par fichier comme pour ce mod"}.
+          {tr("ModStudio les installe d'abord", "ModStudio installs them first")}{nexusStore.premium
+            ? ""
+            : tr(", une page Nexus par fichier comme pour ce mod", ", one Nexus page per file, as for this mod")}.
         </p>
       </div>
     {/if}
     <button class="btn btn-primary wide" onclick={() => install(recommended!)} disabled={busy}>
-      <Icon name="download" size={15} />{nexusStore.ready ? "Installer" : "Ajouter ma clé pour installer"}
+      <Icon name="download" size={15} />{nexusStore.ready ? tr("Installer", "Install") : tr("Ajouter ma clé pour installer", "Add my key to install")}
     </button>
     <p class="small muted">
-      Fichier conseillé : « {recommended.name} »{recommended.version ? `, version ${recommended.version}` : ""},
-      {bytes(recommended.sizeInBytes || recommended.size * 1024)}. Les autres fichiers sont dans la liste.
+      {tr(`Fichier conseillé : « ${recommended.name} »`, `Recommended file: "${recommended.name}"`)}{recommended.version
+        ? `, version ${recommended.version}`
+        : ""},
+      {bytes(recommended.sizeInBytes || recommended.size * 1024)}. {tr(
+        "Les autres fichiers sont dans la liste.",
+        "The other files are in the list.",
+      )}
     </p>
     {#if config}
       <p class="small muted folder">
-        Dans <span title={config.folder}>{config.folder}</span>
-        <button class="link" onclick={() => (setupOpen = true)}>Changer</button>
+        {tr("Dans", "In")} <span title={config.folder}>{config.folder}</span>
+        <button class="link" onclick={() => (setupOpen = true)}>{tr("Changer", "Change")}</button>
       </p>
     {:else}
-      <p class="small muted">Tu choisiras ensuite où installer les mods de {game.name}.</p>
+      <p class="small muted">
+        {tr(
+          `Tu choisiras ensuite où installer les mods de ${game.name}.`,
+          `You'll then choose where to install mods for ${game.name}.`,
+        )}
+      </p>
     {/if}
   {/if}
 
   {#if nexusStore.ready && !nexusStore.premium && !record && !busy && !setupOpen}
     <p class="small muted">
-      Sans compte Premium, Nexus Mods demande de passer par la page du fichier : ModStudio l'ouvre pour toi.
+      {tr(
+        "Sans compte Premium, Nexus Mods demande de passer par la page du fichier : ModStudio l'ouvre pour toi.",
+        "Without a Premium account, Nexus Mods requires going through the file page: ModStudio opens it for you.",
+      )}
     </p>
   {/if}
 
@@ -480,15 +544,23 @@
   {#if orphans.length}
     <div class="deps">
       <p class="small">
-        {orphans.map((o) => `« ${o.name} »`).join(", ")}
-        {orphans.length > 1 ? "avaient été installés" : "avait été installé"} avec ce mod et ne
-        {orphans.length > 1 ? "servent" : "sert"} plus à aucun autre.
+        {#if english}
+          {orphans.map((o) => `"${o.name}"`).join(", ")}
+          {orphans.length > 1 ? "were" : "was"} installed with this mod and
+          {orphans.length > 1 ? "are" : "is"} no longer used by any other.
+        {:else}
+          {orphans.map((o) => `« ${o.name} »`).join(", ")}
+          {orphans.length > 1 ? "avaient été installés" : "avait été installé"} avec ce mod et ne
+          {orphans.length > 1 ? "servent" : "sert"} plus à aucun autre.
+        {/if}
       </p>
       <div class="row">
         <button class="btn btn-primary" onclick={removeOrphans}>
-          {orphans.length > 1 ? "Les désinstaller aussi" : "Le désinstaller aussi"}
+          {orphans.length > 1
+            ? tr("Les désinstaller aussi", "Uninstall them too")
+            : tr("Le désinstaller aussi", "Uninstall it too")}
         </button>
-        <button class="btn btn-ghost" onclick={() => (orphans = [])}>Garder</button>
+        <button class="btn btn-ghost" onclick={() => (orphans = [])}>{tr("Garder", "Keep")}</button>
       </div>
     </div>
   {/if}
@@ -500,7 +572,9 @@
         tool={shownTool}
         folder={toolFolder}
         onstart={() => (toolInstalledHere = true)}
-        reason={record ? `Ce mod ne se chargera pas sans ${shownTool.name}.` : `Ce mod a besoin de ${shownTool.name}.`}
+        reason={record
+          ? tr(`Ce mod ne se chargera pas sans ${shownTool.name}.`, `This mod won't load without ${shownTool.name}.`)
+          : tr(`Ce mod a besoin de ${shownTool.name}.`, `This mod needs ${shownTool.name}.`)}
       />
     </div>
   {/if}

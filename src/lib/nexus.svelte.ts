@@ -23,6 +23,7 @@ import {
 } from "./api";
 import { SvelteSet } from "svelte/reactivity";
 import { describe, type Progress } from "./installs.svelte";
+import { tr } from "./i18n.svelte";
 
 /** Page Nexus à afficher dans ModStudio. */
 export type SiteRequest =
@@ -37,7 +38,7 @@ interface Pending {
   reject: (e: AppError) => void;
 }
 
-const cancelled = (): AppError => ({ kind: "cancelled", message: "Téléchargement annulé.", retryAfter: null });
+const cancelled = (): AppError => ({ kind: "cancelled", message: tr("Téléchargement annulé.", "Download cancelled."), retryAfter: null });
 
 /** Les identifiants de mods Nexus sont propres à chaque jeu. */
 const keyOf = (gameId: number, modId: number) => `${gameId}:${modId}`;
@@ -300,7 +301,7 @@ class NexusStore {
 
   async #install(gameId: number, domain: string, modId: number, fileId: number, nxm?: NxmLink, requiredBy?: number) {
     const k = keyOf(gameId, modId);
-    this.progress[k] = { label: "Préparation…", ratio: null };
+    this.progress[k] = { label: tr("Préparation…", "Preparing…"), ratio: null };
     try {
       const result = await api.install(
         { gameId, gameDomain: domain, modId, fileId, nxmKey: nxm?.key, nxmExpires: nxm?.expires, requiredBy },
@@ -333,7 +334,7 @@ class NexusStore {
    */
   async finishFomod(gameId: number, modId: number, token: string, selections: number[][][]) {
     const k = keyOf(gameId, modId);
-    this.progress[k] = { label: "Installation des options choisies…", ratio: null };
+    this.progress[k] = { label: tr("Installation des options choisies…", "Installing the selected options…"), ratio: null };
     try {
       const result = await api.fomodFinish(token, selections, (e) => {
         this.progress[k] = describe(e);
@@ -430,7 +431,7 @@ class NexusStore {
 
   /** Installe l'outil de mods d'un jeu (UE4SS, BepInEx, MelonLoader). */
   async installTool(gameId: number, domain: string, tool: string) {
-    this.toolProgress[gameId] = { label: "Préparation…", ratio: null };
+    this.toolProgress[gameId] = { label: tr("Préparation…", "Preparing…"), ratio: null };
     try {
       await api.installTool(gameId, tool, (e) => {
         this.toolProgress[gameId] = describe(e);
@@ -574,13 +575,13 @@ export function requirementMatches(tool: ToolOffer, requirementName: string): bo
 
 /** Libellés des catégories de fichiers Nexus. */
 export const fileCategories: Record<string, string> = {
-  MAIN: "Fichiers principaux",
-  OPTIONAL: "Fichiers optionnels",
-  UPDATE: "Mises à jour",
-  MISCELLANEOUS: "Divers",
-  OLD_VERSION: "Anciennes versions",
-  ARCHIVED: "Archivés",
-  REMOVED: "Retirés",
+  MAIN: tr("Fichiers principaux", "Main files"),
+  OPTIONAL: tr("Fichiers optionnels", "Optional files"),
+  UPDATE: tr("Mises à jour", "Updates"),
+  MISCELLANEOUS: tr("Divers", "Miscellaneous"),
+  OLD_VERSION: tr("Anciennes versions", "Old versions"),
+  ARCHIVED: tr("Archivés", "Archived"),
+  REMOVED: tr("Retirés", "Removed"),
 };
 
 /** Préférence pour la version d'un mod faite pour le chargeur installé (« BepInEx » plutôt que « Standalone »). */

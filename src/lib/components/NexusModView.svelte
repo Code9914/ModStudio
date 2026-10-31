@@ -7,6 +7,7 @@
   import { ago, bytes, date, exact } from "$lib/format";
   import { nav } from "$lib/nav.svelte";
   import { fileCategories, isoToUnix, nexusStore, questFile } from "$lib/nexus.svelte";
+  import { english, tr } from "$lib/i18n.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
   import NexusInstallPanel from "./NexusInstallPanel.svelte";
@@ -123,19 +124,19 @@
   <div class="top">
     <button class="btn btn-ghost crumb" onclick={() => nav.back()}>
       <Icon name="back" />{nav.nexusModStack.length > 1
-        ? "Retour"
+        ? tr("Retour", "Back")
         : nav.nexusOrigin === "installed"
-          ? "Retour aux mods installés"
+          ? tr("Retour aux mods installés", "Back to installed mods")
           : nav.nexusOrigin === "nexusTracked"
-            ? "Retour aux mods suivis"
-            : `Retour à ${game.name}`}
+            ? tr("Retour aux mods suivis", "Back to tracked mods")
+            : tr(`Retour à ${game.name}`, `Back to ${game.name}`)}
     </button>
   </div>
 
   {#if error}
     <div class="pad"><ErrorNotice {error} onretry={() => attempt++} /></div>
   {:else if !mod}
-    <div class="pad skeleton" aria-busy="true" aria-label="Chargement du mod">
+    <div class="pad skeleton" aria-busy="true" aria-label={tr("Chargement du mod", "Loading the mod")}>
       <div class="line title"></div>
       <div class="line short"></div>
       <div class="hero"></div>
@@ -145,10 +146,10 @@
       <div class="head-text">
         <h1>{mod.name}</h1>
         <p class="byline">
-          {#if mod.author}<span>par <strong>{mod.author}</strong></span>{/if}
-          <span class="muted">mis à jour {ago(isoToUnix(mod.updatedAt))}</span>
+          {#if mod.author}<span>{tr("par", "by")} <strong>{mod.author}</strong></span>{/if}
+          <span class="muted">{tr("mis à jour", "updated")} {ago(isoToUnix(mod.updatedAt))}</span>
           <span class="chip">Nexus Mods</span>
-          {#if mod.adultContent}<span class="chip chip-warn">Contenu adulte</span>{/if}
+          {#if mod.adultContent}<span class="chip chip-warn">{tr("Contenu adulte", "Adult content")}</span>{/if}
         </p>
       </div>
       <div class="actions">
@@ -157,25 +158,32 @@
             class="btn"
             class:on={tracked}
             aria-pressed={tracked}
-            title={tracked ? "Ne plus suivre ce mod" : "Suivre ce mod : il apparaît dans « Mods suivis », et Nexus Mods te prévient de ses mises à jour"}
+            title={tracked
+              ? tr("Ne plus suivre ce mod", "Stop tracking this mod")
+              : tr(
+                  "Suivre ce mod : il apparaît dans « Mods suivis », et Nexus Mods te prévient de ses mises à jour",
+                  'Track this mod: it shows up in "Tracked mods", and Nexus Mods lets you know about its updates',
+                )}
             disabled={socialBusy}
             onclick={toggleTrack}
           >
-            <Icon name="bell" size={15} />{tracked ? "Suivi" : "Suivre"}
+            <Icon name="bell" size={15} />{tracked ? tr("Suivi", "Tracked") : tr("Suivre", "Track")}
           </button>
           <button
             class="btn"
             class:on={endorsed}
             aria-pressed={endorsed}
-            title={endorsed ? "Retirer ma recommandation" : "Recommander ce mod sur Nexus Mods"}
+            title={endorsed
+              ? tr("Retirer ma recommandation", "Withdraw my endorsement")
+              : tr("Recommander ce mod sur Nexus Mods", "Endorse this mod on Nexus Mods")}
             disabled={socialBusy}
             onclick={toggleEndorse}
           >
-            <Icon name="thumb" size={15} />{endorsed ? "Recommandé" : "Recommander"}
+            <Icon name="thumb" size={15} />{endorsed ? tr("Recommandé", "Endorsed") : tr("Recommander", "Endorse")}
           </button>
         {/if}
         <button class="btn" onclick={() => open(nexusModUrl(game.domainName, mod!.modId))}>
-          Ouvrir sur Nexus Mods <Icon name="external" size={14} />
+          {tr("Ouvrir sur Nexus Mods", "Open on Nexus Mods")} <Icon name="external" size={14} />
         </button>
         {#if socialError}<p class="social-error" role="alert">{socialError}</p>{/if}
       </div>
@@ -197,13 +205,13 @@
         {/if}
 
         <section class="files">
-          <h2>Fichiers</h2>
+          <h2>{tr("Fichiers", "Files")}</h2>
           {#if filesError}
             <ErrorNotice error={filesError} onretry={() => attempt++} />
           {:else if !files}
-            <p class="muted">Chargement des fichiers…</p>
+            <p class="muted">{tr("Chargement des fichiers…", "Loading files…")}</p>
           {:else if groups.length === 0}
-            <p class="muted">Aucun fichier publié pour ce mod.</p>
+            <p class="muted">{tr("Aucun fichier publié pour ce mod.", "No files published for this mod.")}</p>
           {:else}
             {#each groups as g (g.cat)}
               {#snippet fileList()}
@@ -214,7 +222,7 @@
                       <div class="file-head">
                         <span class="file-name">{f.name}</span>
                         {#if f.version}<span class="chip">{f.version}</span>{/if}
-                        {#if record?.modfileId === f.fileId}<span class="chip chip-ok">Installé</span>{/if}
+                        {#if record?.modfileId === f.fileId}<span class="chip chip-ok">{tr("Installé", "Installed")}</span>{/if}
                         {#if questFile(f.name)}<span class="chip">Quest</span>{/if}
                       </div>
                       <p class="file-meta muted">
@@ -224,11 +232,13 @@
                       {#if desc}<p class="file-desc">{desc}</p>{/if}
                       {#if record?.modfileId !== f.fileId}
                         {#if pcOnly && questFile(f.name)}
-                          <p class="muted small">Version Quest : elle ne s'installe pas sur PC.</p>
+                          <p class="muted small">{tr("Version Quest : elle ne s'installe pas sur PC.", "Quest version: it can't be installed on PC.")}</p>
                         {:else}
                           <div>
                             <button class="btn" onclick={() => panel?.install(f)} disabled={progressing}>
-                              <Icon name="download" size={14} />{record ? "Installer ce fichier à la place" : "Installer ce fichier"}
+                              <Icon name="download" size={14} />{record
+                                ? tr("Installer ce fichier à la place", "Install this file instead")
+                                : tr("Installer ce fichier", "Install this file")}
                             </button>
                           </div>
                         {/if}
@@ -259,11 +269,11 @@
         {/key}
         <dl class="stats">
           <div>
-            <dt>Recommandations</dt>
+            <dt>{tr("Recommandations", "Endorsements")}</dt>
             <dd>{exact(mod.endorsements)}</dd>
           </div>
           <div>
-            <dt>Téléchargements</dt>
+            <dt>{tr("Téléchargements", "Downloads")}</dt>
             <dd>{exact(mod.downloads)}</dd>
           </div>
           {#if mod.version}
@@ -274,34 +284,39 @@
           {/if}
           {#if mod.category}
             <div>
-              <dt>Catégorie</dt>
+              <dt>{tr("Catégorie", "Category")}</dt>
               <dd class="small-dd">{mod.category}</dd>
             </div>
           {/if}
           <div>
-            <dt>Publié le</dt>
+            <dt>{tr("Publié le", "Published")}</dt>
             <dd class="small-dd">{date(isoToUnix(mod.createdAt))}</dd>
           </div>
         </dl>
 
         {#if mod.requirements.length}
           <section class="side-block">
-            <h2>Nécessite aussi</h2>
+            <h2>{tr("Nécessite aussi", "Also requires")}</h2>
             <ul class="deps">
               {#each mod.requirements as r (`${r.gameId}-${r.modId}-${r.modName}`)}
                 <li>
                   <button class="dep" onclick={() => openRequirement(r)}>
                     <span class="dep-name">{r.modName || `Mod ${r.modId}`}</span>
                     {#if r.externalRequirement || r.gameId !== game.id}<Icon name="external" size={13} />{/if}
-                    {#if nexusStore.installed(game.id, r.modId)}<span class="dep-ok">Installé</span>{/if}
+                    {#if nexusStore.installed(game.id, r.modId)}<span class="dep-ok">{tr("Installé", "Installed")}</span>{/if}
                   </button>
                   {#if r.notes}<p class="muted small">{r.notes}</p>{/if}
                 </li>
               {/each}
             </ul>
             <p class="muted small">
-              ModStudio installe ceux qui sont sur Nexus Mods en même temps que ce mod ; les autres (liens externes)
-              s'installent depuis leur page, ou depuis la page du jeu pour UE4SS, BepInEx et MelonLoader.
+              {#if english}
+                ModStudio installs the ones on Nexus Mods together with this mod; the others (external links) are
+                installed from their own page, or from the game page for UE4SS, BepInEx and MelonLoader.
+              {:else}
+                ModStudio installe ceux qui sont sur Nexus Mods en même temps que ce mod ; les autres (liens externes)
+                s'installent depuis leur page, ou depuis la page du jeu pour UE4SS, BepInEx et MelonLoader.
+              {/if}
             </p>
           </section>
         {/if}

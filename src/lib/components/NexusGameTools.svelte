@@ -2,6 +2,7 @@
   // Le jeu sur ce PC : dossier trouvé dans Steam / Epic, moteur, et outil de
   // mods à installer (UE4SS, BepInEx, MelonLoader, script extender).
   import { asAppError, nexus, type AppError, type NexusGame } from "$lib/api";
+  import { english, tr } from "$lib/i18n.svelte";
   import { engineNames, launcherNames, nexusStore } from "$lib/nexus.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -86,8 +87,11 @@
     try {
       const left = await nexusStore.uninstallTool(game.id, game.domainName, tool.id);
       note = left
-        ? `${tool.name} est retiré. Le dossier « ${left} » contient des fichiers créés depuis (réglages, journaux) : il a été laissé en place.`
-        : `${tool.name} est retiré.`;
+        ? tr(
+            `${tool.name} est retiré. Le dossier « ${left} » contient des fichiers créés depuis (réglages, journaux) : il a été laissé en place.`,
+            `${tool.name} has been removed. The "${left}" folder contains files created since (settings, logs), so it was left in place.`,
+          )
+        : tr(`${tool.name} est retiré.`, `${tool.name} has been removed.`);
     } catch (e) {
       error = asAppError(e);
     } finally {
@@ -100,14 +104,19 @@
   }
 
   const popularity = $derived(
-    tool && tool.popular > 0 ? `${tool.popular} des ${tool.sampled} mods les plus recommandés de ce jeu en ont besoin.` : null,
+    tool && tool.popular > 0
+      ? tr(
+          `${tool.popular} des ${tool.sampled} mods les plus recommandés de ce jeu en ont besoin.`,
+          `${tool.popular} of the ${tool.sampled} most endorsed mods for this game need it.`,
+        )
+      : null,
   );
 </script>
 
 {#if loadError}
   <ErrorNotice error={loadError} />
 {:else if setup && (config || installed || setupOpen)}
-  <section class="tools" aria-label="{game.name} sur ce PC">
+  <section class="tools" aria-label={tr(`${game.name} sur ce PC`, `${game.name} on this PC`)}>
     {#if setupOpen}
       <NexusFolderSetup
         gameId={game.id}
@@ -123,31 +132,47 @@
       <div class="where">
         <div class="where-text">
           {#if config}
-            <p class="label">Dossier des mods</p>
+            <p class="label">{tr("Dossier des mods", "Mods folder")}</p>
             <p class="path" title={config.folder}>{config.folder}</p>
           {:else if installed}
-            <p class="label">Trouvé dans {launcherNames[installed.launcher] ?? installed.launcher}</p>
+            <p class="label">
+              {tr(
+                `Trouvé dans ${launcherNames[installed.launcher] ?? installed.launcher}`,
+                `Found in ${launcherNames[installed.launcher] ?? installed.launcher}`,
+              )}
+            </p>
             <p class="path" title={installed.path}>{installed.path}</p>
           {/if}
           <p class="facts">
             {#if installed && config}<span class="chip">{launcherNames[installed.launcher] ?? installed.launcher}</span>{/if}
             {#if engine}<span class="chip">{engineNames[engine.engine] ?? engine.engine}</span>{/if}
             {#if engine && config?.rules && config.rules !== "bonelab"}
-              <span class="muted">Chaque mod est rangé au bon endroit selon le moteur du jeu.</span>
+              <span class="muted"
+                >{tr(
+                  "Chaque mod est rangé au bon endroit selon le moteur du jeu.",
+                  "Each mod is put in the right place based on the game's engine.",
+                )}</span
+              >
             {/if}
           </p>
         </div>
         <div class="row">
           <!-- BONELAB (4832) a deux dossiers : son propre réglage s'en charge. -->
           {#if !config && installed && setup.autoRules && game.id !== 4832}
-            <button class="btn btn-primary" onclick={useFolder} disabled={busy}>Installer les mods dans ce dossier</button>
-            <button class="btn" onclick={() => (setupOpen = true)}>Choisir un autre dossier…</button>
+            <button class="btn btn-primary" onclick={useFolder} disabled={busy}
+              >{tr("Installer les mods dans ce dossier", "Install mods in this folder")}</button
+            >
+            <button class="btn" onclick={() => (setupOpen = true)}
+              >{tr("Choisir un autre dossier…", "Choose another folder…")}</button
+            >
           {:else if !config}
             <!-- Moteur sans rangement automatique : dossier et rangement au choix. -->
-            <button class="btn btn-primary" onclick={() => (setupOpen = true)}>Choisir où installer les mods</button>
+            <button class="btn btn-primary" onclick={() => (setupOpen = true)}
+              >{tr("Choisir où installer les mods", "Choose where to install mods")}</button
+            >
           {:else}
-            <button class="btn" onclick={reveal}>Ouvrir</button>
-            {#if !hasMods}<button class="btn btn-ghost" onclick={() => (setupOpen = true)}>Changer</button>{/if}
+            <button class="btn" onclick={reveal}>{tr("Ouvrir", "Open")}</button>
+            {#if !hasMods}<button class="btn btn-ghost" onclick={() => (setupOpen = true)}>{tr("Changer", "Change")}</button>{/if}
           {/if}
         </div>
       </div>
@@ -156,9 +181,11 @@
         <p class="small hint">
           <Icon name="warning" size={15} />
           <span>
-            Le jeu est installé dans {installed.path}. En y installant les mods, ModStudio les range lui-même au bon
-            endroit.
-            <button class="link" onclick={useFolder} disabled={busy}>Utiliser ce dossier</button>
+            {tr(
+              `Le jeu est installé dans ${installed.path}. En y installant les mods, ModStudio les range lui-même au bon endroit.`,
+              `The game is installed in ${installed.path}. If you install mods there, ModStudio puts them in the right place itself.`,
+            )}
+            <button class="link" onclick={useFolder} disabled={busy}>{tr("Utiliser ce dossier", "Use this folder")}</button>
           </span>
         </p>
       {/if}
@@ -170,14 +197,19 @@
               <Icon name="check" size={15} />
               <span>
                 <span class="strong">{tool.name}</span>
-                {managedTool ? `installé par ModStudio${managedTool.version ? ` (${managedTool.version})` : ""}` : "est installé"}{managedTool && tool.update
+                {managedTool
+                  ? tr(
+                      `installé par ModStudio${managedTool.version ? ` (${managedTool.version})` : ""}`,
+                      `installed by ModStudio${managedTool.version ? ` (${managedTool.version})` : ""}`,
+                    )
+                  : tr("est installé", "is installed")}{managedTool && tool.update
                   ? "."
-                  : " : les mods qui en ont besoin se chargeront."}
+                  : tr(" : les mods qui en ont besoin se chargeront.", ": mods that need it will load.")}
               </span>
             </p>
             {#if managedTool}
               <button class="btn btn-ghost" class:danger={confirmRemove} onclick={removeTool} disabled={busy}>
-                {confirmRemove ? "Confirmer" : `Retirer ${tool.name}`}
+                {confirmRemove ? tr("Confirmer", "Confirm") : tr(`Retirer ${tool.name}`, `Remove ${tool.name}`)}
               </button>
             {/if}
             {#if managedTool && tool.update}
@@ -186,26 +218,37 @@
             {#if tool.launchOption && installed?.launcher === "steam"}
               <div class="proton">
                 <p class="small">
-                  Sous Linux, ajoute ceci aux options de lancement du jeu dans Steam (Propriétés, Général) : sans ça,
-                  Proton ne charge pas {tool.name}.
+                  {tr(
+                    `Sous Linux, ajoute ceci aux options de lancement du jeu dans Steam (Propriétés, Général) : sans ça, Proton ne charge pas ${tool.name}.`,
+                    `On Linux, add this to the game's launch options in Steam (Properties, General): without it, Proton won't load ${tool.name}.`,
+                  )}
                 </p>
                 <div class="proton-row">
                   <code>{tool.launchOption}</code>
-                  <button class="btn btn-ghost" onclick={copyLaunchOption}>{copied ? "Copié" : "Copier"}</button>
+                  <button class="btn btn-ghost" onclick={copyLaunchOption}>{copied ? tr("Copié", "Copied") : tr("Copier", "Copy")}</button>
                 </div>
               </div>
             {:else if protonValue && installed?.launcher === "epic"}
               <p class="small proton">
-                Sous Linux, dans Heroic : ajoute la variable d'environnement <code>WINEDLLOVERRIDES</code> avec la valeur
-                <code>{protonValue}</code> (réglages du jeu), sinon Wine ne charge pas {tool.name}.
+                {#if english}
+                  On Linux, in Heroic: add the <code>WINEDLLOVERRIDES</code> environment variable with the value
+                  <code>{protonValue}</code> (game settings), otherwise Wine won't load {tool.name}.
+                {:else}
+                  Sous Linux, dans Heroic : ajoute la variable d'environnement <code>WINEDLLOVERRIDES</code> avec la valeur
+                  <code>{protonValue}</code> (réglages du jeu), sinon Wine ne charge pas {tool.name}.
+                {/if}
               </p>
             {/if}
           {:else if config}
-            <NexusToolPrompt {game} {tool} folder={toolFolder} reason={popularity ?? `${tool.name} n'est pas installé.`} />
+            <NexusToolPrompt {game} {tool} folder={toolFolder} reason={popularity ?? tr(`${tool.name} n'est pas installé.`, `${tool.name} isn't installed.`)}
+            />
           {:else}
             <p class="small muted">
-              {tool.name} n'est pas installé. {popularity ?? ""}
-              Choisis d'abord le dossier des mods : ModStudio pourra ensuite l'installer pour toi.
+              {tr(`${tool.name} n'est pas installé.`, `${tool.name} isn't installed.`)} {popularity ?? ""}
+              {tr(
+                "Choisis d'abord le dossier des mods : ModStudio pourra ensuite l'installer pour toi.",
+                "Choose the mods folder first: ModStudio can then install it for you.",
+              )}
             </p>
           {/if}
         </div>
