@@ -458,6 +458,89 @@ impl TsClient {
         self.get(&format!("/api/experimental/package/{namespace}/{name}/{version}/"), &[]).await
     }
 
+    /// Jeux où un mod est publié (pour deviner le jeu d'un profil r2modman).
+    pub async fn communities_of(&self, namespace: &str, name: &str) -> AppResult<Vec<String>> {
+        check_part(namespace)?;
+        check_part(name)?;
+        #[derive(Deserialize)]
+        struct Listing {
+            community: String,
+        }
+        #[derive(Deserialize)]
+        struct Listed {
+            #[serde(default)]
+            community_listings: Vec<Listing>,
+        }
+        let p: Listed = self.get(&format!("/api/experimental/package/{namespace}/{name}/"), &[]).await?;
+        Ok(p.community_listings.into_iter().map(|l| l.community).collect())
+    }
+
+    /// Profil r2modman publié sous ce code : `#r2modman` suivi de l'archive en base64.
+    pub async fn legacy_profile(&self, code: &str) -> AppResult<String> {
+        if !crate::share::r2modman::is_code(code) {
+            return Err(AppError::ShareCodeUnknown);
+        }
+        let network = |e: reqwest::Error| AppError::ThunderstoreNetwork(e.without_url().to_string());
+        // Thunderstore renvoie vers son CDN : seuls ses propres serveurs sont suivis.
+        let mut response = self
+            .downloads
+            .get(format!("{}/api/experimental/legacyprofile/get/{}/", self.base, code.to_ascii_lowercase()))
+            .send()
+            .await
+            .map_err(network)?;
+        let status = response.status();
+        if status == StatusCode::NOT_FOUND {
+            return Err(AppError::ShareCodeUnknown);
+        }
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(AppError::ThunderstoreRateLimited(30));
+        }
+        if !status.is_success() {
+            return Err(AppError::ThunderstoreApi { status: status.as_u16(), message: status.canonical_reason().unwrap_or("erreur").to_string() });
+        }
+        let limit = crate::share::r2modman::MAX_ZIP / 3 * 4 + 1024;
+        let mut out = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(network)? {
+            out.extend_from_slice(&chunk);
+            if out.len() > limit {
+                return Err(AppError::ShareInvalid("Ce profil r2modman est trop gros.".into()));
+            }
+        }
+        String::from_utf8(out).map_err(|_| AppError::ShareInvalid("Ce profil r2modman est illisible.".into()))
+    }
+
+    /// Publie un profil r2modman (`#r2modman` + base64) : renvoie son code.
+    pub async fn create_legacy_profile(&self, payload: String) -> AppResult<String> {
+        #[derive(Deserialize)]
+        struct Created {
+            key: String,
+        }
+        let response = self
+            .http
+            .post(format!("{}/api/experimental/legacyprofile/create/", self.base))
+            .header("Content-Type", "application/octet-stream")
+            .timeout(Duration::from_secs(180))
+            .body(payload)
+            .send()
+            .await
+            .map_err(|e| AppError::ThunderstoreNetwork(e.without_url().to_string()))?;
+        let status = response.status();
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(AppError::ThunderstoreRateLimited(60));
+        }
+        if !status.is_success() {
+            return Err(AppError::ThunderstoreApi { status: status.as_u16(), message: status.canonical_reason().unwrap_or("erreur").to_string() });
+        }
+        let created: Created = response
+            .json()
+            .await
+            .map_err(|e| AppError::ThunderstoreApi { status: 200, message: format!("réponse inattendue ({})", e.without_url()) })?;
+        if !crate::share::r2modman::is_code(&created.key) {
+            return Err(AppError::ThunderstoreApi { status: 200, message: "code de profil inattendu".into() });
+        }
+        Ok(created.key)
+    }
+
     /// Adresse de téléchargement d'une version.
     pub fn download_url(&self, namespace: &str, name: &str, version: &str) -> AppResult<String> {
         check_part(namespace)?;

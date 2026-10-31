@@ -21,7 +21,8 @@ export type View =
   | { name: "rmlMod"; id: string }
   | { name: "clGames" }
   | { name: "clMods" }
-  | { name: "clMod"; id: string };
+  | { name: "clMod"; id: string }
+  | { name: "import" };
 
 export type ModOrigin = "mods" | "library" | "installed";
 export type NexusOrigin = "nexusMods" | "installed" | "nexusTracked";
@@ -102,6 +103,11 @@ class Nav {
 
   openInstalled() {
     this.view = { name: "installed" };
+  }
+
+  /** Importer un profil partagé (code ou fichier). */
+  openImport() {
+    this.view = { name: "import" };
   }
 
   // ------------------------------------------------------------ Nexus Mods
@@ -225,6 +231,10 @@ class Nav {
   }
 
   back() {
+    if (this.view.name === "import") {
+      this.view = { name: "installed" };
+      return;
+    }
     if (this.view.name === "clMod" && this.clStack.length > 1) {
       this.clStack = this.clStack.slice(0, -1);
       this.view = { name: "clMod", id: this.clStack[this.clStack.length - 1] };

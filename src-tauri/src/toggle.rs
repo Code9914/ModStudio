@@ -269,6 +269,8 @@ pub struct ProfileApplied {
 #[serde(tag = "action", rename_all = "camelCase")]
 pub enum ProfileEdit {
     Create { name: String },
+    /// Profil importé : ces mods-là (les autres seront désactivés en y passant).
+    CreateWith { name: String, mods: Vec<i64> },
     Rename { name: String, new_name: String },
     Delete { name: String },
 }
@@ -276,6 +278,7 @@ pub enum ProfileEdit {
 pub fn edit_profiles(game: &mut GameInstall, edit: &ProfileEdit) -> AppResult<()> {
     match edit {
         ProfileEdit::Create { name } => create_profile(game, name),
+        ProfileEdit::CreateWith { name, mods } => create_profile_with(game, name, mods),
         ProfileEdit::Rename { name, new_name } => rename_profile(game, name, new_name),
         ProfileEdit::Delete { name } => delete_profile(game, name),
     }
@@ -325,6 +328,25 @@ pub fn create_profile(game: &mut GameInstall, name: &str) -> AppResult<()> {
     }
     game.profiles.push(Profile { name: name.clone(), mods: enabled });
     game.active_profile = Some(name);
+    Ok(())
+}
+
+/// Profil avec ces mods (ceux qui sont installés), sans y passer : un profil
+/// du même nom est mis à jour. Le premier profil garde aussi l'état actuel
+/// sous « Principal ».
+pub fn create_profile_with(game: &mut GameInstall, name: &str, mods: &[i64]) -> AppResult<()> {
+    let name = check_name(name)?;
+    let wanted: Vec<i64> = mods.iter().copied().filter(|id| game.mods.contains_key(id)).collect();
+    // Le profil actif garde l'état actuel avant que la liste ne change.
+    sync_active(game);
+    if game.profiles.is_empty() && !name.eq_ignore_ascii_case("Principal") {
+        game.profiles.push(Profile { name: "Principal".into(), mods: enabled_mods(game) });
+        game.active_profile = Some("Principal".into());
+    }
+    match game.profiles.iter_mut().find(|p| p.name.eq_ignore_ascii_case(&name)) {
+        Some(p) => p.mods = wanted,
+        None => game.profiles.push(Profile { name, mods: wanted }),
+    }
     Ok(())
 }
 
@@ -620,5 +642,31 @@ mod tests {
         delete_profile(&mut g, "Avec amis").unwrap();
         assert!(g.profiles.is_empty() && g.active_profile.is_none(), "un seul profil restant : plus de profils");
         forget_mod(&mut g, 1);
+    }
+
+    #[test]
+    fn an_imported_profile_keeps_only_its_mods_and_the_current_state_stays_in_principal() {
+        let folder = tempdir("tg-import");
+        let store = tempdir("tg-store5");
+        let ctx = Ctx { store_root: &store, source: "nexus" };
+        let mut g = game(&folder, None);
+        for (id, f) in [(1, "a.pak"), (2, "b.pak"), (3, "c.pak")] {
+            put(&folder, f, b"x");
+            g.mods.insert(id, record(id, &format!("Mod {id}"), &[f], &[]));
+        }
+        create_profile_with(&mut g, "Coop de Léo", &[1, 3, 99]).unwrap();
+        assert_eq!(g.profiles.iter().map(|p| (p.name.as_str(), p.mods.clone())).collect::<Vec<_>>(), vec![
+            ("Principal", vec![1, 2, 3]),
+            ("Coop de Léo", vec![1, 3]),
+        ]);
+        let others = |_: &GameInstall, _: i64| HashMap::new();
+        apply_profile(&mut g, "Coop de Léo", &ctx, &others, &mut |_, _| {}).unwrap();
+        assert!(!folder.join("b.pak").exists());
+        assert_eq!(g.active_profile.as_deref(), Some("Coop de Léo"));
+
+        // Importé une deuxième fois (mis à jour) : la liste est remplacée.
+        create_profile_with(&mut g, "coop de léo", &[1]).unwrap();
+        assert_eq!(g.profiles.len(), 2);
+        assert_eq!(g.profiles[1].mods, vec![1]);
     }
 }

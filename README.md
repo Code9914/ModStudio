@@ -403,6 +403,34 @@ Thunderstore, avec un raccourci depuis cette section. Sous Linux, l'option de
 lancement Proton (`winhttp` ou `version`) est affichée quand le chargeur passe
 par une DLL.
 
+## Profils partagés (v0.12)
+
+Pour jouer avec les mêmes mods qu'un ami :
+
+- **Partager** (dans « Installés », bouton « Partager » d'un jeu) : un code
+  `MS1-…` qui contient la liste des mods activés du jeu, avec leur version (et
+  les mods nécessaires, chargeur compris). Le code ne passe par aucun serveur :
+  il se colle dans une discussion. « Enregistrer dans un fichier… » donne la
+  même liste dans un fichier `.modstudio`.
+- **Importer** (« Installés », puis « Importer un profil ») : colle le code ou
+  ouvre le fichier. ModStudio montre les mods, ce qui est déjà installé, et
+  installe ceux qui manquent, l'un après l'autre (dossier du jeu demandé
+  d'abord s'il n'est pas encore choisi). Options :
+  - mêmes versions que dans le profil (Nexus Mods, Thunderstore, communautés ;
+    mod.io installe toujours la dernière version) ;
+  - mod.io et Nexus Mods : le profil importé devient un profil du jeu ; les
+    autres mods y sont désactivés et restent dans le profil « Principal » ;
+  - Nexus Mods sans Premium : la page de chaque fichier s'ouvre pour le clic
+    sur « Slow download », et les installateurs FOMOD demandent leurs options.
+- **r2modman, Gale, Thunderstore Mod Manager** : ModStudio lit leurs codes de
+  profil (récupérés sur Thunderstore) et leurs fichiers `.r2z`, devine le jeu
+  d'après les mods (modifiable), et peut appliquer leurs réglages de mods
+  (`BepInEx/config`, seulement `.cfg`, `.txt`, `.json`, `.yml`, `.yaml`,
+  `.ini` ; les fichiers remplacés sont copiés dans `profile-backups` du dossier
+  de ModStudio). Pour un jeu Thunderstore, « Créer un code r2modman » publie le
+  profil sur Thunderstore, comme le fait r2modman, pour un ami qui utilise un de
+  ces gestionnaires.
+
 ## Obtenir ta clé API
 
 1. Ouvre <https://mod.io/me/access> et connecte-toi.
@@ -424,6 +452,9 @@ src-tauri/src/
   modio_sdk.rs    détection des jeux qui gèrent leurs mods via mod.io
   archive.rs      extraction zip / 7z / RAR protégée, archives imbriquées
   toggle.rs       activer / désactiver un mod, profils
+  share/          profils partagés :
+    mod.rs        code MS1 (liste compressée), fichier .modstudio, import et export
+    r2modman.rs   profils r2modman (.r2z, codes Thunderstore, réglages des mods)
   nexus/          source Nexus Mods :
     client.rs     requêtes GraphQL v2 et REST v1, en-têtes Application-Name
     browse.rs     jeux, mods, fiches, fichiers
@@ -508,6 +539,14 @@ empreinte en base64 ; Raft : page d'avertissement refusée ; Beat Saber :
 version lue dans le jeu, BSIPA placé comme `IPA.exe`, fichier modifié refusé ;
 Outer Wilds : OWML et sa configuration, mods demandés par le `manifest.json`).
 
+Pour les profils partagés : code ModStudio lu et relu à l'identique (même au
+milieu d'un message), code abîmé ou d'une version plus récente refusé, mods
+impossibles refusés, export des seuls mods activés (mods nécessaires d'abord),
+profil r2modman lu tel que l'écrit r2modman, réglages qui sortiraient de
+`config/` ou programmes ignorés, réglages remplacés copiés avant, codes
+r2modman récupérés et publiés contre un faux Thunderstore, profil importé qui
+garde l'état actuel dans « Principal ».
+
 Pour ResoniteModLoader : liste lue sans les fichiers douteux (adresse non
 HTTPS, empreinte mal formée, chemin qui sortirait du dossier du jeu), RML et
 Harmony installés avant le mod, RML installé à la main gardé, fichier abîmé
@@ -545,6 +584,11 @@ qui garde les réglages, conflits refusés sans rien toucher.
 - Les mods de ResoniteModLoader ne sont installés que depuis la liste vérifiée
   par la communauté, en HTTPS, et chaque fichier doit avoir l'empreinte SHA-256
   publiée dans la liste.
+- Un profil importé n'est qu'une liste de mods : chaque mod est installé par
+  sa source habituelle, avec ses vérifications. Des réglages d'un profil
+  r2modman, seuls les fichiers texte de `config/` sont lus (jamais de
+  programmes, ni de chemin qui sortirait de `BepInEx/config`), et seulement
+  quand tu le demandes.
 - Les descriptions de mods (HTML, BBCode ou Markdown écrits par leurs auteurs)
   passent par DOMPurify, et l'appli applique une politique CSP stricte. Les liens s'ouvrent
   dans ton navigateur, jamais dans l'appli.

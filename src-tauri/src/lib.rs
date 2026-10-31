@@ -11,6 +11,7 @@ mod lists;
 mod modio_sdk;
 mod nexus;
 mod settings;
+mod share;
 mod thunderstore;
 mod toggle;
 #[cfg(test)]
@@ -121,6 +122,12 @@ pub fn run() {
             thunderstore::rml_mods,
             thunderstore::rml_status,
             thunderstore::rml_install,
+            share::share_export,
+            share::share_decode,
+            share::share_open_file,
+            share::share_save_file,
+            share::share_r2modman_create,
+            share::share_apply_configs,
             lists::cl_games,
             lists::cl_overview,
             lists::cl_mods,

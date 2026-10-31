@@ -182,6 +182,13 @@ pub enum AppError {
 
     #[error("Impossible de télécharger « {name} » depuis {host} ({detail}). Réessaie plus tard.")]
     ListDownload { name: String, host: String, detail: String },
+
+    // ---------------------------------------------------------------- Profils partagés
+    #[error("{0}")]
+    ShareInvalid(String),
+
+    #[error("Ce code r2modman est introuvable : il a peut-être expiré, ou il manque des caractères.")]
+    ShareCodeUnknown,
 }
 
 impl AppError {
@@ -239,6 +246,8 @@ impl AppError {
             AppError::ThunderstoreUnsupported(_) => "thunderstore_unsupported",
             AppError::RmlUnavailable(_) | AppError::RmlDownload { .. } => "network",
             AppError::ListUnavailable { .. } | AppError::ListDownload { .. } => "network",
+            AppError::ShareInvalid(_) => "share_invalid",
+            AppError::ShareCodeUnknown => "not_found",
         }
     }
 

@@ -20,6 +20,7 @@
   import NexusFolderSetup from "./NexusFolderSetup.svelte";
   import ModToggle from "./ModToggle.svelte";
   import ProfileBar from "./ProfileBar.svelte";
+  import SharePanel from "./SharePanel.svelte";
   import { ago, bytes, exact } from "$lib/format";
   import { installs, layoutLabels } from "$lib/installs.svelte";
   import { nav } from "$lib/nav.svelte";
@@ -31,6 +32,9 @@
 
   let error = $state<AppError | null>(null);
   let query = $state("");
+  /** Jeu dont on partage les mods (`source:jeu`). */
+  let sharing = $state<string | null>(null);
+  const toggleShare = (key: string) => (sharing = sharing === key ? null : key);
   /** Jeu dont on modifie le dossier. */
   let editing = $state<number | null>(null);
   const rowErrors = new SvelteMap<number, string>();
@@ -527,16 +531,17 @@
         </p>
       {/if}
     </div>
-    {#if total > 0}
-      <div class="tools">
+    <div class="tools">
+      {#if total > 0}
         <label class="search">
           <span class="visually-hidden">Filtrer les mods installés</span>
           <Icon name="search" />
           <input class="field" type="search" placeholder="Filtrer les mods installés" bind:value={query} />
         </label>
         <button class="btn" onclick={refresh}><Icon name="refresh" size={15} />Vérifier les mises à jour</button>
-      </div>
-    {/if}
+      {/if}
+      <button class="btn" onclick={() => nav.openImport()}><Icon name="import" size={15} />Importer un profil</button>
+    </div>
   </header>
 
   {#if error}
@@ -545,7 +550,7 @@
     <div class="empty">
       <p>
         Aucun mod installé avec ModStudio pour l'instant. Ouvre la fiche d'un mod et clique sur « Installer » : tu
-        choisiras alors le dossier des mods du jeu.
+        choisiras alors le dossier des mods du jeu. Un ami t'a envoyé ses mods ? Clique sur « Importer un profil ».
       </p>
       <div class="empty-actions">
         {#if nav.settings?.hasApiKey}
@@ -577,6 +582,7 @@
                   : "Mettre à jour (1)"}
             </button>
           {/if}
+          <button class="btn btn-ghost" onclick={() => toggleShare(`modio:${g.gameId}`)}><Icon name="share" size={15} />Partager</button>
           <button class="btn btn-ghost" onclick={() => reveal(g.gameId, null)}>Ouvrir le dossier</button>
           <button class="btn btn-ghost" onclick={() => (editing = editing === g.gameId ? null : g.gameId)}>
             Réglages du jeu
@@ -597,6 +603,10 @@
             oncancel={() => (editing = null)}
           />
         </div>
+      {/if}
+
+      {#if sharing === `modio:${g.gameId}`}
+        <SharePanel source="modio" game={g} onclose={() => (sharing = null)} />
       {/if}
 
       {#if Object.keys(g.mods).length > 0}
@@ -698,6 +708,9 @@
         <span class="chip">Nexus Mods</span>
         <span class="muted count">{nexusStore.count(g)}</span>
         <div class="group-actions">
+          {#if Object.keys(g.mods).length > 0}
+            <button class="btn btn-ghost" onclick={() => toggleShare(`nexus:${g.gameId}`)}><Icon name="share" size={15} />Partager</button>
+          {/if}
           <button class="btn btn-ghost" onclick={() => nexusReveal(g.gameId, null)}>Ouvrir le dossier</button>
           <button class="btn btn-ghost" onclick={() => (nexusEditing = nexusEditing === g.gameId ? null : g.gameId)}>
             Réglages du jeu
@@ -719,6 +732,10 @@
             oncancel={() => (nexusEditing = null)}
           />
         </div>
+      {/if}
+
+      {#if sharing === `nexus:${g.gameId}`}
+        <SharePanel source="nexus" game={g} onclose={() => (sharing = null)} />
       {/if}
 
       {#if Object.keys(g.mods).length > 0}
@@ -875,11 +892,16 @@
                   : "Mettre à jour (1)"}
             </button>
           {/if}
+          <button class="btn btn-ghost" onclick={() => toggleShare(`ts:${g.gameId}`)}><Icon name="share" size={15} />Partager</button>
           <button class="btn btn-ghost" onclick={() => tsReveal(g.gameId, null)}>Ouvrir le dossier</button>
           <button class="btn btn-ghost" onclick={() => nav.openTsGame(tsStore.communityOf(g))}>Page du jeu</button>
         </div>
       </div>
       <p class="folder muted">{g.folder}, rangement BepInEx</p>
+
+      {#if sharing === `ts:${g.gameId}`}
+        <SharePanel source="ts" game={g} onclose={() => (sharing = null)} />
+      {/if}
 
       {#if job}
         <div class="row-progress wide"><ProgressBar progress={job} oncancel={() => tsStore.cancel(tsStore.communityOf(g))} /></div>
@@ -981,11 +1003,16 @@
                   : "Mettre à jour (1)"}
             </button>
           {/if}
+          <button class="btn btn-ghost" onclick={() => toggleShare(`cl:${g.gameId}`)}><Icon name="share" size={15} />Partager</button>
           <button class="btn btn-ghost" onclick={() => cl.reveal(g.gameId).catch((e) => (error = asAppError(e)))}>Ouvrir le dossier</button>
           {#if game}<button class="btn btn-ghost" onclick={() => nav.openClGame(game)}>Page du jeu</button>{/if}
         </div>
       </div>
       <p class="folder muted">{g.folder}{game ? `, avec ${game.loader}` : ""}</p>
+
+      {#if sharing === `cl:${g.gameId}`}
+        <SharePanel source="cl" game={g} onclose={() => (sharing = null)} />
+      {/if}
 
       {#if job && game}
         <div class="row-progress wide"><ProgressBar progress={job} oncancel={() => listsStore.cancel(game)} /></div>

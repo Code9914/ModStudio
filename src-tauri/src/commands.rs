@@ -35,6 +35,8 @@ pub struct AppState {
     pub thunderstore: crate::thunderstore::ThunderstoreState,
     /// Listes de mods des communautés (Hollow Knight, Beat Saber…).
     pub lists: crate::lists::ListsState,
+    /// Profils partagés lus (réglages r2modman en attente).
+    pub share: crate::share::ShareState,
 }
 
 impl AppState {
@@ -59,6 +61,7 @@ impl AppState {
             nexus,
             thunderstore,
             lists,
+            share: crate::share::ShareState::default(),
             client: ModioClient::new(),
             settings: RwLock::new(settings),
             library: Mutex::new(Library::load(&library_path)),

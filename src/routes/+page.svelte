@@ -8,6 +8,7 @@
   import GamesView from "$lib/components/GamesView.svelte";
   import Icon from "$lib/components/Icon.svelte";
   import InstalledView from "$lib/components/InstalledView.svelte";
+  import ImportView from "$lib/components/ImportView.svelte";
   import LibraryView from "$lib/components/LibraryView.svelte";
   import ModsView from "$lib/components/ModsView.svelte";
   import ModView from "$lib/components/ModView.svelte";
@@ -143,7 +144,7 @@
     if (typing) return;
     if ((event.key === "Escape" || (event.altKey && event.key === "ArrowLeft")) && nav.view.name !== "games") {
       const v = nav.view.name;
-      if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods" || v === "tsMod" || v === "tsMods" || v === "rmlMod" || v === "clMod" || v === "clMods") nav.back();
+      if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods" || v === "tsMod" || v === "tsMods" || v === "rmlMod" || v === "clMod" || v === "clMods" || v === "import") nav.back();
       else if (v === "nexusAccount" || v === "nexusTracked") nav.openNexusGames();
       else if (v !== "nexusGames" && v !== "tsGames" && v !== "clGames") nav.openGames();
     }
@@ -405,6 +406,7 @@
         <button
           class="nav-item"
           aria-current={nav.view.name === "installed" ||
+          nav.view.name === "import" ||
           (nav.view.name === "mod" && nav.modOrigin === "installed") ||
           (nav.view.name === "nexusMod" && nav.nexusOrigin === "installed") ||
           (nav.view.name === "tsMod" && nav.tsOrigin === "installed") ||
@@ -542,6 +544,9 @@
       {/if}
       {#if nav.view.name === "nexusTracked"}
         <div class="pane"><NexusTrackedView /></div>
+      {/if}
+      {#if nav.view.name === "import"}
+        <div class="pane"><ImportView /></div>
       {/if}
       {#if nav.view.name === "nexusAccount"}
         <div class="pane"><NexusAccountView /></div>

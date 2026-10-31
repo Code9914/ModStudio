@@ -48,6 +48,8 @@ export interface AppError {
     | "tool_present"
     | "nexus_refused"
     | "thunderstore_api"
+    | "thunderstore_unsupported"
+    | "share_invalid"
     | "unknown";
   message: string;
   retryAfter: number | null;
@@ -366,6 +368,8 @@ export interface ModProfile {
 
 export type ProfileEdit =
   | { action: "create"; name: string }
+  /** Profil importé : ces mods-là ; les autres sont désactivés en y passant. */
+  | { action: "createWith"; name: string; mods: number[] }
   | { action: "rename"; name: string; newName: string }
   | { action: "delete"; name: string };
 
@@ -1140,3 +1144,61 @@ export function clIdOf(fileName: string | null | undefined): string | null {
 export function tsPackageUrl(community: string, namespace: string, name: string) {
   return `https://thunderstore.io/c/${community}/p/${namespace}/${name}/`;
 }
+
+// ---------------------------------------------------------------- Profils partagés
+
+/** Source des mods d'un profil partagé. */
+export type ShareSource = "modio" | "nexus" | "ts" | "cl";
+
+export interface SharedMod {
+  /** mod.io et Nexus : numéro du mod ; Thunderstore : `Équipe-Nom` ou `rml:<id>` ; communautés : identifiant. */
+  id: string;
+  name: string;
+  version?: string | null;
+  /** Fichier installé (mod.io : modfile ; Nexus : fichier). */
+  file?: number | null;
+  /** Installé comme mod nécessaire d'un autre. */
+  dep?: boolean;
+}
+
+export interface SharedProfile {
+  name: string;
+  source: ShareSource;
+  /** `id` : jeu mod.io ou Nexus ; `key` : domaine Nexus, jeu Thunderstore (vide : inconnu) ou jeu des communautés. */
+  game: { id: number; key: string; name: string };
+  mods: SharedMod[];
+}
+
+export interface ShareImport {
+  profile: SharedProfile;
+  origin: "modstudio" | "r2modman";
+  /** Fichiers de réglages joints (profil r2modman). */
+  configs: number;
+  token: string | null;
+  /** Mods désactivés dans le profil r2modman (pas installés). */
+  skipped: string[];
+}
+
+export interface ShareExport {
+  profile: SharedProfile;
+  code: string;
+  /** Mods laissés de côté (désactivés). */
+  leftOut: number;
+}
+
+export interface ConfigsApplied {
+  written: number;
+  /** Dossier qui garde les réglages remplacés. */
+  backup: string | null;
+}
+
+export const share = {
+  export: (source: ShareSource, gameId: number) => call<ShareExport>("share_export", { source, gameId }),
+  decode: (text: string) => call<ShareImport>("share_decode", { text }),
+  openFile: (path: string) => call<ShareImport>("share_open_file", { path }),
+  saveFile: (path: string, profile: SharedProfile) => call<null>("share_save_file", { path, profile }),
+  /** Publie un profil r2modman (jeu Thunderstore) : renvoie son code. */
+  r2modman: (gameId: number, name: string, includeConfigs: boolean) =>
+    call<string>("share_r2modman_create", { gameId, name, includeConfigs }),
+  applyConfigs: (token: string, gameId: number) => call<ConfigsApplied>("share_apply_configs", { token, gameId }),
+};

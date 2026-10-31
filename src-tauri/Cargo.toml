@@ -35,6 +35,8 @@ sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["bzip
 tauri-plugin-dialog = "2.8.4"
 roxmltree = "0.20"
 base64 = "0.22"
+flate2 = "1.1"
+yaml-rust2 = "0.10"
 unrar = "0.5.8"
 
 
