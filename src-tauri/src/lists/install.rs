@@ -19,7 +19,7 @@ use super::{game_id, now, record_name, Artifact, Catalog, Hash, ListMod, ListsSt
 use crate::archive;
 use crate::error::{AppError, AppResult};
 use crate::install_commands::{dependency_state, Orphan, UninstallResult};
-use crate::installer::{self, GameInstall, InstallEvent, InstalledMod, Layout, Library, ModPart, STAGING_DIR};
+use crate::installer::{self, GameInstall, InstallEvent, InstalledMod, Layout, Library, ModPart, Owner, STAGING_DIR};
 use crate::nexus::install::{owned_by_others, place_plan};
 use crate::nexus::tools::sha256_file;
 use crate::thunderstore::install::ORIGINAL_SUFFIX;
@@ -347,36 +347,72 @@ fn conflicting(installed: Option<&str>, req: &str) -> bool {
     req.trim().is_empty() || req.trim() == "*" || satisfies(installed, req)
 }
 
-/// Mods connus pour ne pas marcher ensemble : refusés avant tout téléchargement.
-fn check_conflicts(game: &GameDef, catalog: &Catalog, config: &GameInstall, plan: &Plan) -> AppResult<()> {
+/// Un mod installé et activé : son identifiant dans la liste, et les mods avec
+/// lesquels il ne marche pas (d'après la liste et d'après le mod lui-même).
+pub struct Declared {
+    pub owner: Owner,
+    pub id: String,
+    pub version: Option<String>,
+    pub conflicts: Vec<String>,
+}
+
+/// Mods activés du jeu et leurs incompatibilités déclarées.
+pub fn declared(game: &GameDef, catalog: &Catalog, config: &GameInstall) -> Vec<Declared> {
     let prefix = format!("{}:", game.id);
-    let installed: Vec<(String, Option<String>, String)> = config
+    config
         .mods
         .values()
-        .filter_map(|m| m.file_name.as_deref().and_then(|f| f.strip_prefix(&prefix)).map(|id| (id.to_string(), m.version.clone(), m.name.clone())))
-        .collect();
+        .filter(|m| !m.disabled)
+        .filter_map(|m| {
+            let id = m.file_name.as_deref()?.strip_prefix(&prefix)?.to_string();
+            let mut conflicts: Vec<String> = catalog
+                .get(&id)
+                .and_then(|o| m.version.as_deref().and_then(|v| o.version(v)))
+                .map(|v| v.conflicts.iter().map(|c| c.id.clone()).collect())
+                .unwrap_or_default();
+            for c in game.installed_conflicts(config, &id) {
+                if !conflicts.iter().any(|x| x.eq_ignore_ascii_case(&c)) {
+                    conflicts.push(c);
+                }
+            }
+            let owner = Owner { game_id: config.game_id, mod_id: m.mod_id, name: m.name.clone(), elsewhere: false };
+            Some(Declared { owner, id, version: m.version.clone(), conflicts })
+        })
+        .collect()
+}
+
+/// Refus : `name` est déclaré incompatible avec ces mods activés (qu'on peut désactiver).
+fn incompatible(name: &str, owners: Vec<Owner>) -> AppError {
+    let with = owners.iter().map(|o| crate::tr!("« {} »", "\"{}\"", o.name)).collect::<Vec<_>>().join(", ");
+    AppError::Incompatible(
+        crate::tr!("« {name} » ne marche pas avec {with}, déjà installé.", "\"{name}\" doesn't work with {with}, which is already installed."),
+        owners,
+    )
+}
+
+/// Mods connus pour ne pas marcher ensemble : refusés avant tout téléchargement.
+/// Seuls les mods activés comptent (un mod désactivé n'est pas chargé par le jeu).
+fn check_conflicts(game: &GameDef, catalog: &Catalog, config: &GameInstall, plan: &Plan) -> AppResult<()> {
+    let installed = declared(game, catalog, config);
     for step in &plan.order {
         let Some(m) = catalog.get(&step.id) else { continue };
         let Some(v) = m.version(&step.version) else { continue };
-        let refuse = |name: &str| {
-            AppError::InvalidArgument(crate::tr!(
-                "« {} » ne marche pas avec « {name} », déjà installé : désinstalle-le d'abord.",
-                "\"{}\" doesn't work with \"{name}\", which is already installed: uninstall it first.",
-                m.name
-            ))
-        };
-        for c in &v.conflicts {
-            if let Some((_, ver, name)) = installed.iter().find(|(id, ..)| id.eq_ignore_ascii_case(&c.id))
-                && conflicting(ver.as_deref(), &c.version)
-            {
-                return Err(refuse(name));
+        let mut owners = Vec::new();
+        for d in installed.iter().filter(|d| !d.id.eq_ignore_ascii_case(&m.id)) {
+            // Le nouveau mod refuse celui-ci (liste), ou celui-ci refuse le nouveau (liste ou manifeste).
+            let ours = v.conflicts.iter().any(|c| c.id.eq_ignore_ascii_case(&d.id) && conflicting(d.version.as_deref(), &c.version));
+            let theirs = catalog
+                .get(&d.id)
+                .and_then(|o| d.version.as_deref().and_then(|x| o.version(x)))
+                .and_then(|ov| ov.conflicts.iter().find(|c| c.id.eq_ignore_ascii_case(&m.id)))
+                .map(|c| conflicting(Some(&step.version), &c.version))
+                .unwrap_or_else(|| d.conflicts.iter().any(|c| c.eq_ignore_ascii_case(&m.id)));
+            if ours || theirs {
+                owners.push(d.owner.clone());
             }
         }
-        for (id, ver, name) in &installed {
-            let Some(other) = catalog.get(id).and_then(|o| ver.as_deref().and_then(|v| o.version(v))) else { continue };
-            if other.conflicts.iter().any(|c| c.id.eq_ignore_ascii_case(&m.id) && conflicting(Some(&step.version), &c.version)) {
-                return Err(refuse(name));
-            }
+        if !owners.is_empty() {
+            return Err(incompatible(&m.name, owners));
         }
     }
     Ok(())
@@ -623,6 +659,8 @@ impl ListsState {
         let gid = game_id(game.id);
         let v = m.version(version).unwrap_or_else(|| m.newest());
         let mut found: Vec<String> = Vec::new();
+        // Incompatibilités écrites dans le mod lui-même (Outer Wilds), connues une fois extrait.
+        let mut refuses: Vec<String> = Vec::new();
         let (config, others, old) = {
             let lib = self.library.lock().expect("library");
             let config = lib.games.get(&gid).cloned().ok_or(AppError::NotFound)?;
@@ -717,6 +755,7 @@ impl ListsState {
                         ZipRoot::DirOf(file) => dir_with(&out, file).unwrap_or(out.clone()),
                     };
                     found.extend(game.discovered_dependencies(&base));
+                    refuses.extend(game.discovered_conflicts(&base));
                     let copies_dir = dir.join(format!("{i}.copies"));
                     for (abs, rel) in files_under(&base) {
                         let rel = game.zip_rel(&rel);
@@ -740,6 +779,19 @@ impl ListsState {
                 replaced.extend(placed.iter().filter(|(_, r)| unowned(r)).map(|(_, r)| (key.clone(), r.clone())));
             }
             batches.entry(key).or_default().extend(placed);
+        }
+        if !refuses.is_empty() {
+            let prefix = format!("{}:", game.id);
+            let owners: Vec<Owner> = config
+                .mods
+                .values()
+                .filter(|r| !r.disabled && r.mod_id != m.mod_id)
+                .filter(|r| r.file_name.as_deref().and_then(|f| f.strip_prefix(&prefix)).is_some_and(|id| refuses.iter().any(|c| c.eq_ignore_ascii_case(id))))
+                .map(|r| Owner { game_id: gid, mod_id: r.mod_id, name: r.name.clone(), elsewhere: false })
+                .collect();
+            if !owners.is_empty() {
+                return Err(incompatible(&m.name, owners));
+            }
         }
         emit(InstallEvent::Finishing);
 

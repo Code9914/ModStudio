@@ -3,14 +3,15 @@
 pub mod catalog;
 pub mod engine;
 pub mod epic;
+pub mod launch;
 pub mod proton;
 pub mod steam;
 
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Launcher {
     Steam,

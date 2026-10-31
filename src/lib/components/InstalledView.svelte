@@ -28,6 +28,7 @@
   import ErrorNotice from "./ErrorNotice.svelte";
   import FolderSetup from "./FolderSetup.svelte";
   import Icon from "./Icon.svelte";
+  import PlayButton from "./PlayButton.svelte";
   import ProgressBar from "./ProgressBar.svelte";
   import Thumb from "./Thumb.svelte";
 
@@ -164,6 +165,19 @@
 
   // ------------------------------------------------------------ Activer / désactiver
   const toggling = new SvelteSet<string>();
+  // Incompatibilités déclarées des mods des listes (avertissement par jeu).
+  $effect(() => {
+    if (!listsStore.loaded) return;
+    untrack(() => {
+      for (const g of Object.values(listsStore.installs)) {
+        const game = listsStore.gameOf(g);
+        if (game) listsStore.loadDeclared(game);
+      }
+    });
+  });
+
+  /** Mod qu'on ne peut pas réactiver : ses fichiers sont pris par d'autres mods (on propose de les désactiver). */
+  let swap = $state<{ key: string; name: string; error: AppError; source: "modio" | "nexus" | "ts" | "cl"; redo: () => void } | null>(null);
 
   async function toggle(source: "modio" | "nexus" | "ts" | "cl", g: GameInstall, m: InstalledMod, enabled: boolean) {
     const k = `${source}:${g.gameId}:${m.modId}`;
@@ -177,8 +191,11 @@
       else if (source === "ts") await tsStore.setEnabled(g.gameId, m.modId, enabled);
       else if (source === "cl") await listsStore.setEnabled(g.gameId, m.modId, enabled);
       else await nexusStore.setEnabled(g.gameId, m.modId, enabled);
+      if (swap?.key === k) swap = null;
     } catch (e) {
-      const message = asAppError(e).message;
+      const err = asAppError(e);
+      const message = err.message;
+      if (enabled && err.conflictWith?.length) swap = { key: k, name: m.name, error: err, source, redo: () => toggle(source, g, m, true) };
       if (source === "modio") rowErrors.set(m.modId, message);
       else if (source === "ts") tsErrors.set(tsKey(g, m), message);
       else if (source === "cl") clErrors.set(tsKey(g, m), message);
@@ -565,6 +582,13 @@
     </div>
   </header>
 
+  {#if swap}
+    <div class="swap">
+      <p class="swap-title">{tr(`Réactiver « ${swap.name} »`, `Enable "${swap.name}" again`)}</p>
+      <ErrorNotice error={swap.error} source={swap.source} redo={swap.redo} />
+    </div>
+  {/if}
+
   {#if error}
     <ErrorNotice {error} onretry={refresh} />
   {:else if loaded && total === 0}
@@ -596,6 +620,7 @@
         <span class="chip">mod.io</span>
         <span class="muted count">{Object.keys(g.mods).length}</span>
         <div class="group-actions">
+          <PlayButton name={g.gameName} folders={[g.extraFolders?.game, g.folder]} />
           {#if outdated.length > 0}
             <button class="btn btn-primary" onclick={() => updateAll(g)} disabled={updatingAll.has(g.gameId)}>
               <Icon name="download" size={15} />{updatingAll.has(g.gameId)
@@ -744,6 +769,7 @@
         <span class="chip">Nexus Mods</span>
         <span class="muted count">{nexusStore.count(g)}</span>
         <div class="group-actions">
+          <PlayButton name={g.gameName} folders={[g.extraFolders?.game, g.folder]} />
           {#if Object.keys(g.mods).length > 0}
             <button class="btn btn-ghost" onclick={() => toggleShare(`nexus:${g.gameId}`)}><Icon name="share" size={15} />{tr("Partager", "Share")}</button>
           {/if}
@@ -932,6 +958,7 @@
         <span class="chip">Thunderstore</span>
         <span class="muted count">{tsStore.count(g)}</span>
         <div class="group-actions">
+          <PlayButton name={g.gameName} folders={[g.extraFolders?.game, g.folder]} />
           {#if outdated.length > 0}
             <button class="btn btn-primary" onclick={() => tsUpdateAll(g)} disabled={tsUpdatingAll.has(g.gameId) || !!job}>
               <Icon name="download" size={15} />{tsUpdatingAll.has(g.gameId)
@@ -1064,6 +1091,7 @@
         <span class="chip">{game?.listName ?? tr("Communauté", "Community")}</span>
         <span class="muted count">{listsStore.count(g)}</span>
         <div class="group-actions">
+          <PlayButton name={g.gameName} folders={[g.folder]} steamAppId={game?.steamAppId} />
           {#if outdated.length > 0}
             <button class="btn btn-primary" onclick={() => clUpdateAll(g)} disabled={clUpdatingAll.has(g.gameId) || !!job}>
               <Icon name="download" size={15} />{clUpdatingAll.has(g.gameId)
@@ -1079,6 +1107,18 @@
         </div>
       </div>
       <p class="folder muted">{g.folder}{game ? tr(`, avec ${game.loader}`, `, with ${game.loader}`) : ""}</p>
+      {#if game}
+        {@const pairs = listsStore.incompatiblePairs(game)}
+        {#if pairs.length}
+          <p class="incompat">
+            <Icon name="warning" size={15} />
+            <span>
+              {tr("Déclarés incompatibles entre eux :", "Declared incompatible with each other:")}
+              {pairs.map(([a, b]) => `${a} + ${b}`).join(" · ")}. {tr("Désactive l'un des deux.", "Disable one of them.")}
+            </span>
+          </p>
+        {/if}
+      {/if}
 
       {#if sharing === `cl:${g.gameId}`}
         <SharePanel source="cl" game={g} onclose={() => (sharing = null)} />
@@ -1400,6 +1440,33 @@
     gap: 0.1rem 0.9rem;
     font-size: var(--t-sm);
     color: var(--muted);
+  }
+
+  .incompat {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    margin: 0.25rem 0 0.75rem;
+    padding: 0.55rem 0.8rem;
+    border-radius: var(--r-md);
+    background: var(--danger-bg);
+    font-size: var(--t-sm);
+  }
+
+  .incompat :global(svg) {
+    flex: none;
+    color: var(--danger);
+    margin-top: 0.15rem;
+  }
+
+  .swap {
+    display: grid;
+    gap: 0.4rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .swap-title {
+    font-weight: 600;
   }
 
   .row-error {

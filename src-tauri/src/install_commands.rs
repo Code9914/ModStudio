@@ -176,11 +176,14 @@ pub async fn install(
     let (folder, layout, old, others, set_aside) = {
         let lib = state.library.lock().expect("library");
         let game = lib.games.get(&game_id).ok_or(AppError::NoGameFolder)?;
-        let others: BTreeMap<String, String> = game
+        let others: crate::installer::Owners = game
             .mods
             .values()
             .filter(|m| m.mod_id != mod_id && !m.disabled)
-            .flat_map(|m| m.files.iter().map(move |f| (f.clone(), m.name.clone())))
+            .flat_map(|m| {
+                let owner = crate::installer::Owner { game_id, mod_id: m.mod_id, name: m.name.clone(), elsewhere: false };
+                m.files.iter().map(move |f| (f.clone(), owner.clone()))
+            })
             .collect();
         let mut old = game.mods.get(&mod_id).cloned();
         let mut set_aside = None;

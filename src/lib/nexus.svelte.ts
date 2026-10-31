@@ -544,7 +544,7 @@ export const engineNames: Record<string, string> = {
   bethesda: "Creation Engine",
 };
 
-export const launcherNames: Record<string, string> = { steam: "Steam", epic: "Epic Games" };
+export const launcherNames: Record<string, string> = { steam: "Steam", epic: "Epic Games", heroic: "Heroic" };
 
 /** L'outil correspond-il à un mod nécessaire indiqué sur la page d'un mod ? */
 /** Type d'une option FOMOD selon les choix déjà faits. */

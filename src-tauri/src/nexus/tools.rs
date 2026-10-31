@@ -379,7 +379,7 @@ impl NexusState {
         // Fichiers des mods et des autres outils : jamais écrasés.
         let mut without_this = config.clone();
         without_this.tools.remove(def.id);
-        let others: BTreeMap<String, String> = without_this
+        let others: crate::installer::Owners = without_this
             .owned_files(-1)
             .into_iter()
             .filter(|(folder, _, _)| *folder == root)

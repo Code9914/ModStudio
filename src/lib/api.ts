@@ -53,9 +53,20 @@ export interface AppError {
     | "share_invalid"
     | "translation_unsupported"
     | "translation"
+    | "launch_failed"
+    | "incompatible"
     | "unknown";
   message: string;
   retryAfter: number | null;
+  /** Conflit de fichiers : les mods (même source) à désactiver pour faire de la place. */
+  conflictWith?: ConflictOwner[] | null;
+}
+
+/** Mod qui a déjà installé des fichiers qu'un autre veut écrire. */
+export interface ConflictOwner {
+  gameId: number;
+  modId: number;
+  name: string;
 }
 
 export interface SettingsView {
@@ -1126,8 +1137,18 @@ export interface ClInstalled {
   installed: string[];
 }
 
+/** Mod installé et activé, et les mods (identifiants de la liste) avec lesquels il ne marche pas. */
+export interface ClDeclared {
+  modId: number;
+  id: string;
+  name: string;
+  conflicts: string[];
+}
+
 export const cl = {
   games: () => call<ClGame[]>("cl_games"),
+  /** Incompatibilités déclarées des mods installés (liste et manifestes des mods). */
+  declared: (game: string) => call<ClDeclared[]>("cl_declared", { game }),
   overview: () => call<GameInstall[]>("cl_overview"),
   mods: (game: string, refresh = false) => call<ClMod[]>("cl_mods", { game, refresh }),
   configure: (game: string, folder: string) => call<GameInstall>("cl_configure", { game, folder }),
@@ -1234,6 +1255,16 @@ export interface TranslationPlan {
   /** Octets encore à télécharger (0 : tout est prêt). */
   missing: number;
 }
+
+/** Jeu lancé : par son launcher, ou par son script extender (`SKSE64`…). */
+export interface Launched {
+  via: "steam" | "epic" | "heroic" | "extender";
+  extender: string | null;
+}
+
+/** Lance un jeu trouvé sur ce PC. */
+export const launchGame = (launcher: Launcher, appId: string, path: string) =>
+  call<Launched>("launch_game", { launcher, appId, path });
 
 export const translation = {
   /** Langue d'un texte (`en`, `fr`, `zh-Hans`…), `null` si elle n'est pas sûre. */

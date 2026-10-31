@@ -65,7 +65,11 @@
       : [],
   );
 
+  /** Action à refaire après avoir levé un conflit de fichiers. */
+  let redo = $state<(() => void) | null>(null);
+
   export async function install(version?: string) {
+    redo = () => install(version);
     error = null;
     note = null;
     orphans = [];
@@ -84,6 +88,7 @@
   }
 
   async function toggle(enabled: boolean) {
+    redo = () => toggle(enabled);
     busy = true;
     error = null;
     try {
@@ -219,7 +224,7 @@
     </div>
   {/if}
 
-  {#if error}<ErrorNotice {error} />{/if}
+  {#if error}<ErrorNotice {error} source="ts" {redo} />{/if}
   {#if note}<p class="small note" role="status">{note}</p>{/if}
 </section>
 

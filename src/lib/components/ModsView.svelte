@@ -19,6 +19,7 @@
   import { nav } from "$lib/nav.svelte";
   import { PagedList } from "$lib/paged.svelte";
   import Icon from "./Icon.svelte";
+  import PlayButton from "./PlayButton.svelte";
   import LoadMore from "./LoadMore.svelte";
   import Thumb from "./Thumb.svelte";
 
@@ -139,6 +140,7 @@
         <span><strong>{exact(game.stats?.mods_count_total)}</strong> {unit}</span>
         <span><strong>{count(game.stats?.mods_downloads_total)}</strong> {tr("téléchargements", "downloads")}</span>
         <span><strong>{count(game.stats?.mods_subscribers_total)}</strong> {tr("abonnements", "subscriptions")}</span>
+        <PlayButton name={game.name} folders={[installs.games[game.id]?.extraFolders?.game, installs.games[game.id]?.folder]} />
         {#if game.profile_url}
           <button class="btn btn-ghost" onclick={() => openUrl(game.profile_url!)}>
             {tr("Page du jeu sur mod.io", "Game page on mod.io")} <Icon name="external" size={14} />

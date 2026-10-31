@@ -2110,7 +2110,7 @@ pub(crate) mod tests {
         let s = state_for(&server.base, "ts-conflict-state");
         s.configure("lethal-company", "Lethal Company".into(), None, game.to_str().unwrap()).unwrap();
         let err = s.install("lethal-company", "Team", "Cool", None, &[], quiet()).await.unwrap_err();
-        assert!(matches!(err, AppError::Conflict(_)), "{err:?}");
+        assert!(matches!(err, AppError::Conflict(..)), "{err:?}");
         assert_eq!(fs::read(game.join("BepInEx/plugins/Team-Cool/Cool.dll")).unwrap(), b"a la main");
         assert!(!game.join(STAGING_DIR).exists());
         assert!(s.overview()[0].mods.is_empty());

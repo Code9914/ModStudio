@@ -1,5 +1,6 @@
 <script lang="ts">
   // Installer, mettre à jour, désactiver ou désinstaller un mod d'une liste de communauté.
+  import { untrack } from "svelte";
   import { asAppError, cl, type AppError, type ClGame, type ClMod } from "$lib/api";
   import { tr } from "$lib/i18n.svelte";
   import { listsStore } from "$lib/lists.svelte";
@@ -19,6 +20,21 @@
 
   const config = $derived(listsStore.config(game));
   const record = $derived(listsStore.installed(game.gameId, mod.modId));
+
+  // Mods activés déclarés incompatibles avec celui-ci (liste, ou manifeste d'un mod installé).
+  $effect(() => {
+    const g = game;
+    untrack(() => listsStore.loadDeclared(g));
+  });
+  const incompatible = $derived(listsStore.incompatibleWith(game, mod));
+  const incompatibleText = $derived(
+    incompatible.length
+      ? tr(
+          `Déclaré incompatible avec ${incompatible.map((n) => `« ${n} »`).join(", ")}, ${incompatible.length > 1 ? "installés et activés" : "installé et activé"}. Les deux ensemble risquent de ne pas marcher.`,
+          `Declared incompatible with ${incompatible.map((n) => `"${n}"`).join(", ")}, which ${incompatible.length > 1 ? "are" : "is"} installed and enabled. They may not work together.`,
+        )
+      : null,
+  );
   const job = $derived(listsStore.progress[game.gameId] ?? null);
   const mine = $derived(job?.modId === mod.modId);
   const latest = $derived(record ? listsStore.latest(game.gameId, mod.modId) : null);
@@ -64,7 +80,11 @@
       : [],
   );
 
+  /** Action à refaire après avoir levé un conflit de fichiers. */
+  let redo = $state<(() => void) | null>(null);
+
   export async function install(version?: string) {
+    redo = () => install(version);
     error = null;
     note = null;
     orphans = [];
@@ -83,6 +103,7 @@
   }
 
   async function toggle(enabled: boolean) {
+    redo = () => toggle(enabled);
     busy = true;
     error = null;
     try {
@@ -143,6 +164,9 @@
 </script>
 
 <section class="panel" aria-label={tr("Installation", "Installation")}>
+  {#if incompatibleText}
+    <p class="warn small"><Icon name="warning" size={15} /><span>{incompatibleText}</span></p>
+  {/if}
   {#if !config}
     <p class="small">{tr(`Pour installer ce mod, indique d'abord où se trouve ${game.name}.`, `To install this mod, first tell ModStudio where ${game.name} is.`)}</p>
     <ClSetup {game} />
@@ -216,7 +240,7 @@
     </div>
   {/if}
 
-  {#if error}<ErrorNotice {error} />{/if}
+  {#if error}<ErrorNotice {error} source="cl" {redo} />{/if}
   {#if note}<p class="small note" role="status">{note}</p>{/if}
 </section>
 
@@ -264,6 +288,21 @@
     justify-content: center;
     padding-block: 0.7rem;
     font-size: var(--t-md);
+  }
+
+  .warn {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: var(--r-md);
+    background: var(--danger-bg);
+  }
+
+  .warn :global(svg) {
+    flex: none;
+    color: var(--danger);
+    margin-top: 0.15rem;
   }
 
   .small {

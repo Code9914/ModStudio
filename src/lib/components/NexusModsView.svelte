@@ -9,6 +9,7 @@
   import { PagedList } from "$lib/paged.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
+  import PlayButton from "./PlayButton.svelte";
   import LoadMore from "./LoadMore.svelte";
   import NexusGameTools from "./NexusGameTools.svelte";
   import Thumb from "./Thumb.svelte";
@@ -90,6 +91,7 @@
           <span><strong>{exact(stats.modCount)}</strong> mods</span>
           <span><strong>{count(stats.downloadCount)}</strong> {tr("téléchargements", "downloads")}</span>
         {/if}
+        <PlayButton name={game.name} folders={[nexusStore.games[game.id]?.extraFolders?.game, nexusStore.games[game.id]?.folder]} />
         <button class="btn btn-ghost" onclick={() => openUrl(`https://www.nexusmods.com/games/${game.domainName}`)}>
           {tr("Page du jeu sur Nexus Mods", "Game page on Nexus Mods")} <Icon name="external" size={14} />
         </button>

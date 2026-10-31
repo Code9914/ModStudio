@@ -152,6 +152,60 @@ pub struct GameInstall {
     pub active_profile: Option<String>,
 }
 
+/// Mod (ou outil) qui a installé un fichier.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Owner {
+    pub game_id: i64,
+    /// 0 : un outil (UE4SS, BepInEx…), qui ne se désactive pas comme un mod.
+    pub mod_id: i64,
+    pub name: String,
+    /// Installé par une autre source ou pour un autre jeu (autre bibliothèque).
+    #[serde(skip)]
+    pub elsewhere: bool,
+}
+
+impl Owner {
+    /// Un propriétaire qu'on ne peut que nommer.
+    #[cfg(test)]
+    pub fn named(name: &str) -> Self {
+        Owner { game_id: 0, mod_id: 0, name: name.to_string(), elsewhere: true }
+    }
+
+    /// Mod de la même bibliothèque, qu'on peut désactiver pour faire de la place.
+    pub fn can_step_aside(&self) -> bool {
+        self.mod_id > 0 && !self.elsewhere
+    }
+}
+
+impl std::fmt::Display for Owner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.name)
+    }
+}
+
+/// Fichiers installés par les autres mods (relatif → propriétaire).
+pub type Owners = BTreeMap<String, Owner>;
+
+/// Erreur de conflit : la liste, et les mods à désactiver pour la lever quand
+/// tous les fichiers en cause leur appartiennent.
+pub fn conflict_error(conflicts: Vec<String>, owners: Vec<Owner>, blocking: bool) -> AppError {
+    let more = conflicts.len().saturating_sub(3);
+    let mut text = conflicts.into_iter().take(3).collect::<Vec<_>>().join(", ");
+    if more > 0 {
+        text.push_str(&crate::tr!(" et {more} autres", " and {more} others"));
+    }
+    let mut step_aside: Vec<Owner> = Vec::new();
+    if !blocking && !owners.is_empty() && owners.iter().all(Owner::can_step_aside) {
+        for o in owners {
+            if !step_aside.iter().any(|x| x.game_id == o.game_id && x.mod_id == o.mod_id) {
+                step_aside.push(o);
+            }
+        }
+    }
+    AppError::Conflict(text, step_aside)
+}
+
 impl GameInstall {
     /// Dossier correspondant à une clé (`""` : dossier des mods).
     pub fn folder_for(&self, key: &str) -> Option<&Path> {
@@ -163,22 +217,24 @@ impl GameInstall {
     }
 
     /// Tous les fichiers en place des autres mods activés (et des outils), par dossier absolu.
-    pub fn owned_files(&self, except_mod: i64) -> Vec<(PathBuf, String, String)> {
+    pub fn owned_files(&self, except_mod: i64) -> Vec<(PathBuf, String, Owner)> {
         let mut out = Vec::new();
         for t in self.tools.values() {
             let Some(dir) = self.folder_for(&t.key) else { continue };
+            let owner = Owner { game_id: self.game_id, mod_id: 0, name: t.name.clone(), elsewhere: false };
             for f in &t.files {
-                out.push((dir.to_path_buf(), f.clone(), t.name.clone()));
+                out.push((dir.to_path_buf(), f.clone(), owner.clone()));
             }
         }
         for m in self.mods.values().filter(|m| m.mod_id != except_mod && !m.disabled) {
+            let owner = Owner { game_id: self.game_id, mod_id: m.mod_id, name: m.name.clone(), elsewhere: false };
             for f in &m.files {
-                out.push((self.folder.clone(), f.clone(), m.name.clone()));
+                out.push((self.folder.clone(), f.clone(), owner.clone()));
             }
             for part in &m.parts {
                 if let Some(dir) = self.extra_folders.get(&part.key) {
                     for f in &part.files {
-                        out.push((dir.clone(), f.clone(), m.name.clone()));
+                        out.push((dir.clone(), f.clone(), owner.clone()));
                     }
                 }
             }
@@ -504,7 +560,7 @@ pub struct PlaceInput<'a> {
     /// Version installée auparavant (mise à jour).
     pub old: Option<&'a InstalledMod>,
     /// Fichiers des autres mods du même jeu : jamais écrasés.
-    pub others: &'a BTreeMap<String, String>,
+    pub others: &'a Owners,
 }
 
 pub struct Placed {
@@ -590,8 +646,8 @@ pub struct Batch {
     /// Fichiers et dossiers de la version précédente, dans ce dossier.
     pub old_files: Vec<String>,
     pub old_dirs: Vec<String>,
-    /// Fichiers des autres mods dans ce dossier (relatif → nom du mod) : jamais écrasés.
-    pub others: BTreeMap<String, String>,
+    /// Fichiers des autres mods dans ce dossier : jamais écrasés.
+    pub others: Owners,
 }
 
 pub struct PlacedBatch {
@@ -609,6 +665,9 @@ pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
 
     // 1. Conflits : rien n'est écrasé, sauf les fichiers de la version précédente.
     let mut conflicts = Vec::new();
+    let mut owners = Vec::new();
+    // Fichier en double ou qui n'appartient à aucun mod : désactiver un mod n'y changerait rien.
+    let mut blocking = false;
     for b in &batches {
         let old: BTreeSet<&str> = b.old_files.iter().map(String::as_str).collect();
         let mut seen = BTreeSet::new();
@@ -616,20 +675,18 @@ pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
             let abs = resolve_rel(&b.folder, rel).ok_or_else(|| AppError::BadArchive(crate::tr!("chemin invalide : {rel}", "invalid path: {rel}")))?;
             if !seen.insert(rel.to_ascii_lowercase()) {
                 conflicts.push(crate::tr!("{rel} (présent deux fois dans l'archive)", "{rel} (appears twice in the archive)"));
+                blocking = true;
             } else if let Some(owner) = b.others.get(rel) {
                 conflicts.push(crate::tr!("{rel} (déjà installé par « {owner} »)", "{rel} (already installed by \"{owner}\")"));
+                owners.push(owner.clone());
             } else if abs.exists() && !old.contains(rel.as_str()) {
                 conflicts.push(rel.clone());
+                blocking = true;
             }
         }
     }
     if !conflicts.is_empty() {
-        let more = conflicts.len().saturating_sub(3);
-        let mut text = conflicts.into_iter().take(3).collect::<Vec<_>>().join(", ");
-        if more > 0 {
-            text.push_str(&crate::tr!(" et {more} autres", " and {more} others"));
-        }
-        return Err(AppError::Conflict(text));
+        return Err(conflict_error(conflicts, owners, blocking));
     }
 
     // 2. Retire l'ancienne version.
@@ -1045,8 +1102,8 @@ pub mod tests {
     fn existing_files_are_never_overwritten() {
         let game = tempdir("game-flat");
         fs::write(game.join("shared.pak"), b"a moi").unwrap();
-        let mut others = BTreeMap::new();
-        others.insert("other.pak".to_string(), "Autre mod".to_string());
+        let mut others = Owners::new();
+        others.insert("other.pak".to_string(), Owner::named("Autre mod"));
 
         let zip = make_zip(&[("shared.pak", b"mod"), ("other.pak", b"mod"), ("mine.pak", b"mod")]);
         let (archive, out) = extract(&zip, "x3");
@@ -1063,10 +1120,47 @@ pub mod tests {
         })
         .err()
         .unwrap();
-        let AppError::Conflict(text) = err else { panic!("conflit attendu") };
+        let AppError::Conflict(text, step_aside) = err else { panic!("conflit attendu") };
         assert!(text.contains("shared.pak") && text.contains("Autre mod"), "{text}");
+        assert!(step_aside.is_empty(), "un fichier qui n'est à aucun mod bloque");
         assert_eq!(fs::read(game.join("shared.pak")).unwrap(), b"a moi");
         assert!(!game.join("mine.pak").exists(), "rien n'est déplacé en cas de conflit");
+    }
+
+    #[test]
+    fn conflicts_with_other_mods_only_can_be_resolved() {
+        let game = tempdir("game-step-aside");
+        let mine = Owner { game_id: 7, mod_id: 3, name: "Mod A".into(), elsewhere: false };
+        let tool = Owner { game_id: 7, mod_id: 0, name: "UE4SS".into(), elsewhere: false };
+        let other_source = Owner { game_id: 7, mod_id: 9, name: "Ailleurs".into(), elsewhere: true };
+        let zip = make_zip(&[("a.pak", b"x"), ("b.pak", b"x"), ("c.pak", b"x")]);
+        let (archive, out) = extract(&zip, "x4");
+        let try_with = |others: Owners| {
+            place(PlaceInput {
+                folder: &game,
+                layout: Layout::Flat,
+                mod_id: 2,
+                name_id: "m",
+                archive: &archive,
+                filename: "m.zip",
+                extracted: Some(&out),
+                old: None,
+                others: &others,
+            })
+            .err()
+            .unwrap()
+        };
+        // Deux fichiers du même mod : on propose de le désactiver (une seule fois).
+        let err = try_with(Owners::from([("a.pak".into(), mine.clone()), ("b.pak".into(), mine.clone())]));
+        assert!(matches!(&err, AppError::Conflict(_, aside) if aside == &vec![mine.clone()]), "{err:?}");
+        // Un outil ou un mod d'une autre source : rien à proposer.
+        let err = try_with(Owners::from([("a.pak".into(), mine.clone()), ("b.pak".into(), tool)]));
+        assert!(matches!(&err, AppError::Conflict(_, aside) if aside.is_empty()));
+        let err = try_with(Owners::from([("c.pak".into(), other_source)]));
+        assert!(matches!(&err, AppError::Conflict(_, aside) if aside.is_empty()));
+        let json = serde_json::to_value(try_with(Owners::from([("a.pak".into(), mine)]))).unwrap();
+        assert_eq!(json["conflictWith"][0]["modId"], 3);
+        assert_eq!(json["conflictWith"][0]["name"], "Mod A");
     }
 
     #[test]

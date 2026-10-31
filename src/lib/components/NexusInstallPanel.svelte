@@ -108,7 +108,11 @@
   let note = $state<string | null>(null);
 
   /** Lance l'installation d'un fichier (appelé aussi par la liste des fichiers). */
+  /** Action à refaire après avoir levé un conflit de fichiers. */
+  let redo = $state<(() => void) | null>(null);
+
   export function install(file: NexusFile) {
+    redo = () => install(file);
     error = null;
     note = null;
     if (!nexusStore.ready) {
@@ -320,6 +324,7 @@
   let toggling = $state(false);
 
   async function setEnabled(enabled: boolean) {
+    redo = () => setEnabled(enabled);
     toggling = true;
     error = null;
     note = null;
@@ -532,7 +537,7 @@
     </p>
   {/if}
 
-  {#if error}<ErrorNotice {error} />{/if}
+  {#if error}<ErrorNotice {error} source="nexus" {redo} />{/if}
   {#if note}<p class="note small" role="status">{note}</p>{/if}
 
   {#if fomod}

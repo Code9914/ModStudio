@@ -9,6 +9,7 @@
   import { RML_COMMUNITY, tsStore } from "$lib/thunderstore.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
+  import PlayButton from "./PlayButton.svelte";
   import LoadMore from "./LoadMore.svelte";
   import RmlModsList from "./RmlModsList.svelte";
   import Thumb from "./Thumb.svelte";
@@ -96,6 +97,7 @@
           <span><strong>{exact(info.totalPackageCount)}</strong> mods</span>
           <span><strong>{count(info.totalDownloadCount)}</strong> {tr("téléchargements", "downloads")}</span>
         {/if}
+        <PlayButton name={info.name} folders={[tsStore.game(game.id)?.folder]} />
         <button class="btn btn-ghost" onclick={() => openUrl(`https://thunderstore.io/c/${game.identifier}/`)}>
           {tr("Page du jeu sur Thunderstore", "Game page on Thunderstore")} <Icon name="external" size={14} />
         </button>

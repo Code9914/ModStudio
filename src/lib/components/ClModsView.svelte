@@ -12,6 +12,7 @@
   import ClSetup from "./ClSetup.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
+  import PlayButton from "./PlayButton.svelte";
   import Thumb from "./Thumb.svelte";
 
   let { game }: { game: ClGame } = $props();
@@ -85,6 +86,7 @@
         <span class="chip">{game.listName}</span>
         <span class="chip" title={tr("Chargeur de mods du jeu", "The game's mod loader")}>{game.loader}</span>
         {#if mods}<span><strong>{exact(mods.length)}</strong> mods</span>{/if}
+        <PlayButton name={game.name} folders={[listsStore.config(game)?.folder]} steamAppId={game.steamAppId} />
         <button class="btn btn-ghost" onclick={() => openUrl(game.listUrl)}>
           {tr("Site de la liste", "List website")} <Icon name="external" size={14} />
         </button>

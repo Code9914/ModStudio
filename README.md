@@ -32,6 +32,12 @@ For every game:
   MelonLoader) once you confirm.
 - **"Installed" page**: updates, enable or disable a mod without uninstalling
   it, per-game profiles, clean uninstall.
+- **Play button**: starts the game from ModStudio (Steam, Epic, Heroic on
+  Linux). On Windows, Bethesda games start through their script extender
+  (SKSE…) when it's installed.
+- **Conflicts**: a mod never overwrites another mod's files. When it needs
+  them, ModStudio offers to disable the other one (without uninstalling it).
+  Mods declared incompatible (Outer Wilds manifests) are flagged.
 - **Share your mods**: a code you send to a friend, who gets the same mods in
   the same versions (see below).
 - **Global search** (Ctrl + K): one search for mods and games across every
@@ -137,7 +143,7 @@ src-tauri/src/        Rust backend
   lists/              community mod lists
   share/              shared profiles (MS1 codes, r2modman)
   translate.rs        translation models (download, checks, language detection)
-  games/              installed games (Steam, Epic, Heroic, engine detection)
+  games/              installed games (Steam, Epic, Heroic, engine detection, launch)
   installer.rs        checked downloads, extraction, uninstall
   toggle.rs           enable / disable, profiles
 src/                  Svelte interface (routes/+page.svelte, lib/components/)
@@ -175,6 +181,12 @@ Et pour tous les jeux :
 - **Page « Installés »** : mises à jour, activer ou désactiver un mod sans le
   désinstaller, profils par jeu (« Principal », « Coop »…), désinstallation
   propre.
+- **Bouton « Jouer »** : lance le jeu depuis ModStudio (Steam, Epic, Heroic
+  sous Linux). Sous Windows, les jeux Bethesda passent par leur script
+  extender (SKSE…) quand il est installé.
+- **Conflits** : un mod n'écrase jamais les fichiers d'un autre. S'il en a
+  besoin, ModStudio propose de désactiver l'autre (sans le désinstaller). Les
+  mods déclarés incompatibles (manifestes d'Outer Wilds) sont signalés.
 - **Partager ses mods** : un code à envoyer à un ami, qui installe les mêmes
   mods dans les mêmes versions (voir plus bas).
 - **Recherche globale** (Ctrl + K) : une seule recherche pour les mods et les

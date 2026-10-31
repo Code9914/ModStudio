@@ -1,5 +1,5 @@
 // Jeux dont la communauté tient sa propre liste de mods : état partagé par toutes les vues.
-import { asAppError, cl, type AppError, type ClGame, type ClInstalled, type ClLoader, type ClMod, type DetectedGame, type GameInstall, type ProfileEdit } from "./api";
+import { asAppError, cl, type AppError, type ClDeclared, type ClGame, type ClInstalled, type ClLoader, type ClMod, type DetectedGame, type GameInstall, type ProfileEdit } from "./api";
 import { tr } from "./i18n.svelte";
 import { describe, type Progress } from "./installs.svelte";
 import { nexusStore } from "./nexus.svelte";
@@ -21,6 +21,8 @@ class ListsStore {
   progress = $state<Record<number, Progress & { modId: number }>>({});
   /** Nouvelle version publiée, par `jeu:mod`. */
   updates = $state<Record<string, string>>({});
+  /** Incompatibilités déclarées des mods installés, par jeu (identifiant texte). */
+  declared = $state<Record<string, ClDeclared[]>>({});
 
   #loading: Record<string, Promise<void> | undefined> = {};
 
@@ -87,6 +89,64 @@ class ListsStore {
     return this.#loading[game.id]!;
   }
 
+  /** Relit les incompatibilités déclarées des mods installés (après un changement). */
+  async loadDeclared(game: ClGame) {
+    if (!this.config(game)) {
+      delete this.declared[game.id];
+      return;
+    }
+    try {
+      this.declared[game.id] = await cl.declared(game.id);
+    } catch {
+      /* liste injoignable : pas d'avertissement */
+    }
+  }
+
+  /** Mods installés et activés (identifiant de la liste → nom). */
+  #enabled(game: ClGame): Map<string, string> {
+    const prefix = `${game.id}:`;
+    const out = new Map<string, string>();
+    for (const m of Object.values(this.config(game)?.mods ?? {})) {
+      if (!m.disabled && m.fileName?.startsWith(prefix)) out.set(m.fileName.slice(prefix.length).toLowerCase(), m.name);
+    }
+    return out;
+  }
+
+  /** Noms des mods activés déclarés incompatibles avec `mod` (par la liste ou par l'un d'eux). */
+  incompatibleWith(game: ClGame, mod: ClMod): string[] {
+    const enabled = this.#enabled(game);
+    const id = mod.id.toLowerCase();
+    const names = new Set<string>();
+    for (const c of mod.versions[0]?.conflicts ?? []) {
+      const name = enabled.get(c.id.toLowerCase());
+      if (name && c.id.toLowerCase() !== id) names.add(name);
+    }
+    for (const d of this.declared[game.id] ?? []) {
+      if (d.id.toLowerCase() !== id && enabled.has(d.id.toLowerCase()) && d.conflicts.some((c) => c.toLowerCase() === id)) names.add(d.name);
+    }
+    return [...names];
+  }
+
+  /** Paires de mods activés déclarés incompatibles entre eux. */
+  incompatiblePairs(game: ClGame): [string, string][] {
+    const enabled = this.#enabled(game);
+    const seen = new Set<string>();
+    const out: [string, string][] = [];
+    for (const d of this.declared[game.id] ?? []) {
+      for (const c of d.conflicts) {
+        const other = enabled.get(c.toLowerCase());
+        if (!other || c.toLowerCase() === d.id.toLowerCase()) continue;
+        const pair = [d.name, other].sort() as [string, string];
+        const key = pair.join("\u0000");
+        if (!seen.has(key)) {
+          seen.add(key);
+          out.push(pair);
+        }
+      }
+    }
+    return out;
+  }
+
   mod(game: ClGame, id: string): ClMod | null {
     const key = id.toLowerCase();
     return this.mods[game.id]?.find((m) => m.id.toLowerCase() === key) ?? null;
@@ -135,6 +195,7 @@ class ListsStore {
         if (this.updates[keyOf(gameId, m.modId)] === m.version) delete this.updates[keyOf(gameId, m.modId)];
       }
       this.refreshLoader(game);
+      this.loadDeclared(game);
       return result;
     } catch (e) {
       throw asAppError(e);
@@ -149,6 +210,8 @@ class ListsStore {
 
   async setEnabled(gameId: number, modId: number, enabled: boolean) {
     this.installs[gameId] = await cl.setEnabled(gameId, modId, enabled);
+    const game = this.games.find((g) => g.gameId === gameId);
+    if (game) this.loadDeclared(game);
   }
 
   async applyProfile(gameId: number, name: string) {
@@ -172,7 +235,10 @@ class ListsStore {
     }
     delete this.updates[keyOf(gameId, modId)];
     const game = this.games.find((x) => x.gameId === gameId);
-    if (game) this.refreshLoader(game);
+    if (game) {
+      this.refreshLoader(game);
+      this.loadDeclared(game);
+    }
     return result;
   }
 

@@ -35,7 +35,9 @@ pub enum AppError {
     VirusFlagged,
     Corrupted,
     Cancelled,
-    Conflict(String),
+    /// Fichiers déjà là ; les mods qu'on peut désactiver pour faire de la place
+    /// (vide : rien à proposer, un fichier n'appartient à aucun mod).
+    Conflict(String, Vec<crate::installer::Owner>),
     Io(String),
     BadArchive(String),
     DownloadRefused(String),
@@ -89,6 +91,12 @@ pub enum AppError {
     TranslationUnsupported(String),
     /// Téléchargement d'un modèle impossible.
     TranslationUnavailable(String),
+
+    // ---------------------------------------------------------------- Lancer un jeu
+    LaunchFailed(String),
+
+    /// Mod déclaré incompatible avec des mods activés (qu'on peut désactiver).
+    Incompatible(String, Vec<crate::installer::Owner>),
 }
 
 impl std::fmt::Display for AppError {
@@ -102,7 +110,8 @@ impl std::fmt::Display for AppError {
             | AppError::WrongPlatform(m)
             | AppError::ToolMismatch(m)
             | AppError::NexusRefused(m)
-            | AppError::ShareInvalid(m) => return f.write_str(m),
+            | AppError::ShareInvalid(m)
+            | AppError::Incompatible(m, _) => return f.write_str(m),
             AppError::MissingApiKey => pick(
                 "Aucune clé API n'est configurée. Ajoute ta clé dans les réglages.",
                 "No API key is set. Add your key in Settings.",
@@ -198,7 +207,7 @@ impl std::fmt::Display for AppError {
                 "Installation cancelled.",
             )
             .into(),
-            AppError::Conflict(d) => crate::tr!(
+            AppError::Conflict(d, _) => crate::tr!(
                 "Des fichiers existent déjà à cet endroit et ModStudio ne les écrase pas : {d}",
                 "Files already exist at this location and ModStudio won't overwrite them: {d}"
             ),
@@ -327,6 +336,10 @@ impl std::fmt::Display for AppError {
                 "ModStudio ne sait pas encore traduire depuis cette langue ({lang}).",
                 "ModStudio can't translate from this language yet ({lang})."
             ),
+            AppError::LaunchFailed(d) => crate::tr!(
+                "Impossible de lancer le jeu : {d}",
+                "Couldn't start the game: {d}"
+            ),
             AppError::TranslationUnavailable(d) => crate::tr!(
                 "Impossible de télécharger le modèle de traduction. Vérifie ta connexion internet. ({d})",
                 "Couldn't download the translation model. Check your internet connection. ({d})"
@@ -363,7 +376,7 @@ impl AppError {
             AppError::VirusFlagged => "virus_flagged",
             AppError::Corrupted => "corrupted",
             AppError::Cancelled => "cancelled",
-            AppError::Conflict(_) => "conflict",
+            AppError::Conflict(..) => "conflict",
             AppError::Io(_) => "io",
             AppError::BadArchive(_) => "bad_archive",
             AppError::DownloadRefused(_) => "download_refused",
@@ -397,6 +410,8 @@ impl AppError {
             AppError::ShareCodeUnknown => "not_found",
             AppError::TranslationUnsupported(_) => "translation_unsupported",
             AppError::TranslationUnavailable(_) => "network",
+            AppError::LaunchFailed(_) => "launch_failed",
+            AppError::Incompatible(..) => "incompatible",
         }
     }
 
@@ -426,7 +441,7 @@ impl AppError {
 
 impl Serialize for AppError {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut s = serializer.serialize_struct("AppError", 3)?;
+        let mut s = serializer.serialize_struct("AppError", 4)?;
         s.serialize_field("kind", self.kind())?;
         s.serialize_field("message", &self.to_string())?;
         let retry_after = match self {
@@ -434,6 +449,12 @@ impl Serialize for AppError {
             _ => None,
         };
         s.serialize_field("retryAfter", &retry_after)?;
+        // Conflit qu'on peut lever en désactivant ces mods.
+        let step_aside = match self {
+            AppError::Conflict(_, owners) | AppError::Incompatible(_, owners) if !owners.is_empty() => Some(owners),
+            _ => None,
+        };
+        s.serialize_field("conflictWith", &step_aside)?;
         s.end()
     }
 }

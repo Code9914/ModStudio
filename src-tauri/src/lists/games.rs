@@ -366,6 +366,27 @@ impl GameDef {
         }
     }
 
+    /// Mods avec lesquels celui-ci ne marche pas, d'après le mod lui-même
+    /// (Outer Wilds : `conflicts` de son `manifest.json`).
+    pub fn discovered_conflicts(&self, extracted: &Path) -> Vec<String> {
+        match self.kind {
+            Kind::OuterWilds => outer_wilds::manifest_list(extracted, "conflicts"),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Pareil pour un mod installé (lu dans son dossier).
+    pub fn installed_conflicts(&self, config: &crate::installer::GameInstall, id: &str) -> Vec<String> {
+        match self.kind {
+            Kind::OuterWilds if safe_file_name(id) => config
+                .extra_folders
+                .get(outer_wilds::OWML_KEY)
+                .map(|owml| outer_wilds::manifest_list(&owml.join("Mods").join(id), "conflicts"))
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    }
+
     /// Ce qu'il faut lancer pour que les mods se chargent (OWML).
     pub fn launch(&self, extra: &std::collections::BTreeMap<String, PathBuf>) -> AppResult<()> {
         match self.kind {
@@ -1286,12 +1307,17 @@ pub(crate) mod outer_wilds {
 
     /// Mods demandés par le `manifest.json` du mod (par leur `uniqueName`).
     pub fn manifest_dependencies(mod_dir: &Path) -> Vec<String> {
+        manifest_list(mod_dir, "dependencies")
+    }
+
+    /// Une liste de noms uniques du `manifest.json` d'un mod (`dependencies`, `conflicts`).
+    pub fn manifest_list(mod_dir: &Path, key: &str) -> Vec<String> {
         let Some(v) = fs::read(mod_dir.join("manifest.json")).ok().and_then(|b| serde_json::from_slice::<serde_json::Value>(strip_bom(&b)).ok()) else {
             return Vec::new();
         };
-        v.get("dependencies")
+        v.get(key)
             .and_then(|d| d.as_array())
-            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.trim().to_string())).filter(|s| !s.is_empty()).take(200).collect())
             .unwrap_or_default()
     }
 

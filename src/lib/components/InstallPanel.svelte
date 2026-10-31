@@ -69,7 +69,11 @@
   const progress = $derived(installs.progress[mod.id] ?? (depId ? installs.progress[depId] : null) ?? null);
   const busy = $derived(progress !== null || depId !== null);
 
+  /** Action à refaire après avoir levé un conflit de fichiers. */
+  let redo = $state<(() => void) | null>(null);
+
   function start() {
+    redo = start;
     error = null;
     note = null;
     if (!installs.game(game.id)) {
@@ -194,6 +198,7 @@
   let toggling = $state(false);
 
   async function setEnabled(enabled: boolean) {
+    redo = () => setEnabled(enabled);
     toggling = true;
     error = null;
     try {
@@ -328,7 +333,7 @@
     {/if}
   {/if}
 
-  {#if error}<ErrorNotice {error} onretry={error.kind === "conflict" ? undefined : start} />{/if}
+  {#if error}<ErrorNotice {error} source="modio" {redo} onretry={error.kind === "conflict" ? undefined : start} />{/if}
   {#if note}<p class="note small" role="status">{note}</p>{/if}
   {#if orphans.length}
     <div class="orphans">

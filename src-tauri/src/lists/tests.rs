@@ -467,6 +467,49 @@ async fn outer_wilds_mods_go_to_owml_with_the_dependencies_their_manifest_asks_f
     assert!(!owml_dir.join("Mods/xen.NewHorizons").exists());
 }
 
+#[tokio::test]
+async fn outer_wilds_mods_that_declare_conflicts_are_refused_until_the_other_is_disabled() {
+    let folder = tempdir("lists-ow-conf");
+    fs::write(folder.join("OuterWilds.exe"), b"exe").unwrap();
+    let owml_dir = tempdir("lists-ow-conf-owml");
+    let owml = make_zip(&[("OWML.Launcher.exe", b"launcher"), ("OWML.DefaultConfig.json", br#"{"gamePath":""}"#)]);
+    let b = make_zip(&[("manifest.json", br#"{"uniqueName":"B.Mod"}"#), ("B.dll", b"b")]);
+    let a = make_zip(&[("manifest.json", br#"{"uniqueName":"A.Mod","conflicts":["b.mod"]}"#), ("A.dll", b"a")]);
+    let (o, bz, az, az2) = (owml.clone(), b.clone(), a.clone(), a.clone());
+    let server = fake_server_with(move |base| {
+        let base = base.trim_end_matches("/v1");
+        let entry = |id: &str, file: &str| {
+            serde_json::json!({ "name": id, "uniqueName": id, "description": id, "author": "x", "version": "1.0.0", "downloadUrl": format!("{base}/{file}") })
+        };
+        let db = serde_json::json!({ "releases": [entry("Alek.OWML", "OWML.zip"), entry("A.Mod", "a.zip"), entry("B.Mod", "b.zip")] });
+        vec![json_response(200, &db.to_string()), file(&o), file(&bz), file(&az), file(&az2)]
+    });
+    let st = state(server.base.trim_end_matches("/v1"), "lists-ow-conf-state");
+    let ow = game("outer-wilds");
+    st.configure(ow, folder.to_str().unwrap()).unwrap();
+    let gid = game_id("outer-wilds");
+    st.library.lock().unwrap().games.get_mut(&gid).unwrap().extra_folders.insert("owml".into(), owml_dir.clone());
+
+    st.install(ow, "B.Mod", None, &[], quiet()).await.unwrap();
+    // A dit dans son manifeste qu'il ne marche pas avec B : refusé, B est proposé à la désactivation.
+    let err = st.install(ow, "A.Mod", None, &[], quiet()).await.unwrap_err();
+    let AppError::Incompatible(text, owners) = &err else { panic!("incompatibilité attendue : {err:?}") };
+    assert!(text.contains("A.Mod") && text.contains("B.Mod"), "{text}");
+    assert_eq!(owners.iter().map(|o| o.mod_id).collect::<Vec<_>>(), [mod_id("outer-wilds", "B.Mod")]);
+    assert!(!owml_dir.join("Mods/A.Mod").exists(), "rien n'est placé");
+
+    // B désactivé : A s'installe ; il est alors déclaré incompatible avec B.
+    st.set_enabled(gid, mod_id("outer-wilds", "B.Mod"), false, &[]).unwrap();
+    st.install(ow, "A.Mod", None, &[], quiet()).await.unwrap();
+    assert!(owml_dir.join("Mods/A.Mod/A.dll").is_file());
+    let catalog = st.catalog(ow, false).await.unwrap();
+    let config = st.config(ow).unwrap();
+    let declared = super::install::declared(ow, &catalog, &config);
+    let a_decl = declared.iter().find(|d| d.id == "A.Mod").unwrap();
+    assert_eq!(a_decl.conflicts, ["b.mod"]);
+    assert!(declared.iter().all(|d| d.id != "B.Mod"), "un mod désactivé ne compte pas");
+}
+
 #[test]
 fn versions_compare_without_semver() {
     use std::cmp::Ordering::*;

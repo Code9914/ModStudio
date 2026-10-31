@@ -23,7 +23,7 @@ use crate::games::engine::{self, Engine, EngineInfo};
 use crate::games::InstalledGame;
 use crate::install_commands::{dependency_state, Orphan, UninstallResult};
 use crate::installer::{
-    self, Batch, DownloadRequest, GameInstall, InstallEvent, InstalledMod, Layout, Library, ModPart, PlaceInput,
+    self, Batch, DownloadRequest, GameInstall, InstallEvent, InstalledMod, Layout, Library, ModPart, Owners, PlaceInput,
     STAGING_DIR,
 };
 use crate::toggle::{self, ProfileApplied, ProfileEdit};
@@ -102,13 +102,16 @@ impl Drop for JobGuard<'_> {
 }
 
 /// Fichiers déjà installés par d'autres mods (des deux bibliothèques), par dossier.
-pub fn owned_by_others(libraries: &[&Library], game_id: i64, mod_id: i64) -> HashMap<PathBuf, BTreeMap<String, String>> {
-    let mut out: HashMap<PathBuf, BTreeMap<String, String>> = HashMap::new();
+pub fn owned_by_others(libraries: &[&Library], game_id: i64, mod_id: i64) -> HashMap<PathBuf, Owners> {
+    let mut out: HashMap<PathBuf, Owners> = HashMap::new();
     for (index, lib) in libraries.iter().enumerate() {
         for g in lib.games.values() {
             // Le mod lui-même n'est exclu que dans sa propre bibliothèque (la première).
-            let except = if index == 0 && g.game_id == game_id { mod_id } else { -1 };
-            for (folder, rel, owner) in g.owned_files(except) {
+            let own = index == 0 && g.game_id == game_id;
+            let except = if own { mod_id } else { -1 };
+            for (folder, rel, mut owner) in g.owned_files(except) {
+                // Autre source ou autre jeu : ModStudio ne propose pas de le désactiver d'ici.
+                owner.elsewhere = !own;
                 out.entry(folder).or_default().insert(rel, owner);
             }
         }
@@ -198,7 +201,7 @@ struct PlanCtx {
     old: Option<InstalledMod>,
     /// Ancienne version désactivée, supprimée une fois la nouvelle en place.
     set_aside: Option<InstalledMod>,
-    others: HashMap<PathBuf, BTreeMap<String, String>>,
+    others: HashMap<PathBuf, Owners>,
     engine: Option<EngineInfo>,
     loader: Option<UnityLoader>,
     game_state: fomod::GameState,
@@ -381,7 +384,7 @@ struct Finished {
 pub(crate) fn place_plan(
     config: &GameInstall,
     old: Option<&InstalledMod>,
-    others: &HashMap<PathBuf, BTreeMap<String, String>>,
+    others: &HashMap<PathBuf, Owners>,
     mut new_batches: BTreeMap<String, Vec<(PathBuf, String)>>,
     detected_dir: Option<PathBuf>,
 ) -> AppResult<Vec<installer::PlacedBatch>> {
@@ -1501,8 +1504,10 @@ mod tests {
         fs::write(mods.join("BaBaCorp.711/BaBaCorp.711.pallet.json"), b"mod.io").unwrap();
 
         let err = s.install(request(None), &modio, quiet()).await.unwrap_err();
-        let AppError::Conflict(text) = err else { panic!("conflit attendu : {err}") };
+        let AppError::Conflict(text, step_aside) = err else { panic!("conflit attendu : {err}") };
         assert!(text.contains("7/11 Extra Content"), "{text}");
+        // Mod d'une autre source : ModStudio ne propose pas de le désactiver d'ici.
+        assert!(step_aside.is_empty());
         assert_eq!(fs::read(mods.join("BaBaCorp.711/BaBaCorp.711.pallet.json")).unwrap(), b"mod.io");
     }
 
@@ -1719,7 +1724,7 @@ mod tests {
         fs::write(mods.join("BaBaCorp.711/BaBaCorp.711.pallet.json"), b"mod.io").unwrap();
 
         let err = s.install(request(None), &modio, quiet()).await.unwrap_err();
-        assert!(matches!(err, AppError::Conflict(_)), "{err}");
+        assert!(matches!(err, AppError::Conflict(..)), "{err}");
         assert_eq!(fs::read(&kept).unwrap(), b"ancienne version", "l'ancienne version mise de côté est intacte");
         assert!(s.library.lock().unwrap().games[&rules::BONELAB].mods[&148].disabled);
         assert_eq!(fs::read(mods.join("BaBaCorp.711/BaBaCorp.711.pallet.json")).unwrap(), b"mod.io");

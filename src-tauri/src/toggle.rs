@@ -7,14 +7,16 @@
 //! dossier de mods). Les réactiver vérifie d'abord qu'aucun autre mod n'a pris
 //! leur place entre-temps.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
-use crate::installer::{self, GameInstall, InstalledMod, Library};
+use crate::installer::{self, GameInstall, InstalledMod, Library, Owners};
+#[cfg(test)]
+use crate::installer::Owner;
 
 /// Dossier caché qui garde les mods désactivés, dans le dossier du jeu.
 pub const DISABLED_DIR: &str = ".modstudio-disabled";
@@ -169,7 +171,7 @@ pub fn disable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx) -> AppResult<()> 
 
 /// Réactive un mod. `others` : fichiers des autres mods activés (des deux
 /// bibliothèques), par dossier ; ils ne sont jamais écrasés.
-pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<PathBuf, BTreeMap<String, String>>) -> AppResult<()> {
+pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<PathBuf, Owners>) -> AppResult<()> {
     let record = game.mods.get(&mod_id).cloned().ok_or(AppError::NotFound)?;
     if !record.disabled {
         return Ok(());
@@ -177,6 +179,8 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
     let in_game = kept_in_game(game, &record);
     let mut moves = Vec::new();
     let mut conflicts = Vec::new();
+    let mut owners = Vec::new();
+    let mut blocking = false;
     let mut stores = Vec::new();
     let mut kept: HashMap<String, Vec<String>> = HashMap::new();
     for (key, files, _) in parts_of(&record) {
@@ -192,8 +196,10 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
             }
             if let Some(owner) = owned.and_then(|o| o.get(&rel)) {
                 conflicts.push(crate::tr!("{rel} (installé par « {owner} »)", "{rel} (installed by \"{owner}\")"));
+                owners.push(owner.clone());
             } else if dst.exists() {
                 conflicts.push(rel.clone());
+                blocking = true;
             } else {
                 kept.entry(key.clone()).or_default().push(rel.clone());
                 moves.push((src, dst, rel));
@@ -202,12 +208,7 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
         stores.push((store, folder.to_path_buf()));
     }
     if !conflicts.is_empty() {
-        let more = conflicts.len().saturating_sub(3);
-        let mut text = conflicts.into_iter().take(3).collect::<Vec<_>>().join(", ");
-        if more > 0 {
-            text.push_str(&crate::tr!(" et {more} autres", " and {more} others"));
-        }
-        return Err(AppError::Conflict(text));
+        return Err(installer::conflict_error(conflicts, owners, blocking));
     }
     move_all(&moves)?;
     for (store, folder) in stores {
@@ -241,14 +242,15 @@ pub fn discard(game: &GameInstall, record: &InstalledMod, ctx: &Ctx) {
 
 /// Fichiers en place des autres mods activés : ceux du jeu (sauf `mod_id`)
 /// et ceux des bibliothèques `rest` (l'autre source, les autres jeux).
-pub fn others_map(game: &GameInstall, mod_id: i64, rest: &[&Library]) -> HashMap<PathBuf, BTreeMap<String, String>> {
-    let mut map: HashMap<PathBuf, BTreeMap<String, String>> = HashMap::new();
+pub fn others_map(game: &GameInstall, mod_id: i64, rest: &[&Library]) -> HashMap<PathBuf, Owners> {
+    let mut map: HashMap<PathBuf, Owners> = HashMap::new();
     for (folder, rel, owner) in game.owned_files(mod_id) {
         map.entry(folder).or_default().insert(rel, owner);
     }
     for lib in rest {
         for other in lib.games.values() {
-            for (folder, rel, owner) in other.owned_files(-1) {
+            for (folder, rel, mut owner) in other.owned_files(-1) {
+                owner.elsewhere = true;
                 map.entry(folder).or_default().insert(rel, owner);
             }
         }
@@ -427,7 +429,7 @@ pub fn apply_profile(
     game: &mut GameInstall,
     name: &str,
     ctx: &Ctx,
-    others_for: &dyn Fn(&GameInstall, i64) -> HashMap<PathBuf, BTreeMap<String, String>>,
+    others_for: &dyn Fn(&GameInstall, i64) -> HashMap<PathBuf, Owners>,
     on_toggle: &mut dyn FnMut(&InstalledMod, bool),
 ) -> AppResult<Vec<ProfileIssue>> {
     apply_profile_by(game, name, &mut |g, id, on| {
@@ -578,9 +580,11 @@ mod tests {
         // Un autre mod a pris la place pendant ce temps.
         put(&folder, "a.pak", b"B");
         let mut others = HashMap::new();
-        others.insert(folder.clone(), BTreeMap::from([("a.pak".to_string(), "Mod B".to_string())]));
+        let mod_b = Owner { game_id: g.game_id, mod_id: 2, name: "Mod B".into(), elsewhere: false };
+        others.insert(folder.clone(), Owners::from([("a.pak".to_string(), mod_b.clone())]));
         let err = enable(&mut g, 1, &ctx, &others).unwrap_err();
-        assert!(matches!(&err, AppError::Conflict(t) if t.contains("Mod B")), "{err}");
+        // Le fichier est à « Mod B » : le désactiver ferait de la place.
+        assert!(matches!(&err, AppError::Conflict(t, aside) if t.contains("Mod B") && aside == &vec![mod_b.clone()]), "{err}");
         assert!(g.mods[&1].disabled);
         assert_eq!(fs::read(folder.join("a.pak")).unwrap(), b"B");
 
@@ -668,7 +672,7 @@ mod tests {
         assert_eq!(g.profiles[1].mods.iter().copied().collect::<std::collections::BTreeSet<_>>(), [1, 3].into());
 
         let others = |g: &GameInstall, id: i64| {
-            let mut map: HashMap<PathBuf, BTreeMap<String, String>> = HashMap::new();
+            let mut map: HashMap<PathBuf, Owners> = HashMap::new();
             for (folder, rel, owner) in g.owned_files(id) {
                 map.entry(folder).or_default().insert(rel, owner);
             }

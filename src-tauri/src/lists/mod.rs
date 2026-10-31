@@ -443,6 +443,29 @@ pub async fn cl_mods(state: State<'_, AppState>, game: String, refresh: Option<b
     Ok(state.lists.catalog(g, refresh.unwrap_or(false)).await?.mods.clone())
 }
 
+/// Mod installé et activé, et les mods avec lesquels il ne marche pas.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeclaredView {
+    pub mod_id: i64,
+    pub id: String,
+    pub name: String,
+    pub conflicts: Vec<String>,
+}
+
+/// Incompatibilités déclarées des mods installés (liste et manifestes des mods).
+#[tauri::command]
+pub async fn cl_declared(state: State<'_, AppState>, game: String) -> AppResult<Vec<DeclaredView>> {
+    let g = def(&game)?;
+    let Some(config) = state.lists.config(g) else { return Ok(Vec::new()) };
+    let catalog = state.lists.catalog(g, false).await?;
+    Ok(install::declared(g, &catalog, &config)
+        .into_iter()
+        .filter(|d| !d.conflicts.is_empty())
+        .map(|d| DeclaredView { mod_id: d.owner.mod_id, id: d.id, name: d.owner.name, conflicts: d.conflicts })
+        .collect())
+}
+
 #[tauri::command]
 pub fn cl_configure(state: State<'_, AppState>, game: String, folder: String) -> AppResult<GameInstall> {
     state.lists.configure(def(&game)?, &folder)
