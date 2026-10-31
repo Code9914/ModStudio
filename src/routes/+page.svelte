@@ -479,7 +479,7 @@
           {/if}
         </span>
       </button>
-      <p class="version muted">{tr("Version 0.12, client non officiel", "Version 0.12, unofficial client")}</p>
+      <p class="version muted">{tr("Version 0.13, client non officiel", "Version 0.13, unofficial client")}</p>
     </div>
   </nav>
 
