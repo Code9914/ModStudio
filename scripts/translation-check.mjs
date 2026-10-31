@@ -2,7 +2,7 @@
 // de src-tauri/translation-models.json se téléchargent avec la bonne empreinte,
 // et le moteur Bergamot (WASM, dans un navigateur) les charge et traduit.
 //
-//   node scripts/translation-check.mjs enfr fren zhen
+//   node scripts/translation-check.mjs en-fr fr-en zh-Hans-en
 //
 // Demande playwright (npm i --no-save playwright && npx playwright install chromium).
 import { createHash } from "node:crypto";
@@ -10,7 +10,6 @@ import { mkdirSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join, normalize } from "node:path";
-import { gunzipSync } from "node:zlib";
 import { chromium } from "playwright";
 
 // Sur GitHub, les résultats et l'erreur éventuelle deviennent des annotations
@@ -30,26 +29,26 @@ process.on("unhandledRejection", (e) => {
 
 const root = new URL("..", import.meta.url).pathname;
 const table = JSON.parse(readFileSync(join(root, "src-tauri/translation-models.json"), "utf8"));
-const pairs = process.argv.slice(2).length ? process.argv.slice(2) : ["enfr", "fren"];
+const pairs = process.argv.slice(2).length ? process.argv.slice(2) : ["en-fr", "fr-en"];
+const entryOf = (pair) => table.models.find((m) => `${m.from}-${m.to}` === pair);
 const dir = join(tmpdir(), "modstudio-translation-check");
 
 // ------------------------------------------------------------ Modèles
 
 for (const pair of pairs) {
-  const entry = table.models[pair];
+  const entry = entryOf(pair);
   if (!entry) throw new Error(`pas de modèle ${pair}`);
   mkdirSync(join(dir, pair), { recursive: true });
-  for (const part of ["model", "lex", "vocab"]) {
+  for (const [part, file] of Object.entries(entry.files)) {
     const out = join(dir, pair, part);
     if (existsSync(out)) continue;
-    const file = entry[part];
-    const res = await fetch(table.source + file.path);
-    if (!res.ok) throw new Error(`${pair}/${part} : HTTP ${res.status} (${table.source + file.path})`);
-    const gz = Buffer.from(await res.arrayBuffer());
-    const sum = createHash("sha256").update(gz).digest("hex");
-    if (gz.length !== file.size || sum !== file.sha256) throw new Error(`${pair}/${part} : empreinte ${sum} (${gz.length} o)`);
-    writeFileSync(out, gunzipSync(gz));
-    console.log(`ok ${pair}/${part} (${entry.arch}, ${(gz.length / 1e6).toFixed(1)} Mo)`);
+    const res = await fetch(table.source + file.file);
+    if (!res.ok) throw new Error(`${pair}/${part} : HTTP ${res.status} (${table.source + file.file})`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const sum = createHash("sha256").update(buf).digest("hex");
+    if (buf.length !== file.size || sum !== file.sha256) throw new Error(`${pair}/${part} : empreinte ${sum} (${buf.length} o)`);
+    writeFileSync(out, buf);
+    console.log(`ok ${pair}/${part} (${entry.version}, ${(buf.length / 1e6).toFixed(1)} Mo)`);
   }
 }
 
@@ -82,7 +81,7 @@ const base = `http://127.0.0.1:${server.address().port}`;
 const samples = {
   en: '<p>This mod adds <b>32 player</b> lobbies and new cosmetics.</p><ul><li>Works with <a href="https://example.org">LateCompany</a></li><li>Everyone needs to have the mod installed.</li></ul>',
   fr: "<p>Ce mod ajoute des <b>salons de 32 joueurs</b> et de nouveaux cosmétiques.</p>",
-  zh: "<p>这个模组增加了更多的玩家和新的服装。</p>",
+  "zh-Hans": "<p>这个模组增加了更多的玩家和新的服装。</p>",
 };
 
 const browser = await chromium.launch();
@@ -113,34 +112,36 @@ const results = await page.evaluate(
     await call("initialize", { cacheSize: 0, useNativeIntGemm: false });
     const out = { init: Math.round(performance.now() - t0) };
     const get = async (url) => (await fetch(url)).arrayBuffer();
-    for (const pair of pairs) {
-      const [from, to] = [pair.slice(0, 2), pair.slice(2, 4)];
+    const split = (pair) => [pair.slice(0, pair.lastIndexOf("-")), pair.slice(pair.lastIndexOf("-") + 1)];
+    for (const { pair, parts } of pairs) {
+      const [from, to] = split(pair);
       const t = performance.now();
+      const vocabs = parts.includes("vocab") ? [await get(`/models/${pair}/vocab`)] : [await get(`/models/${pair}/srcvocab`), await get(`/models/${pair}/trgvocab`)];
       await call("loadTranslationModel", { from, to }, {
         model: await get(`/models/${pair}/model`),
         shortlist: await get(`/models/${pair}/lex`),
-        vocabs: [await get(`/models/${pair}/vocab`)],
+        vocabs,
       });
       out[`load ${pair}`] = Math.round(performance.now() - t);
     }
-    for (const pair of pairs) {
-      const [from, to] = [pair.slice(0, 2), pair.slice(2, 4)];
+    for (const { pair } of pairs) {
+      const [from, to] = split(pair);
       const t = performance.now();
       const [r] = await call("translate", { models: [{ from, to }], texts: [{ text: samples[from], html: true }] });
       out[pair] = r.target.text;
       out[`time ${pair}`] = Math.round(performance.now() - t);
     }
     // Par l'anglais : chinois → anglais → français.
-    if (pairs.includes("zhen") && pairs.includes("enfr")) {
+    if (pairs.some((p) => p.pair === "zh-Hans-en") && pairs.some((p) => p.pair === "en-fr")) {
       const [r] = await call("translate", {
-        models: [{ from: "zh", to: "en" }, { from: "en", to: "fr" }],
-        texts: [{ text: samples.zh, html: true }],
+        models: [{ from: "zh-Hans", to: "en" }, { from: "en", to: "fr" }],
+        texts: [{ text: samples["zh-Hans"], html: true }],
       });
       out["zh→en→fr"] = r.target.text;
     }
     return out;
   },
-  { pairs, samples },
+  { pairs: pairs.map((pair) => ({ pair, parts: Object.keys(entryOf(pair).files) })), samples },
 );
 console.log(JSON.stringify(results, null, 1));
 annotate("notice", JSON.stringify(results, null, 1));
@@ -149,6 +150,6 @@ server.close();
 
 for (const pair of pairs) {
   const text = results[pair] ?? "";
-  if (!text.trim() || text === samples[pair.slice(0, 2)]) throw new Error(`${pair} : pas de traduction`);
+  if (!text.trim() || text === samples[pair.slice(0, pair.lastIndexOf("-"))]) throw new Error(`${pair} : pas de traduction`);
 }
 console.log("Traduction locale : ok");
