@@ -83,6 +83,12 @@ pub enum AppError {
     // ---------------------------------------------------------------- Profils partagés
     ShareInvalid(String),
     ShareCodeUnknown,
+
+    // ---------------------------------------------------------------- Traduction des descriptions
+    /// Aucun modèle pour traduire depuis cette langue.
+    TranslationUnsupported(String),
+    /// Téléchargement d'un modèle impossible.
+    TranslationUnavailable(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -317,6 +323,14 @@ impl std::fmt::Display for AppError {
                 "This r2modman code wasn't found: it may have expired, or some characters are missing.",
             )
             .into(),
+            AppError::TranslationUnsupported(lang) => crate::tr!(
+                "ModStudio ne sait pas encore traduire depuis cette langue ({lang}).",
+                "ModStudio can't translate from this language yet ({lang})."
+            ),
+            AppError::TranslationUnavailable(d) => crate::tr!(
+                "Impossible de télécharger le modèle de traduction. Vérifie ta connexion internet. ({d})",
+                "Couldn't download the translation model. Check your internet connection. ({d})"
+            ),
         };
         f.write_str(&text)
     }
@@ -381,6 +395,8 @@ impl AppError {
             AppError::ListUnavailable { .. } | AppError::ListDownload { .. } => "network",
             AppError::ShareInvalid(_) => "share_invalid",
             AppError::ShareCodeUnknown => "not_found",
+            AppError::TranslationUnsupported(_) => "translation_unsupported",
+            AppError::TranslationUnavailable(_) => "network",
         }
     }
 

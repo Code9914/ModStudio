@@ -12,6 +12,7 @@
   import Icon from "./Icon.svelte";
   import NexusInstallPanel from "./NexusInstallPanel.svelte";
   import Thumb from "./Thumb.svelte";
+  import Translatable from "./Translatable.svelte";
 
   let { game, modId }: { game: NexusGame; modId: number } = $props();
 
@@ -195,14 +196,18 @@
           <Thumb src={mod.pictureUrl ?? mod.thumbnailUrl} label={mod.name} />
         </div>
 
-        {#if mod.summary}
-          <p class="lead">{plainText(mod.summary)}</p>
-        {/if}
+        <Translatable sources={[{ text: mod.summary ? plainText(mod.summary) : "" }, { text: description, html: true }]}>
+          {#snippet children([summary, body])}
+            {#if summary}
+              <p class="lead">{summary}</p>
+            {/if}
 
-        {#if description}
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <div class="prose" onclick={onDescriptionClick}>{@html description}</div>
-        {/if}
+            {#if body}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+              <div class="prose" onclick={onDescriptionClick}>{@html body}</div>
+            {/if}
+          {/snippet}
+        </Translatable>
 
         <section class="files">
           <h2>{tr("Fichiers", "Files")}</h2>

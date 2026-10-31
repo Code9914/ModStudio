@@ -18,7 +18,8 @@
     | "refresh"
     | "bell"
     | "share"
-    | "import";
+    | "import"
+    | "translate";
 
   let { name, size = 16 }: { name: Name; size?: number } = $props();
 
@@ -40,6 +41,7 @@
     refresh: "M20 11a8 8 0 0 0-14.7-4.3L4 8m0-4v4h4M4 13a8 8 0 0 0 14.7 4.3L20 16m0 4v-4h-4",
     bell: "M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Zm4 4a2 2 0 0 0 4 0",
     share: "M12 15V4m0 0L8 8m4-4 4 4M6 12H5a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1h-1",
+    translate: "M4 5h9M8.5 3v2m3 0c-.9 4-3.6 7.3-7 9M6.5 9c1.1 2.2 3 3.9 5.3 4.8M13 21l4-9 4 9m-6.6-3h5.2",
     import: "M12 4v11m0 0-4-4m4 4 4-4M6 12H5a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1h-1",
   };
 </script>

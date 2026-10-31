@@ -82,6 +82,10 @@ const samples = {
   en: '<p>This mod adds <b>32 player</b> lobbies and new cosmetics.</p><ul><li>Works with <a href="https://example.org">LateCompany</a></li><li>Everyone needs to have the mod installed.</li></ul>',
   fr: "<p>Ce mod ajoute des <b>salons de 32 joueurs</b> et de nouveaux cosmétiques.</p>",
   "zh-Hans": "<p>这个模组增加了更多的玩家和新的服装。</p>",
+  markup:
+    '<h2>Installation</h2><p>Put the files in the <code data-ms-keep="0"></code> folder, then start the game.</p><pre data-ms-keep="1"></pre>' +
+    '<p>Features:<br>More players in every lobby<br>New suits &amp; hats</p><img src="https://example.org/a.png" alt="Screenshot">' +
+    "<table><tbody><tr><td>Version</td><td>Notes</td></tr></tbody></table>",
 };
 
 const browser = await chromium.launch();
@@ -131,6 +135,15 @@ const results = await page.evaluate(
       out[pair] = r.target.text;
       out[`time ${pair}`] = Math.round(performance.now() - t);
     }
+    // HTML tel que ModStudio l'envoie : code mis de côté (éléments vides
+    // marqués), sauts de ligne, image, tableau.
+    if (pairs.some((p) => p.pair === "en-fr")) {
+      const [r] = await call("translate", {
+        models: [{ from: "en", to: "fr" }],
+        texts: [{ text: samples.markup, html: true }],
+      });
+      out.markup = r.target.text;
+    }
     // Par l'anglais : chinois → anglais → français.
     if (pairs.some((p) => p.pair === "zh-Hans-en") && pairs.some((p) => p.pair === "en-fr")) {
       const [r] = await call("translate", {
@@ -151,5 +164,10 @@ server.close();
 for (const pair of pairs) {
   const text = results[pair] ?? "";
   if (!text.trim() || text === samples[pair.slice(0, pair.lastIndexOf("-"))]) throw new Error(`${pair} : pas de traduction`);
+}
+if (results.markup !== undefined) {
+  for (const part of ['data-ms-keep="0"', 'data-ms-keep="1"', "<br>", "<img", "<td>", "<h2>"]) {
+    if (!results.markup.includes(part)) throw new Error(`HTML : « ${part} » perdu dans ${results.markup}`);
+  }
 }
 console.log("Traduction locale : ok");

@@ -51,6 +51,8 @@ export interface AppError {
     | "thunderstore_api"
     | "thunderstore_unsupported"
     | "share_invalid"
+    | "translation_unsupported"
+    | "translation"
     | "unknown";
   message: string;
   retryAfter: number | null;
@@ -1208,4 +1210,37 @@ export const share = {
   r2modman: (gameId: number, name: string, includeConfigs: boolean) =>
     call<string>("share_r2modman_create", { gameId, name, includeConfigs }),
   applyConfigs: (token: string, gameId: number) => call<ConfigsApplied>("share_apply_configs", { token, gameId }),
+};
+
+// ------------------------------------------------------------------ Traduction des descriptions
+
+/** Un modèle de traduction à charger dans le moteur. */
+export interface TranslationStep {
+  from: string;
+  to: string;
+  version: string;
+  /** `model`, `lex`, `vocab` (ou `srcvocab` et `trgvocab`). */
+  files: string[];
+}
+
+export interface TranslationPlan {
+  /** Un modèle, ou deux en passant par l'anglais. */
+  steps: TranslationStep[];
+  /** Octets encore à télécharger (0 : tout est prêt). */
+  missing: number;
+}
+
+export const translation = {
+  /** Langue d'un texte (`en`, `fr`, `zh-Hans`…), `null` si elle n'est pas sûre. */
+  detect: (text: string) => call<string | null>("translation_detect", { text }),
+  plan: (from: string, to: string) => call<TranslationPlan>("translation_plan", { from, to }),
+  download: (from: string, to: string, onProgress: (e: InstallEvent) => void) => {
+    const onEvent = new Channel<InstallEvent>();
+    onEvent.onmessage = onProgress;
+    return call<null>("translation_download", { from, to, onEvent });
+  },
+  /** Un fichier d'un modèle téléchargé, en binaire. */
+  file: (from: string, to: string, kind: string) => call<ArrayBuffer>("translation_file", { from, to, kind }),
+  storage: () => call<number>("translation_storage"),
+  clear: () => call<null>("translation_clear"),
 };

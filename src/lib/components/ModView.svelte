@@ -9,6 +9,7 @@
   import Icon from "./Icon.svelte";
   import InstallPanel from "./InstallPanel.svelte";
   import Thumb from "./Thumb.svelte";
+  import Translatable from "./Translatable.svelte";
 
   let { game, modId }: { game: Game; modId: number } = $props();
 
@@ -331,16 +332,25 @@
           </div>
         {/if}
 
-        {#if mod.summary}
-          <p class="lead">{mod.summary}</p>
-        {/if}
+        <Translatable
+          sources={[
+            { text: mod.summary ?? "" },
+            description ? { text: description, html: true } : { text: mod.description_plaintext ?? "" },
+          ]}
+        >
+          {#snippet children([summary, body])}
+            {#if summary}
+              <p class="lead">{summary}</p>
+            {/if}
 
-        {#if description}
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <div class="prose" onclick={onDescriptionClick}>{@html description}</div>
-        {:else if mod.description_plaintext}
-          <p class="prose plain">{mod.description_plaintext}</p>
-        {/if}
+            {#if description}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+              <div class="prose" onclick={onDescriptionClick}>{@html body}</div>
+            {:else if body}
+              <p class="prose plain">{body}</p>
+            {/if}
+          {/snippet}
+        </Translatable>
 
         <section class="files">
           <h2>Versions</h2>

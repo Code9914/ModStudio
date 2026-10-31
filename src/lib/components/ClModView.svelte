@@ -11,6 +11,7 @@
   import ClInstallPanel from "./ClInstallPanel.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
+  import Translatable from "./Translatable.svelte";
   import Thumb from "./Thumb.svelte";
 
   let { game, id }: { game: ClGame; id: string } = $props();
@@ -92,7 +93,11 @@
           <p class="warn small"><Icon name="warning" size={15} /><span>{mod.note}</span></p>
         {/if}
         {#if mod.description}
-          <p class="description">{mod.description}</p>
+          <Translatable sources={[{ text: mod.description }]}>
+            {#snippet children([text])}
+              <p class="description">{text}</p>
+            {/snippet}
+          </Translatable>
         {:else}
           <p class="muted">{tr("Pas de description dans la liste : la page du mod en dit plus.", "No description in the list: the mod page has more details.")}</p>
         {/if}

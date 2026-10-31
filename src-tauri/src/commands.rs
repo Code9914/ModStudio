@@ -37,6 +37,8 @@ pub struct AppState {
     pub lists: crate::lists::ListsState,
     /// Profils partagés lus (réglages r2modman en attente).
     pub share: crate::share::ShareState,
+    /// Modèles de traduction des descriptions (téléchargés à la demande).
+    pub translate: crate::translate::TranslateState,
 }
 
 impl AppState {
@@ -62,6 +64,7 @@ impl AppState {
             thunderstore,
             lists,
             share: crate::share::ShareState::default(),
+            translate: crate::translate::TranslateState::new(settings_path.with_file_name("translation-models")),
             client: ModioClient::new(),
             settings: RwLock::new(settings),
             library: Mutex::new(Library::load(&library_path)),

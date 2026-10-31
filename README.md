@@ -30,11 +30,15 @@ For every game:
   ModStudio detects the engine (Unreal, Unity, Bethesda) and puts each mod in
   the right place. It can also install the tool a game needs (UE4SS, BepInEx,
   MelonLoader) once you confirm.
-- **"Installés" page**: updates, enable or disable a mod without uninstalling
+- **"Installed" page**: updates, enable or disable a mod without uninstalling
   it, per-game profiles, clean uninstall.
 - **Share your mods**: a code you send to a friend, who gets the same mods in
   the same versions (see below).
-- **Appearance**: light or dark theme, colours, text and thumbnail size.
+- **Translated descriptions**: a "Translate" button (or automatic translation,
+  in Settings) for descriptions written in another language. Translation runs
+  on your computer with Firefox's engine (Bergamot): the text isn't sent
+  anywhere, and each language's model (about 40 MB) is downloaded once.
+- **Appearance**: light or dark theme, colors, text and thumbnail size.
 
 ### Download
 
@@ -59,7 +63,7 @@ warning ("More info", then "Run anyway").
 - **Thunderstore and Communities**: nothing to set up. Pick a game, choose its
   folder (or the one ModStudio found), then install.
 - **Nexus Mods**: to install, create an API key at
-  <https://www.nexusmods.com/settings/api-keys> and paste it in "Compte Nexus".
+  <https://www.nexusmods.com/settings/api-keys> and paste it in "Nexus Mods account".
 - **mod.io**: create an API key at <https://mod.io/me/access> and paste it with
   the API path shown next to it (`https://u-12345.modapi.io/v1`). To subscribe
   to mods, also sign in to your account (e-mail code or access token).
@@ -69,14 +73,14 @@ warning ("More info", then "Run anyway").
 
 ### Sharing mods
 
-- **Share**: in "Installés", a game's "Partager" button gives an `MS1-…` code
+- **Share**: in "Installed", a game's "Share" button gives an `MS1-…` code
   with its enabled mods and their versions. The code goes through no server:
   paste it in a chat. You can also save it as a `.modstudio` file.
-- **Import**: "Installés", then "Importer un profil". ModStudio shows what you
+- **Import**: "Installed", then "Import a profile". ModStudio shows what you
   already have and installs the rest. The imported list becomes a profile of
-  the game, and your previous mods stay in "Principal".
+  the game, and your previous mods stay in "Main".
 - **r2modman, Gale, Thunderstore Mod Manager**: their codes and `.r2z` files can
-  be imported too. For a Thunderstore game, "Créer un code r2modman" makes a
+  be imported too. For a Thunderstore game, "Create an r2modman code" makes a
   code a friend can use in those managers.
 
 ### Privacy and security
@@ -96,8 +100,9 @@ warning ("More info", then "Run anyway").
 - **Nexus page**: shown inside the app with no access to its commands. Downloads
   only start on your click, and the `nxm://` protocol isn't taken over on your
   system.
-- **Mod descriptions**: sanitised (DOMPurify) and shown under a strict CSP.
-  Links open in your browser.
+- **Mod descriptions**: sanitized (DOMPurify) and shown under a strict CSP.
+  Links open in your browser. Translation models come only from Mozilla's
+  server and are checked against pinned checksums.
 
 ### Building from source
 
@@ -128,6 +133,7 @@ src-tauri/src/        Rust backend
   thunderstore/       Thunderstore and ResoniteModLoader
   lists/              community mod lists
   share/              shared profiles (MS1 codes, r2modman)
+  translate.rs        translation models (download, checks, language detection)
   games/              installed games (Steam, Epic, Heroic, engine detection)
   installer.rs        checked downloads, extraction, uninstall
   toggle.rs           enable / disable, profiles
@@ -168,6 +174,11 @@ Et pour tous les jeux :
   propre.
 - **Partager ses mods** : un code à envoyer à un ami, qui installe les mêmes
   mods dans les mêmes versions (voir plus bas).
+- **Descriptions traduites** : un bouton « Traduire » (ou la traduction
+  automatique, dans les Réglages) pour les descriptions écrites dans une autre
+  langue. La traduction se fait sur ton ordinateur avec le moteur de Firefox
+  (Bergamot) : le texte n'est envoyé nulle part, et le modèle de chaque langue
+  (environ 40 Mo) n'est téléchargé qu'une fois.
 - **Apparence** : thème clair ou sombre, couleurs, taille du texte et des
   vignettes.
 
@@ -236,7 +247,9 @@ quand même »).
   téléchargement ne démarre que sur ton clic, et le protocole `nxm://` n'est pas
   réquisitionné sur le système.
 - **Descriptions de mods** : nettoyées (DOMPurify) et affichées sous une
-  politique CSP stricte. Les liens s'ouvrent dans ton navigateur.
+  politique CSP stricte. Les liens s'ouvrent dans ton navigateur. Les modèles
+  de traduction viennent uniquement du serveur de Mozilla et sont vérifiés par
+  des empreintes fixées à l'avance.
 
 ### Compiler depuis les sources
 

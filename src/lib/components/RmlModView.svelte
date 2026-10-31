@@ -8,6 +8,7 @@
   import { rmlCategory, rmlPlatforms, tsStore } from "$lib/thunderstore.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
+  import Translatable from "./Translatable.svelte";
   import RmlInstallPanel from "./RmlInstallPanel.svelte";
   import Thumb from "./Thumb.svelte";
 
@@ -75,7 +76,11 @@
           {#if mod.broken}<span class="chip chip-warn">{tr("Cassé", "Broken")}</span>{:else if mod.deprecated}<span class="chip chip-warn">{tr("Obsolète", "Outdated")}</span>{/if}
           {#if mod.platforms.length}<span class="chip">{rmlPlatforms(mod.platforms)}</span>{/if}
         </p>
-        {#if mod.description}<p class="lead">{mod.description}</p>{/if}
+        {#if mod.description}
+          <Translatable sources={[{ text: mod.description }]}>
+            {#snippet children([text])}<p class="lead">{text}</p>{/snippet}
+          </Translatable>
+        {/if}
       </div>
       <div class="actions">
         {#if mod.website}

@@ -4,6 +4,8 @@
   import { nav } from "$lib/nav.svelte";
   import { updates } from "$lib/updates.svelte";
   import { tr } from "$lib/i18n.svelte";
+  import { bytes } from "$lib/format";
+  import { translator } from "$lib/translate.svelte";
   import AppearanceSettings from "./AppearanceSettings.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -34,6 +36,28 @@
       error = e as AppError;
     } finally {
       saving = false;
+    }
+  }
+
+  // Modèles de traduction téléchargés (place prise sur le disque).
+  let modelsSize = $state<number | null>(null);
+  let clearing = $state(false);
+  $effect(() => {
+    translator.storage().then(
+      (n) => (modelsSize = n),
+      () => (modelsSize = null),
+    );
+  });
+
+  async function clearModels() {
+    clearing = true;
+    try {
+      await translator.clear();
+      modelsSize = await translator.storage();
+    } catch (e) {
+      error = e as AppError;
+    } finally {
+      clearing = false;
     }
   }
 
@@ -190,6 +214,28 @@
             </span>
           </span>
         </label>
+      </section>
+
+      <section class="block">
+        <h2>{tr("Traduction des descriptions", "Description translation")}</h2>
+        <label class="toggle">
+          <input type="checkbox" checked={translator.auto} onchange={(e) => translator.setAuto(e.currentTarget.checked)} />
+          <span>
+            {tr("Traduire automatiquement les descriptions", "Translate descriptions automatically")}
+            <span class="help muted">
+              {tr(
+                "Les descriptions écrites dans une autre langue s'affichent directement en français. Sinon, un bouton « Traduire » apparaît au-dessus. La traduction se fait sur cet ordinateur : le texte n'est envoyé nulle part. Chaque langue demande un modèle d'environ 40 Mo, téléchargé une seule fois.",
+                "Descriptions written in another language are shown in English right away. Otherwise, a \"Translate\" button appears above them. Translation happens on this computer: the text isn't sent anywhere. Each language needs a model of about 40 MB, downloaded once.",
+              )}
+            </span>
+          </span>
+        </label>
+        {#if modelsSize}
+          <div class="update-row">
+            <span class="help muted">{tr(`Modèles téléchargés : ${bytes(modelsSize)}`, `Downloaded models: ${bytes(modelsSize)}`)}</span>
+            <button class="btn" onclick={clearModels} disabled={clearing}>{tr("Supprimer les modèles", "Delete models")}</button>
+          </div>
+        {/if}
       </section>
     {/if}
 

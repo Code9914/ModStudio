@@ -13,6 +13,7 @@ mod modio_sdk;
 mod nexus;
 mod settings;
 mod share;
+mod translate;
 mod thunderstore;
 mod toggle;
 #[cfg(test)]
@@ -133,6 +134,12 @@ pub fn run() {
             share::share_save_file,
             share::share_r2modman_create,
             share::share_apply_configs,
+            translate::translation_detect,
+            translate::translation_plan,
+            translate::translation_download,
+            translate::translation_file,
+            translate::translation_storage,
+            translate::translation_clear,
             lists::cl_games,
             lists::cl_overview,
             lists::cl_mods,

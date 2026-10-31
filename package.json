@@ -4,7 +4,9 @@
   "description": "",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/copy-bergamot.mjs",
     "dev": "vite dev",
+    "prebuild": "node scripts/copy-bergamot.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",

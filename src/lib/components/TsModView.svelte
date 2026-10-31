@@ -11,6 +11,7 @@
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
   import Thumb from "./Thumb.svelte";
+  import Translatable from "./Translatable.svelte";
   import TsInstallPanel from "./TsInstallPanel.svelte";
 
   let { game, namespace, name }: { game: TsCommunity; namespace: string; name: string } = $props();
@@ -128,8 +129,12 @@
         {/if}
 
         {#if readme}
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <div class="prose" onclick={onReadmeClick}>{@html readme}</div>
+          <Translatable sources={[{ text: readme, html: true }]}>
+            {#snippet children([body])}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+              <div class="prose" onclick={onReadmeClick}>{@html body}</div>
+            {/snippet}
+          </Translatable>
         {:else}
           <p class="muted">{tr("Pas de description détaillée pour ce mod.", "No detailed description for this mod.")}</p>
         {/if}
