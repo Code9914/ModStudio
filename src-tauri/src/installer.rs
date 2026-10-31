@@ -1137,11 +1137,11 @@ pub mod tests {
 
     #[test]
     fn expands_known_folders() {
-        let env = |name: &str| (name == "USERPROFILE").then(|| r"C:\Users\Code".to_string());
+        let env = |name: &str| (name == "USERPROFILE").then(|| r"C:\Users\Joueur".to_string());
         let (template, layout) = known_folder(3809).unwrap();
         assert_eq!(
             expand_env(template, env).unwrap(),
-            r"C:\Users\Code\AppData\LocalLow\Stress Level Zero\BONELAB\Mods"
+            r"C:\Users\Joueur\AppData\LocalLow\Stress Level Zero\BONELAB\Mods"
         );
         assert_eq!(layout, Layout::Flat);
         assert!(expand_env("%ABSENTE%\\x", env).is_none());
