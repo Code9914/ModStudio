@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import type { TsCommunity } from "$lib/api";
   import { count, exact } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import { launcherNames, nexusStore } from "$lib/nexus.svelte";
   import { inview } from "$lib/paged.svelte";
@@ -59,37 +60,43 @@
   <header class="head">
     <div>
       <p class="source">Thunderstore</p>
-      <h1>Jeux</h1>
+      <h1>{tr("Jeux", "Games")}</h1>
       {#if tsStore.communities}
-        <p class="muted">{exact(all.length)} jeux {search ? `pour « ${query.trim()} »` : "sur Thunderstore"}</p>
+        <p class="muted">
+          {tr(
+            `${exact(all.length)} jeux ${search ? `pour « ${query.trim()} »` : "sur Thunderstore"}`,
+            `${exact(all.length)} games ${search ? `for "${query.trim()}"` : "on Thunderstore"}`,
+          )}
+        </p>
       {/if}
     </div>
     <div class="tools">
       <label class="search">
-        <span class="visually-hidden">Rechercher un jeu sur Thunderstore</span>
+        <span class="visually-hidden">{tr("Rechercher un jeu sur Thunderstore", "Search for a game on Thunderstore")}</span>
         <Icon name="search" />
-        <input class="field" type="search" placeholder="Rechercher un jeu" bind:value={query} />
+        <input class="field" type="search" placeholder={tr("Rechercher un jeu", "Search for a game")} bind:value={query} />
       </label>
       <label>
-        <span class="visually-hidden">Trier les jeux</span>
+        <span class="visually-hidden">{tr("Trier les jeux", "Sort games")}</span>
         <select class="field" bind:value={sort}>
-          <option value="downloads">Plus téléchargés</option>
-          <option value="mods">Plus de mods</option>
-          <option value="name">Nom (A à Z)</option>
+          <option value="downloads">{tr("Plus téléchargés", "Most downloaded")}</option>
+          <option value="mods">{tr("Plus de mods", "Most mods")}</option>
+          <option value="name">{tr("Nom (A à Z)", "Name (A to Z)")}</option>
         </select>
       </label>
     </div>
   </header>
 
   <p class="intro muted">
-    Thunderstore rassemble les mods de nombreux jeux (Lethal Company, Valheim, R.E.P.O.…). ModStudio sait ce que chaque
-    jeu utilise pour charger ses mods (BepInEx, MelonLoader…) : il l'installe s'il manque, puis chaque mod avec ceux dont
-    il a besoin, rangé comme le ferait un gestionnaire de mods. Pas besoin de compte.
+    {tr(
+      "Thunderstore rassemble les mods de nombreux jeux (Lethal Company, Valheim, R.E.P.O.…). ModStudio sait ce que chaque jeu utilise pour charger ses mods (BepInEx, MelonLoader…) : il l'installe s'il manque, puis chaque mod avec ceux dont il a besoin, rangé comme le ferait un gestionnaire de mods. Pas besoin de compte.",
+      "Thunderstore brings together mods for many games (Lethal Company, Valheim, R.E.P.O.…). ModStudio knows what each game uses to load its mods (BepInEx, MelonLoader…): it installs it if it's missing, then each mod along with the ones it needs, organized the way a mod manager would. No account needed.",
+    )}
   </p>
 
   {#if mine.length > 0 && !search}
-    <section class="mine" aria-label="Jeux avec des mods installés">
-      <h2>Tes jeux</h2>
+    <section class="mine" aria-label={tr("Jeux avec des mods installés", "Games with installed mods")}>
+      <h2>{tr("Tes jeux", "Your games")}</h2>
       <div class="mine-list">
         {#each mine as g (g.gameId)}
           <button class="chip mine-chip" onclick={() => nav.openTsGame(tsStore.communityOf(g))}>
@@ -103,9 +110,9 @@
   {/if}
 
   {#if !search && onPc.length > 0}
-    <section class="on-pc" aria-label="Jeux installés sur ce PC">
+    <section class="on-pc" aria-label={tr("Jeux installés sur ce PC", "Games installed on this PC")}>
       <div class="section-head">
-        <h2>Installés sur ce PC</h2>
+        <h2>{tr("Installés sur ce PC", "Installed on this PC")}</h2>
         <span class="muted">{onPc.length}</span>
       </div>
       <ul class="card-grid posters">
@@ -120,7 +127,7 @@
                 badges={[
                   { text: launcherNames[launcher] ?? launcher, tone: "neutral" as const },
                   ...(n > 0 ? [{ text: `${n} ${n > 1 ? "mods" : "mod"}`, tone: "ok" as const }] : []),
-                  ...(!c.supported ? [{ text: "Pas encore pris en charge", tone: "neutral" as const }] : []),
+                  ...(!c.supported ? [{ text: tr("Pas encore pris en charge", "Not supported yet"), tone: "neutral" as const }] : []),
                 ]}
               />
               <span class="card-title">{c.name}</span>
@@ -130,21 +137,21 @@
         {/each}
       </ul>
     </section>
-    <h2 class="all-title">Tous les jeux</h2>
+    <h2 class="all-title">{tr("Tous les jeux", "All games")}</h2>
   {/if}
 
   {#if tsStore.communitiesError && !tsStore.communities}
     <ErrorNotice error={tsStore.communitiesError} onretry={() => tsStore.loadCommunities(true)} />
   {:else if !tsStore.communities}
-    <ul class="card-grid posters" aria-busy="true" aria-label="Chargement des jeux">
+    <ul class="card-grid posters" aria-busy="true" aria-label={tr("Chargement des jeux", "Loading games")}>
       {#each Array(12) as _, i (i)}
         <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
       {/each}
     </ul>
   {:else if all.length === 0}
     <div class="empty">
-      <p>Aucun jeu ne correspond à « {query.trim()} ».</p>
-      <button class="btn" onclick={() => (query = "")}>Effacer la recherche</button>
+      <p>{tr(`Aucun jeu ne correspond à « ${query.trim()} ».`, `No games match "${query.trim()}".`)}</p>
+      <button class="btn" onclick={() => (query = "")}>{tr("Effacer la recherche", "Clear search")}</button>
     </div>
   {:else}
     <ul class="card-grid posters">
@@ -158,13 +165,13 @@
               label={c.name}
               badges={[
                 ...(n > 0 ? [{ text: `${n} ${n > 1 ? "mods" : "mod"}`, tone: "ok" as const }] : []),
-                ...(!c.supported ? [{ text: "Pas encore pris en charge", tone: "neutral" as const }] : []),
+                ...(!c.supported ? [{ text: tr("Pas encore pris en charge", "Not supported yet"), tone: "neutral" as const }] : []),
               ]}
             />
             <span class="card-title">{c.name}</span>
             <span class="card-meta">
               <span>{exact(c.totalPackageCount)} mods</span>
-              <span title="Téléchargements"><Icon name="download" size={14} />{count(c.totalDownloadCount)}</span>
+              <span title={tr("Téléchargements", "Downloads")}><Icon name="download" size={14} />{count(c.totalDownloadCount)}</span>
             </span>
             {#if c.loader}<span class="card-meta"><span>{c.loader}</span></span>{/if}
           </button>
@@ -175,7 +182,7 @@
       <!-- La suite s'affiche en défilant ; recréé à chaque ajout pour remplir l'écran. -->
       {#key shown}
         <div class="more" use:inview={() => (shown = Math.min(shown + PAGE, all.length))}>
-          <span class="muted">{exact(shown)} jeux affichés sur {exact(all.length)}</span>
+          <span class="muted">{tr(`${exact(shown)} jeux affichés sur ${exact(all.length)}`, `Showing ${exact(shown)} of ${exact(all.length)} games`)}</span>
         </div>
       {/key}
     {/if}

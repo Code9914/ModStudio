@@ -15,6 +15,7 @@ import {
   type TsInstalled,
   type TsLoader,
 } from "./api";
+import { tr } from "./i18n.svelte";
 import { describe, type Progress } from "./installs.svelte";
 import { nexusStore } from "./nexus.svelte";
 
@@ -154,13 +155,13 @@ class TsStore {
   /** Suit l'installation (étapes, progression) puis met la bibliothèque à jour. */
   async #run(gameId: number, modId: number, start: (onEvent: (e: InstallEvent) => void) => Promise<TsInstalled>): Promise<TsInstalled> {
     let step = "";
-    this.progress[gameId] = { modId, label: "Préparation…", ratio: null };
+    this.progress[gameId] = { modId, label: tr("Préparation…", "Preparing…"), ratio: null };
     try {
       const result = await start((e) => {
         if (e.phase === "step") {
           // Un seul mod : pas besoin de le nommer à chaque étape.
-          step = e.total > 1 ? `${e.name} (${e.index} sur ${e.total}), ` : "";
-          this.progress[gameId] = { modId, label: `${step}préparation…`, ratio: null };
+          step = e.total > 1 ? tr(`${e.name} (${e.index} sur ${e.total}), `, `${e.name} (${e.index} of ${e.total}), `) : "";
+          this.progress[gameId] = { modId, label: tr(`${step}préparation…`, `${step}preparing…`), ratio: null };
           return;
         }
         const p = describe(e);
@@ -278,13 +279,13 @@ const RML_CATEGORIES: Record<string, string> = {
 };
 
 export function rmlCategory(category: string) {
-  return RML_CATEGORIES[category] ?? category;
+  return tr(RML_CATEGORIES[category] ?? category, category);
 }
 
 /** Systèmes visés par un mod de ResoniteModLoader, en clair. */
 export function rmlPlatforms(platforms: string[]) {
   const names: Record<string, string> = {
-    headless: "serveurs (headless)",
+    headless: tr("serveurs (headless)", "servers (headless)"),
     windows: "Windows",
     linux: "Linux",
     "linux-native": "Linux",

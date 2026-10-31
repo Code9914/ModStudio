@@ -5,6 +5,7 @@
   import { asAppError, ts, tsPackageUrl, type AppError, type TsCommunity, type TsPackageView } from "$lib/api";
   import { ago, bytes, date, exact } from "$lib/format";
   import { nav } from "$lib/nav.svelte";
+  import { tr } from "$lib/i18n.svelte";
   import { isoToUnix } from "$lib/nexus.svelte";
   import { isLoaderName, tsStore } from "$lib/thunderstore.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
@@ -78,17 +79,17 @@
   <div class="top">
     <button class="btn btn-ghost crumb" onclick={() => nav.back()}>
       <Icon name="back" />{nav.tsModStack.length > 1
-        ? "Retour"
+        ? tr("Retour", "Back")
         : nav.tsOrigin === "installed"
-          ? "Retour aux mods installés"
-          : `Retour à ${game.name}`}
+          ? tr("Retour aux mods installés", "Back to installed mods")
+          : tr(`Retour à ${game.name}`, `Back to ${game.name}`)}
     </button>
   </div>
 
   {#if error}
     <div class="pad"><ErrorNotice {error} onretry={() => attempt++} /></div>
   {:else if !mod || !view}
-    <div class="pad skeleton" aria-busy="true" aria-label="Chargement du mod">
+    <div class="pad skeleton" aria-busy="true" aria-label={tr("Chargement du mod", "Loading mod")}>
       <div class="line title"></div>
       <div class="line short"></div>
       <div class="line"></div>
@@ -99,20 +100,20 @@
       <div class="head-text">
         <h1>{title}</h1>
         <p class="byline">
-          <span>par <strong>{mod.team?.name ?? mod.namespace}</strong></span>
-          {#if mod.versionCreated}<span class="muted">mis à jour {ago(isoToUnix(mod.versionCreated))}</span>{/if}
+          <span>{tr("par", "by")} <strong>{mod.team?.name ?? mod.namespace}</strong></span>
+          {#if mod.versionCreated}<span class="muted">{tr("mis à jour", "updated")} {ago(isoToUnix(mod.versionCreated))}</span>{/if}
           <span class="chip">Thunderstore</span>
-          {#if mod.isDeprecated}<span class="chip chip-warn">Obsolète</span>{/if}
-          {#if mod.isNsfw}<span class="chip chip-warn">Contenu adulte</span>{/if}
+          {#if mod.isDeprecated}<span class="chip chip-warn">{tr("Obsolète", "Outdated")}</span>{/if}
+          {#if mod.isNsfw}<span class="chip chip-warn">{tr("Contenu adulte", "Adult content")}</span>{/if}
         </p>
         {#if mod.description}<p class="lead">{mod.description}</p>{/if}
       </div>
       <div class="actions">
         {#if mod.websiteUrl && /^https?:\/\//i.test(mod.websiteUrl)}
-          <button class="btn" onclick={() => open(mod.websiteUrl)}>Site du mod <Icon name="external" size={14} /></button>
+          <button class="btn" onclick={() => open(mod.websiteUrl)}>{tr("Site du mod", "Mod website")} <Icon name="external" size={14} /></button>
         {/if}
         <button class="btn" onclick={() => open(tsPackageUrl(game.identifier, mod.namespace, mod.name))}>
-          Ouvrir sur Thunderstore <Icon name="external" size={14} />
+          {tr("Ouvrir sur Thunderstore", "Open on Thunderstore")} <Icon name="external" size={14} />
         </button>
       </div>
     </header>
@@ -122,7 +123,7 @@
         {#if mod.isDeprecated}
           <p class="warn small">
             <Icon name="warning" size={15} />
-            <span>Son auteur l'a marqué obsolète : il n'est plus mis à jour, et un autre mod le remplace peut-être.</span>
+            <span>{tr("Son auteur l'a marqué obsolète : il n'est plus mis à jour, et un autre mod le remplace peut-être.", "Its author marked it as outdated: it's no longer updated, and another mod may replace it.")}</span>
           </p>
         {/if}
 
@@ -130,7 +131,7 @@
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
           <div class="prose" onclick={onReadmeClick}>{@html readme}</div>
         {:else}
-          <p class="muted">Pas de description détaillée pour ce mod.</p>
+          <p class="muted">{tr("Pas de description détaillée pour ce mod.", "No detailed description for this mod.")}</p>
         {/if}
 
         {#if view.versions.length}
@@ -140,13 +141,13 @@
               {#each allVersions ? view.versions : view.versions.slice(0, VERSIONS_SHOWN) as v, i (v.versionNumber)}
                 <li class="version">
                   <span class="version-name">{v.versionNumber}</span>
-                  {#if i === 0}<span class="chip">Dernière</span>{/if}
-                  {#if record?.version === v.versionNumber}<span class="chip chip-ok">Installée</span>{/if}
+                  {#if i === 0}<span class="chip">{tr("Dernière", "Latest")}</span>{/if}
+                  {#if record?.version === v.versionNumber}<span class="chip chip-ok">{tr("Installée", "Installed")}</span>{/if}
                   <span class="muted small">{date(isoToUnix(v.datetimeCreated))}</span>
-                  <span class="muted small">{exact(v.downloadCount)} téléchargements</span>
+                  <span class="muted small">{exact(v.downloadCount)} {tr("téléchargements", "downloads")}</span>
                   {#if i > 0 && record?.version !== v.versionNumber && tsStore.game(game.id)}
                     <button class="btn btn-ghost small-btn" onclick={() => panel?.install(v.versionNumber)} disabled={!!job}>
-                      Installer celle-ci
+                      {tr("Installer celle-ci", "Install this one")}
                     </button>
                   {/if}
                 </li>
@@ -154,7 +155,7 @@
             </ol>
             {#if view.versions.length > VERSIONS_SHOWN}
               <button class="btn btn-ghost" onclick={() => (allVersions = !allVersions)}>
-                {allVersions ? "Moins de versions" : `Les ${view.versions.length} versions`}
+                {allVersions ? tr("Moins de versions", "Fewer versions") : tr(`Les ${view.versions.length} versions`, `All ${view.versions.length} versions`)}
               </button>
             {/if}
           </section>
@@ -167,11 +168,11 @@
         {/key}
         <dl class="stats">
           <div>
-            <dt>Téléchargements</dt>
+            <dt>{tr("Téléchargements", "Downloads")}</dt>
             <dd>{exact(mod.downloadCount)}</dd>
           </div>
           <div>
-            <dt>Notes</dt>
+            <dt>{tr("Notes", "Ratings")}</dt>
             <dd>{exact(mod.ratingCount)}</dd>
           </div>
           <div>
@@ -180,19 +181,19 @@
           </div>
           {#if mod.size > 0}
             <div>
-              <dt>Taille</dt>
+              <dt>{tr("Taille", "Size")}</dt>
               <dd class="small-dd">{bytes(mod.size)}</dd>
             </div>
           {/if}
           {#if mod.categories.length}
             <div>
-              <dt>Catégories</dt>
+              <dt>{tr("Catégories", "Categories")}</dt>
               <dd class="small-dd">{mod.categories.map((c) => c.name).join(", ")}</dd>
             </div>
           {/if}
           {#if mod.packageCreated}
             <div>
-              <dt>Publié le</dt>
+              <dt>{tr("Publié le", "Published")}</dt>
               <dd class="small-dd">{date(isoToUnix(mod.packageCreated))}</dd>
             </div>
           {/if}
@@ -200,7 +201,7 @@
 
         {#if mod.dependencies.length}
           <section class="side-block">
-            <h2>Nécessite aussi</h2>
+            <h2>{tr("Nécessite aussi", "Also requires")}</h2>
             <ul class="deps">
               {#each mod.dependencies as d (d.id)}
                 <li>
@@ -211,13 +212,13 @@
                       <span class="muted dep-ns">{d.namespace}</span>
                     </span>
                     {#if tsStore.installed(game.id, d.id) || (isLoaderName(d.name, d.namespace) && tsStore.loaders[game.id]?.suitable)}
-                      <span class="dep-ok">Installé</span>
+                      <span class="dep-ok">{tr("Installé", "Installed")}</span>
                     {/if}
                   </button>
                 </li>
               {/each}
             </ul>
-            <p class="muted small">ModStudio les installe en même temps que ce mod (dernière version de chacun).</p>
+            <p class="muted small">{tr("ModStudio les installe en même temps que ce mod (dernière version de chacun).", "ModStudio installs them along with this mod (latest version of each).")}</p>
           </section>
         {/if}
       </aside>

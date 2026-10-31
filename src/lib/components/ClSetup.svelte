@@ -3,6 +3,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { asAppError, cl, type AppError, type ClGame } from "$lib/api";
+  import { english, tr } from "$lib/i18n.svelte";
   import { listsStore } from "$lib/lists.svelte";
   import { launcherNames } from "$lib/nexus.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
@@ -45,7 +46,7 @@
     const picked = await open({
       directory: true,
       multiple: false,
-      title: `Dossier d'installation de ${game.name}`,
+      title: tr(`Dossier d'installation de ${game.name}`, `${game.name} install folder`),
       defaultPath: config?.folder || detected?.path || undefined,
     });
     if (typeof picked === "string") await use(picked);
@@ -85,32 +86,34 @@
   }
 </script>
 
-<section class="setup" aria-label="{game.name} sur ce PC">
+<section class="setup" aria-label={tr(`${game.name} sur ce PC`, `${game.name} on this PC`)}>
   <div class="where">
     <div class="where-text">
       {#if config}
-        <p class="label">Dossier du jeu</p>
+        <p class="label">{tr("Dossier du jeu", "Game folder")}</p>
         <p class="path" title={config.folder}>{config.folder}</p>
       {:else if detected}
-        <p class="label">Trouvé dans {launcherNames[detected.launcher] ?? detected.launcher}</p>
+        <p class="label">{tr("Trouvé dans", "Found in")} {launcherNames[detected.launcher] ?? detected.launcher}</p>
         <p class="path" title={detected.path}>{detected.path}</p>
       {:else}
-        <p class="label">Dossier du jeu</p>
+        <p class="label">{tr("Dossier du jeu", "Game folder")}</p>
         <p class="small">
-          Choisis le dossier où {game.name} est installé (celui qui contient son exécutable) : les mods y sont rangés là où
-          {game.loader} les lit.
+          {tr(
+            `Choisis le dossier où ${game.name} est installé (celui qui contient son exécutable) : les mods y sont rangés là où ${game.loader} les lit.`,
+            `Choose the folder where ${game.name} is installed (the one that contains its executable): mods are placed where ${game.loader} reads them.`,
+          )}
         </p>
       {/if}
     </div>
     <div class="row">
       {#if !config && detected}
-        <button class="btn btn-primary" onclick={() => use(detected.path)} disabled={busy}>Installer les mods dans ce dossier</button>
-        <button class="btn" onclick={pick} disabled={busy}>Choisir un autre dossier…</button>
+        <button class="btn btn-primary" onclick={() => use(detected.path)} disabled={busy}>{tr("Installer les mods dans ce dossier", "Install mods in this folder")}</button>
+        <button class="btn" onclick={pick} disabled={busy}>{tr("Choisir un autre dossier…", "Choose another folder…")}</button>
       {:else if !config}
-        <button class="btn btn-primary" onclick={pick} disabled={busy}>Choisir le dossier du jeu</button>
+        <button class="btn btn-primary" onclick={pick} disabled={busy}>{tr("Choisir le dossier du jeu", "Choose the game folder")}</button>
       {:else}
-        <button class="btn" onclick={() => cl.reveal(game.gameId).catch((e) => (error = asAppError(e)))}>Ouvrir</button>
-        {#if !hasMods}<button class="btn btn-ghost" onclick={pick} disabled={busy}>Changer</button>{/if}
+        <button class="btn" onclick={() => cl.reveal(game.gameId).catch((e) => (error = asAppError(e)))}>{tr("Ouvrir", "Open")}</button>
+        {#if !hasMods}<button class="btn btn-ghost" onclick={pick} disabled={busy}>{tr("Changer", "Change")}</button>{/if}
       {/if}
     </div>
   </div>
@@ -121,30 +124,46 @@
         <p class="small ok">
           <Icon name="check" size={15} />
           <span>
-            <span class="strong">{loader.name}</span>{loader.version ? ` ${loader.version}` : ""} est installé{loader.managed
-              ? ""
-              : " (sans ModStudio)"}{loader.note ? "." : " : les mods se chargeront au lancement du jeu."}
+            {#if english}
+              <span class="strong">{loader.name}</span>{loader.version ? ` ${loader.version}` : ""} is installed{loader.managed
+                ? ""
+                : " (without ModStudio)"}{loader.note ? "." : ": mods will load when the game starts."}
+            {:else}
+              <span class="strong">{loader.name}</span>{loader.version ? ` ${loader.version}` : ""} est installé{loader.managed
+                ? ""
+                : " (sans ModStudio)"}{loader.note ? "." : " : les mods se chargeront au lancement du jeu."}
+            {/if}
           </span>
         </p>
       {:else if loader.installable}
         <p class="small">
-          {game.name} charge ses mods avec <span class="strong">{loader.name}</span>. Il n'est pas encore installé :
-          ModStudio l'installera avec le premier mod.
+          {#if english}
+            {game.name} loads its mods with <span class="strong">{loader.name}</span>. It isn't installed yet:
+            ModStudio will install it with the first mod.
+          {:else}
+            {game.name} charge ses mods avec <span class="strong">{loader.name}</span>. Il n'est pas encore installé :
+            ModStudio l'installera avec le premier mod.
+          {/if}
         </p>
         {#if installingLoader && job}
           <ProgressBar progress={job} oncancel={() => listsStore.cancel(game)} />
         {:else if loaderMod}
-          <div><button class="btn" onclick={installLoader} disabled={!!job}>Installer {loader.name} maintenant</button></div>
+          <div><button class="btn" onclick={installLoader} disabled={!!job}>{tr(`Installer ${loader.name} maintenant`, `Install ${loader.name} now`)}</button></div>
         {/if}
       {:else}
         <p class="small">
-          {game.name} charge ses mods avec <span class="strong">{loader.name}</span>, qui s'installe avec son propre
-          programme : ModStudio installe les mods, pas le chargeur.
+          {#if english}
+            {game.name} loads its mods with <span class="strong">{loader.name}</span>, which installs with its own
+            program: ModStudio installs the mods, not the loader.
+          {:else}
+            {game.name} charge ses mods avec <span class="strong">{loader.name}</span>, qui s'installe avec son propre
+            programme : ModStudio installe les mods, pas le chargeur.
+          {/if}
         </p>
         {#if game.id === "raft"}
           <div>
             <button class="btn" onclick={() => openUrl("https://www.raftmodding.com/loader")}>
-              Télécharger Raft Mod Loader <Icon name="external" size={14} />
+              {tr("Télécharger Raft Mod Loader", "Download Raft Mod Loader")} <Icon name="external" size={14} />
             </button>
           </div>
         {/if}
@@ -156,19 +175,21 @@
 
       {#if game.id === "outer-wilds" && loader.present}
         <div class="row">
-          <button class="btn" onclick={launch}>{launched ? "OWML se lance…" : "Lancer avec OWML"}</button>
+          <button class="btn" onclick={launch}>{launched ? tr("OWML se lance…", "OWML is starting…") : tr("Lancer avec OWML", "Launch with OWML")}</button>
         </div>
       {/if}
 
       {#if loader.launchOption && (loader.present || loader.installable) && (!detected || detected.launcher === "steam")}
         <div class="proton">
           <p class="small">
-            Sous Linux, ajoute ceci aux options de lancement du jeu dans Steam (Propriétés, Général) : sans ça, Proton ne
-            charge pas {loader.name}.
+            {tr(
+              `Sous Linux, ajoute ceci aux options de lancement du jeu dans Steam (Propriétés, Général) : sans ça, Proton ne charge pas ${loader.name}.`,
+              `On Linux, add this to the game's launch options in Steam (Properties, General): without it, Proton doesn't load ${loader.name}.`,
+            )}
           </p>
           <div class="proton-row">
             <code>{loader.launchOption}</code>
-            <button class="btn btn-ghost" onclick={() => copy(loader.launchOption ?? "")}>{copied ? "Copié" : "Copier"}</button>
+            <button class="btn btn-ghost" onclick={() => copy(loader.launchOption ?? "")}>{copied ? tr("Copié", "Copied") : tr("Copier", "Copy")}</button>
           </div>
         </div>
       {/if}

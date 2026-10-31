@@ -4,6 +4,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import type { ClGame } from "$lib/api";
   import { count, exact } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import { listsStore } from "$lib/lists.svelte";
   import { nav } from "$lib/nav.svelte";
   import { inview } from "$lib/paged.svelte";
@@ -72,15 +73,15 @@
     {/if}
     <div class="banner-text">
       <button class="btn btn-ghost crumb" onclick={() => nav.openClGames()}>
-        <Icon name="back" />Tous les jeux des communautés
+        <Icon name="back" />{tr("Tous les jeux des communautés", "All community games")}
       </button>
       <h1>{game.name}</h1>
       <div class="banner-stats">
         <span class="chip">{game.listName}</span>
-        <span class="chip" title="Chargeur de mods du jeu">{game.loader}</span>
+        <span class="chip" title={tr("Chargeur de mods du jeu", "The game's mod loader")}>{game.loader}</span>
         {#if mods}<span><strong>{exact(mods.length)}</strong> mods</span>{/if}
         <button class="btn btn-ghost" onclick={() => openUrl(game.listUrl)}>
-          Site de la liste <Icon name="external" size={14} />
+          {tr("Site de la liste", "List website")} <Icon name="external" size={14} />
         </button>
       </div>
     </div>
@@ -92,32 +93,32 @@
 
     <div class="toolbar">
       <label class="search">
-        <span class="visually-hidden">Rechercher dans les mods de {game.name}</span>
+        <span class="visually-hidden">{tr(`Rechercher dans les mods de ${game.name}`, `Search ${game.name} mods`)}</span>
         <Icon name="search" />
-        <input class="field" type="search" placeholder="Rechercher dans les mods" bind:value={query} />
+        <input class="field" type="search" placeholder={tr("Rechercher dans les mods", "Search mods")} bind:value={query} />
       </label>
       {#if categories.length > 1}
         <label>
-          <span class="visually-hidden">Catégorie</span>
+          <span class="visually-hidden">{tr("Catégorie", "Category")}</span>
           <select class="field" bind:value={category}>
-            <option value="">Toutes les catégories</option>
+            <option value="">{tr("Toutes les catégories", "All categories")}</option>
             {#each categories as c (c)}<option value={c}>{c}</option>{/each}
           </select>
         </label>
       {/if}
       {#if hasDownloads || hasDates}
         <label>
-          <span class="visually-hidden">Trier les mods</span>
+          <span class="visually-hidden">{tr("Trier les mods", "Sort mods")}</span>
           <select class="field" value={sort} onchange={(e) => (chosen = e.currentTarget.value as Sort)}>
-            <option value="name">Nom (A à Z)</option>
-            {#if hasDownloads}<option value="downloads">Plus téléchargés</option>{/if}
-            {#if hasDates}<option value="updated">Récemment mis à jour</option>{/if}
+            <option value="name">{tr("Nom (A à Z)", "Name (A to Z)")}</option>
+            {#if hasDownloads}<option value="downloads">{tr("Plus téléchargés", "Most downloaded")}</option>{/if}
+            {#if hasDates}<option value="updated">{tr("Récemment mis à jour", "Recently updated")}</option>{/if}
           </select>
         </label>
       {/if}
       <label class="check small">
         <input type="checkbox" bind:checked={showAll} />
-        Afficher les mods obsolètes ou cassés
+        {tr("Afficher les mods obsolètes ou cassés", "Show outdated or broken mods")}
       </label>
       {#if mods}<p class="muted">{exact(list.length)} mods</p>{/if}
     </div>
@@ -125,19 +126,27 @@
     {#if error && !mods}
       <ErrorNotice {error} onretry={() => listsStore.loadMods(game, true)} />
     {:else if !mods}
-      <ul class="card-grid" aria-busy="true" aria-label="Chargement des mods">
+      <ul class="card-grid" aria-busy="true" aria-label={tr("Chargement des mods", "Loading mods")}>
         {#each Array(12) as _, i (i)}
           <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
         {/each}
       </ul>
     {:else if mods.length === 0}
       <div class="empty">
-        <p>{loader?.note ?? (listsStore.config(game) ? "Aucun mod dans la liste pour l'instant." : "Choisis d'abord le dossier du jeu : la liste dépend de la version installée.")}</p>
+        <p>
+          {loader?.note ??
+            (listsStore.config(game)
+              ? tr("Aucun mod dans la liste pour l'instant.", "No mods in the list yet.")
+              : tr(
+                  "Choisis d'abord le dossier du jeu : la liste dépend de la version installée.",
+                  "Choose the game folder first: the list depends on the installed version.",
+                ))}
+        </p>
       </div>
     {:else if list.length === 0}
       <div class="empty">
-        <p>Aucun mod ne correspond{query.trim() ? ` à « ${query.trim()} »` : ""}.</p>
-        {#if query || category}<button class="btn" onclick={() => ((query = ""), (category = ""))}>Effacer les filtres</button>{/if}
+        <p>{tr(`Aucun mod ne correspond${query.trim() ? ` à « ${query.trim()} »` : ""}.`, `No mods match${query.trim() ? ` "${query.trim()}"` : ""}.`)}</p>
+        {#if query || category}<button class="btn" onclick={() => ((query = ""), (category = ""))}>{tr("Effacer les filtres", "Clear filters")}</button>{/if}
       </div>
     {:else}
       <ul class="card-grid">
@@ -152,20 +161,20 @@
                 badges={[
                   ...(record
                     ? listsStore.outdated(game.gameId, m.modId)
-                      ? [{ text: "Mise à jour", tone: "accent" as const }]
-                      : [{ text: "Installé", tone: "ok" as const }]
+                      ? [{ text: tr("Mise à jour", "Update"), tone: "accent" as const }]
+                      : [{ text: tr("Installé", "Installed"), tone: "ok" as const }]
                     : []),
-                  ...(m.loader ? [{ text: "Chargeur", tone: "neutral" as const }] : []),
-                  ...(m.broken ? [{ text: "Cassé", tone: "warn" as const }] : m.deprecated ? [{ text: "Obsolète", tone: "warn" as const }] : []),
+                  ...(m.loader ? [{ text: tr("Chargeur", "Loader"), tone: "neutral" as const }] : []),
+                  ...(m.broken ? [{ text: tr("Cassé", "Broken"), tone: "warn" as const }] : m.deprecated ? [{ text: tr("Obsolète", "Outdated"), tone: "warn" as const }] : []),
                 ]}
               />
               <span class="card-title">{m.name}</span>
-              {#if m.author}<span class="card-meta"><span class="author">par {m.author}</span></span>{/if}
+              {#if m.author}<span class="card-meta"><span class="author">{tr("par", "by")} {m.author}</span></span>{/if}
               {#if m.description}<span class="desc">{m.description}</span>{/if}
               <span class="card-meta">
                 {#if m.category}<span>{m.category}</span>{/if}
                 <span>{m.latest}</span>
-                {#if m.downloads !== null}<span title="Téléchargements"><Icon name="download" size={14} />{count(m.downloads)}</span>{/if}
+                {#if m.downloads !== null}<span title={tr("Téléchargements", "Downloads")}><Icon name="download" size={14} />{count(m.downloads)}</span>{/if}
               </span>
             </button>
           </li>
@@ -174,7 +183,7 @@
       {#if list.length > shown}
         {#key shown}
           <div class="more" use:inview={() => (shown = Math.min(shown + PAGE, list.length))}>
-            <span class="muted">{exact(shown)} mods affichés sur {exact(list.length)}</span>
+            <span class="muted">{tr(`${exact(shown)} mods affichés sur ${exact(list.length)}`, `Showing ${exact(shown)} of ${exact(list.length)} mods`)}</span>
           </div>
         {/key}
       {/if}

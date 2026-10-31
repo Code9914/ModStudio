@@ -1,6 +1,7 @@
 <script lang="ts">
   // Installer, mettre à jour, désactiver ou désinstaller un mod Thunderstore.
   import { asAppError, ts, type AppError, type TsCommunity, type TsPackageDetail } from "$lib/api";
+  import { tr } from "$lib/i18n.svelte";
   import { isLoaderName, tsStore } from "$lib/thunderstore.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -59,8 +60,20 @@
       const r = await tsStore.install(game, mod.namespace, mod.name, mod.id, version);
       const others = r.installed.filter((n) => n !== mod.name.replaceAll("_", " "));
       const parts = [];
-      if (others.length) parts.push(`Installé avec ${others.length > 1 ? "les mods nécessaires" : "le mod nécessaire"} : ${others.join(", ")}.`);
-      if (r.keptLoader) parts.push(`${loader?.name ?? "BepInEx"} était déjà installé : il a été gardé tel quel.`);
+      if (others.length)
+        parts.push(
+          tr(
+            `Installé avec ${others.length > 1 ? "les mods nécessaires" : "le mod nécessaire"} : ${others.join(", ")}.`,
+            `Installed with ${others.length > 1 ? "the required mods" : "the required mod"}: ${others.join(", ")}.`,
+          ),
+        );
+      if (r.keptLoader)
+        parts.push(
+          tr(
+            `${loader?.name ?? "BepInEx"} était déjà installé : il a été gardé tel quel.`,
+            `${loader?.name ?? "BepInEx"} was already installed: it was kept as is.`,
+          ),
+        );
       note = parts.join(" ") || null;
     } catch (e) {
       const err = asAppError(e);
@@ -96,7 +109,11 @@
     try {
       const r = await tsStore.uninstall(game.id, mod.id);
       orphans = r.orphans;
-      if (r.leftFolder) note = `Le dossier « ${r.leftFolder} » contient des fichiers créés depuis : il a été laissé en place.`;
+      if (r.leftFolder)
+        note = tr(
+          `Le dossier « ${r.leftFolder} » contient des fichiers créés depuis : il a été laissé en place.`,
+          `The "${r.leftFolder}" folder contains files created since the install: it was left in place.`,
+        );
     } catch (e) {
       error = asAppError(e);
     } finally {
@@ -118,9 +135,9 @@
   }
 </script>
 
-<section class="panel" aria-label="Installation">
+<section class="panel" aria-label={tr("Installation", "Installation")}>
   {#if !config}
-    {#if !unsupported}<p class="small">Pour installer ce mod, indique d'abord où se trouve {game.name}.</p>{/if}
+    {#if !unsupported}<p class="small">{tr(`Pour installer ce mod, indique d'abord où se trouve ${game.name}.`, `To install this mod, first tell ModStudio where ${game.name} is.`)}</p>{/if}
     <TsGameSetup {game} />
   {:else if mine && job}
     <ProgressBar progress={job} oncancel={() => tsStore.cancel(game)} />
@@ -128,40 +145,48 @@
     <div class="state">
       <p class="installed">
         <Icon name="check" size={16} />
-        <span>Installé{record.version ? ` (${record.version})` : ""}{record.disabled ? ", désactivé" : ""}</span>
+        <span>{tr("Installé", "Installed")}{record.version ? ` (${record.version})` : ""}{record.disabled ? tr(", désactivé", ", disabled") : ""}</span>
       </p>
       <ModToggle enabled={!record.disabled} name={record.name} busy={busy || !!job} ontoggle={toggle} />
     </div>
     {#if latest && !record.disabled}
       <button class="btn btn-primary" onclick={() => install()} disabled={!!job}>
-        <Icon name="download" size={15} />Mettre à jour vers {latest}
+        <Icon name="download" size={15} />{tr(`Mettre à jour vers ${latest}`, `Update to ${latest}`)}
       </button>
     {/if}
     {#if record.auto}
       <p class="small muted">
-        Installé comme mod nécessaire{neededBy.length ? ` de ${neededBy.join(", ")}` : ""}.
+        {tr(
+          `Installé comme mod nécessaire${neededBy.length ? ` de ${neededBy.join(", ")}` : ""}.`,
+          `Installed as a required mod${neededBy.length ? ` for ${neededBy.join(", ")}` : ""}.`,
+        )}
       </p>
     {/if}
     <div class="row">
-      <button class="btn" onclick={() => ts.reveal(game.id, mod.id).catch((e) => (error = asAppError(e)))}>Ouvrir le dossier</button>
+      <button class="btn" onclick={() => ts.reveal(game.id, mod.id).catch((e) => (error = asAppError(e)))}>{tr("Ouvrir le dossier", "Open folder")}</button>
       <button class="btn btn-ghost" class:danger={confirmRemove} onclick={remove} disabled={busy || !!job}>
-        {confirmRemove ? "Confirmer" : "Désinstaller"}
+        {confirmRemove ? tr("Confirmer", "Confirm") : tr("Désinstaller", "Uninstall")}
       </button>
     </div>
   {:else if unsupported}
     <p class="small">
-      {game.name} charge ses mods avec {loader?.requiredLabel ?? game.loader ?? "un chargeur inconnu"} : ModStudio ne
-      sait pas encore les installer. Pour ce jeu, utilise un gestionnaire comme r2modman ou Gale.
+      {tr(
+        `${game.name} charge ses mods avec ${loader?.requiredLabel ?? game.loader ?? "un chargeur inconnu"} : ModStudio ne sait pas encore les installer. Pour ce jeu, utilise un gestionnaire comme r2modman ou Gale.`,
+        `${game.name} loads its mods with ${loader?.requiredLabel ?? game.loader ?? "an unknown mod loader"}: ModStudio can't install them yet. For this game, use a manager like r2modman or Gale.`,
+      )}
     </p>
   {:else}
     <button class="btn btn-primary big" onclick={() => install()} disabled={!!job}>
-      <Icon name="download" size={16} />Installer
+      <Icon name="download" size={16} />{tr("Installer", "Install")}
     </button>
     {#if job}
-      <p class="small muted">Une autre installation est en cours pour ce jeu.</p>
+      <p class="small muted">{tr("Une autre installation est en cours pour ce jeu.", "Another installation is in progress for this game.")}</p>
     {:else if missing.length}
       <p class="small muted">
-        Avec {missing.length > 1 ? `les ${missing.length} mods nécessaires` : "le mod nécessaire"} : {missing.join(", ")}.
+        {tr(
+          `Avec ${missing.length > 1 ? `les ${missing.length} mods nécessaires` : "le mod nécessaire"} : ${missing.join(", ")}.`,
+          `With ${missing.length > 1 ? `the ${missing.length} required mods` : "the required mod"}: ${missing.join(", ")}.`,
+        )}
       </p>
     {/if}
   {/if}
@@ -169,12 +194,14 @@
   {#if orphans.length}
     <div class="orphans">
       <p class="small">
-        {orphans.length > 1 ? "Ces mods nécessaires ne servent plus" : "Ce mod nécessaire ne sert plus"} :
-        {orphans.map((o) => o.name).join(", ")}.
+        {tr(
+          `${orphans.length > 1 ? "Ces mods nécessaires ne servent plus" : "Ce mod nécessaire ne sert plus"} : ${orphans.map((o) => o.name).join(", ")}.`,
+          `${orphans.length > 1 ? "These required mods are no longer needed" : "This required mod is no longer needed"}: ${orphans.map((o) => o.name).join(", ")}.`,
+        )}
       </p>
       <div class="row">
-        <button class="btn" onclick={removeOrphans} disabled={busy}>Les désinstaller aussi</button>
-        <button class="btn btn-ghost" onclick={() => (orphans = [])}>Les garder</button>
+        <button class="btn" onclick={removeOrphans} disabled={busy}>{tr("Les désinstaller aussi", "Uninstall them too")}</button>
+        <button class="btn btn-ghost" onclick={() => (orphans = [])}>{tr("Les garder", "Keep them")}</button>
       </div>
     </div>
   {/if}

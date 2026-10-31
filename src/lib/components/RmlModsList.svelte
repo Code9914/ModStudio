@@ -4,6 +4,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import type { TsCommunity } from "$lib/api";
   import { exact } from "$lib/format";
+  import { english, tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import { inview } from "$lib/paged.svelte";
   import { normalizeName, rmlCategory, rmlPlatforms, tsStore } from "$lib/thunderstore.svelte";
@@ -53,37 +54,48 @@
 <div class="rml">
   <div class="about small">
     <p>
-      Mods pour ResoniteModLoader (RML), un autre chargeur que BepisLoader. La liste est vérifiée par la communauté (c'est
-      celle de Resolute) et chaque fichier est contrôlé avant d'être installé.
+      {tr(
+        "Mods pour ResoniteModLoader (RML), un autre chargeur que BepisLoader. La liste est vérifiée par la communauté (c'est celle de Resolute) et chaque fichier est contrôlé avant d'être installé.",
+        "Mods for ResoniteModLoader (RML), a different mod loader from BepisLoader. The list is verified by the community (it's the one Resolute uses) and every file is checked before it's installed.",
+      )}
     </p>
     {#if status?.present && !status.managed && !status.viaBepis}
       <p>
-        ResoniteModLoader est déjà installé à la main : il se lance avec l'option
-        <code>{status.launchOption}</code> dans les propriétés du jeu sur Steam. ModStudio n'y touche pas.
+        {#if english}
+          ResoniteModLoader is already installed manually: it starts with the
+          <code>{status.launchOption}</code> option in the game's properties on Steam. ModStudio leaves it alone.
+        {:else}
+          ResoniteModLoader est déjà installé à la main : il se lance avec l'option
+          <code>{status.launchOption}</code> dans les propriétés du jeu sur Steam. ModStudio n'y touche pas.
+        {/if}
       </p>
     {:else if status?.present && status.viaBepis}
       <p class="ok">
-        <Icon name="check" size={15} />ResoniteModLoader{status.version ? ` ${status.version}` : ""} est installé et chargé par
-        BepisLoader : pas d'option de lancement à ajouter.
+        <Icon name="check" size={15} />{tr(
+          `ResoniteModLoader${status.version ? ` ${status.version}` : ""} est installé et chargé par BepisLoader : pas d'option de lancement à ajouter.`,
+          `ResoniteModLoader${status.version ? ` ${status.version}` : ""} is installed and loaded by BepisLoader: no launch option to add.`,
+        )}
       </p>
     {:else}
       <p>
-        ModStudio installe ResoniteModLoader avec le premier mod, ainsi que le plugin qui le fait charger par BepisLoader :
-        pas d'option de lancement à ajouter dans Steam.
+        {tr(
+          "ModStudio installe ResoniteModLoader avec le premier mod, ainsi que le plugin qui le fait charger par BepisLoader : pas d'option de lancement à ajouter dans Steam.",
+          "ModStudio installs ResoniteModLoader with the first mod, along with the plugin that makes BepisLoader load it: no launch option to add in Steam.",
+        )}
       </p>
     {/if}
   </div>
 
   <div class="toolbar">
     <label class="search">
-      <span class="visually-hidden">Rechercher dans les mods de ResoniteModLoader</span>
+      <span class="visually-hidden">{tr("Rechercher dans les mods de ResoniteModLoader", "Search ResoniteModLoader mods")}</span>
       <Icon name="search" />
-      <input class="field" type="search" placeholder="Rechercher dans les mods" bind:value={query} />
+      <input class="field" type="search" placeholder={tr("Rechercher dans les mods", "Search mods")} bind:value={query} />
     </label>
     <label>
-      <span class="visually-hidden">Catégorie</span>
+      <span class="visually-hidden">{tr("Catégorie", "Category")}</span>
       <select class="field" bind:value={category}>
-        <option value="">Toutes les catégories</option>
+        <option value="">{tr("Toutes les catégories", "All categories")}</option>
         {#each categories as c (c)}
           <option value={c}>{rmlCategory(c)}</option>
         {/each}
@@ -91,7 +103,7 @@
     </label>
     <label class="check small">
       <input type="checkbox" bind:checked={showAll} />
-      Afficher les mods obsolètes, cassés ou pour serveur
+      {tr("Afficher les mods obsolètes, cassés ou pour serveur", "Show outdated, broken or server mods")}
     </label>
     {#if tsStore.rmlMods}<p class="muted">{exact(list.length)} mods</p>{/if}
   </div>
@@ -99,16 +111,16 @@
   {#if tsStore.rmlError && !tsStore.rmlMods}
     <ErrorNotice error={tsStore.rmlError} onretry={() => tsStore.loadRml(true)} />
   {:else if !tsStore.rmlMods}
-    <ul class="card-grid" aria-busy="true" aria-label="Chargement des mods">
+    <ul class="card-grid" aria-busy="true" aria-label={tr("Chargement des mods", "Loading mods")}>
       {#each Array(12) as _, i (i)}
         <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
       {/each}
     </ul>
   {:else if list.length === 0}
     <div class="empty">
-      <p>Aucun mod ne correspond{query.trim() ? ` à « ${query.trim()} »` : ""}.</p>
+      <p>{tr(`Aucun mod ne correspond${query.trim() ? ` à « ${query.trim()} »` : ""}.`, `No mods match${query.trim() ? ` "${query.trim()}"` : ""}.`)}</p>
       {#if query || category}
-        <button class="btn" onclick={() => ((query = ""), (category = ""))}>Effacer les filtres</button>
+        <button class="btn" onclick={() => ((query = ""), (category = ""))}>{tr("Effacer les filtres", "Clear filters")}</button>
       {/if}
     </div>
   {:else}
@@ -124,15 +136,15 @@
               badges={[
                 ...(record
                   ? tsStore.outdated(game.id, m.modId)
-                    ? [{ text: "Mise à jour", tone: "accent" as const }]
-                    : [{ text: "Installé", tone: "ok" as const }]
+                    ? [{ text: tr("Mise à jour", "Update"), tone: "accent" as const }]
+                    : [{ text: tr("Installé", "Installed"), tone: "ok" as const }]
                   : []),
-                ...(m.broken ? [{ text: "Cassé", tone: "warn" as const }] : m.deprecated ? [{ text: "Obsolète", tone: "warn" as const }] : []),
+                ...(m.broken ? [{ text: tr("Cassé", "Broken"), tone: "warn" as const }] : m.deprecated ? [{ text: tr("Obsolète", "Outdated"), tone: "warn" as const }] : []),
                 ...(!m.compatible ? [{ text: rmlPlatforms(m.platforms), tone: "neutral" as const }] : []),
               ]}
             />
             <span class="card-title">{m.name}</span>
-            <span class="card-meta"><span class="author">par {m.author}</span></span>
+            <span class="card-meta"><span class="author">{tr("par", "by")} {m.author}</span></span>
             {#if m.description}<span class="desc">{m.description}</span>{/if}
             <span class="card-meta">
               <span>{rmlCategory(m.category)}</span>
@@ -145,14 +157,14 @@
     {#if list.length > shown}
       {#key shown}
         <div class="more" use:inview={() => (shown = Math.min(shown + PAGE, list.length))}>
-          <span class="muted">{exact(shown)} mods affichés sur {exact(list.length)}</span>
+          <span class="muted">{tr(`${exact(shown)} mods affichés sur ${exact(list.length)}`, `Showing ${exact(shown)} of ${exact(list.length)} mods`)}</span>
         </div>
       {/key}
     {/if}
   {/if}
 
   <p class="muted small source">
-    Liste :
+    {tr("Liste :", "List:")}
     <button class="link" onclick={() => openUrl("https://github.com/resonite-modding-group/resonite-mod-manifest")}>
       resonite-mod-manifest <Icon name="external" size={12} />
     </button>

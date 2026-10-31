@@ -3,6 +3,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { ts, type TsCommunity, type TsOrdering, type TsPackage } from "$lib/api";
   import { count, exact } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import { nav } from "$lib/nav.svelte";
   import { PagedList } from "$lib/paged.svelte";
   import { RML_COMMUNITY, tsStore } from "$lib/thunderstore.svelte";
@@ -61,10 +62,10 @@
   const tab = $derived(withRml ? nav.tsTab : "thunderstore");
 
   const sorts: { value: TsOrdering; label: string }[] = [
-    { value: "most-downloaded", label: "Plus téléchargés" },
-    { value: "top-rated", label: "Mieux notés" },
-    { value: "last-updated", label: "Récemment mis à jour" },
-    { value: "newest", label: "Nouveautés" },
+    { value: "most-downloaded", label: tr("Plus téléchargés", "Most downloaded") },
+    { value: "top-rated", label: tr("Mieux notés", "Top rated") },
+    { value: "last-updated", label: tr("Récemment mis à jour", "Recently updated") },
+    { value: "newest", label: tr("Nouveautés", "Newest") },
   ];
 </script>
 
@@ -75,7 +76,7 @@
     {/if}
     <div class="banner-text">
       <button class="btn btn-ghost crumb" onclick={() => nav.openTsGames()}>
-        <Icon name="back" />Tous les jeux Thunderstore
+        <Icon name="back" />{tr("Tous les jeux Thunderstore", "All Thunderstore games")}
       </button>
       <div class="title-row">
         {#if info.coverImageUrl}
@@ -85,13 +86,13 @@
       </div>
       <div class="banner-stats">
         <span class="chip">Thunderstore</span>
-        {#if info.loader}<span class="chip" title="Chargeur de mods du jeu">{info.loader}</span>{/if}
+        {#if info.loader}<span class="chip" title={tr("Chargeur de mods du jeu", "The game's mod loader")}>{info.loader}</span>{/if}
         {#if info.totalPackageCount > 0}
           <span><strong>{exact(info.totalPackageCount)}</strong> mods</span>
-          <span><strong>{count(info.totalDownloadCount)}</strong> téléchargements</span>
+          <span><strong>{count(info.totalDownloadCount)}</strong> {tr("téléchargements", "downloads")}</span>
         {/if}
         <button class="btn btn-ghost" onclick={() => openUrl(`https://thunderstore.io/c/${game.identifier}/`)}>
-          Page du jeu sur Thunderstore <Icon name="external" size={14} />
+          {tr("Page du jeu sur Thunderstore", "Game page on Thunderstore")} <Icon name="external" size={14} />
         </button>
       </div>
     </div>
@@ -101,12 +102,12 @@
     {#key game.id}<TsGameSetup game={info} />{/key}
 
     {#if withRml}
-      <div class="tabs" role="tablist" aria-label="Sources de mods">
+      <div class="tabs" role="tablist" aria-label={tr("Sources de mods", "Mod sources")}>
         <button role="tab" class="tab" aria-selected={tab === "thunderstore"} onclick={() => (nav.tsTab = "thunderstore")}>
           Thunderstore <span class="muted">BepisLoader</span>
         </button>
         <button role="tab" class="tab" aria-selected={tab === "rml"} onclick={() => (nav.tsTab = "rml")}>
-          ResoniteModLoader <span class="muted">liste vérifiée</span>
+          ResoniteModLoader <span class="muted">{tr("liste vérifiée", "verified list")}</span>
         </button>
       </div>
     {/if}
@@ -116,12 +117,12 @@
     {:else}
     <div class="toolbar">
       <label class="search">
-        <span class="visually-hidden">Rechercher dans les mods de {info.name}</span>
+        <span class="visually-hidden">{tr(`Rechercher dans les mods de ${info.name}`, `Search ${info.name} mods`)}</span>
         <Icon name="search" />
-        <input class="field" type="search" placeholder="Rechercher dans les mods" bind:value={query} />
+        <input class="field" type="search" placeholder={tr("Rechercher dans les mods", "Search mods")} bind:value={query} />
       </label>
       <label>
-        <span class="visually-hidden">Trier les mods</span>
+        <span class="visually-hidden">{tr("Trier les mods", "Sort mods")}</span>
         <select class="field" bind:value={sort}>
           {#each sorts as s (s.value)}
             <option value={s.value}>{s.label}</option>
@@ -129,22 +130,22 @@
         </select>
       </label>
       {#if list.loaded}
-        <p class="muted">{exact(list.total)} résultats</p>
+        <p class="muted">{exact(list.total)} {tr("résultats", "results")}</p>
       {/if}
     </div>
 
     {#if list.error && list.items.length === 0}
       <ErrorNotice error={list.error} onretry={() => list.retry()} />
     {:else if !list.loaded}
-      <ul class="card-grid" aria-busy="true" aria-label="Chargement des mods">
+      <ul class="card-grid" aria-busy="true" aria-label={tr("Chargement des mods", "Loading mods")}>
         {#each Array(12) as _, i (i)}
           <li class="skeleton"><div class="thumb"></div><div class="line"></div></li>
         {/each}
       </ul>
     {:else if list.items.length === 0}
       <div class="empty">
-        <p>Aucun mod ne correspond{search ? ` à « ${search} »` : ""}.</p>
-        {#if search}<button class="btn" onclick={() => (query = "")}>Effacer la recherche</button>{/if}
+        <p>{tr(`Aucun mod ne correspond${search ? ` à « ${search} »` : ""}.`, `No mods match${search ? ` "${search}"` : ""}.`)}</p>
+        {#if search}<button class="btn" onclick={() => (query = "")}>{tr("Effacer la recherche", "Clear search")}</button>{/if}
       </div>
     {:else}
       <ul class="card-grid">
@@ -157,19 +158,19 @@
                 badges={[
                   ...(tsStore.installed(game.id, m.id)
                     ? tsStore.outdated(game.id, m.id)
-                      ? [{ text: "Mise à jour", tone: "accent" as const }]
-                      : [{ text: "Installé", tone: "ok" as const }]
+                      ? [{ text: tr("Mise à jour", "Update"), tone: "accent" as const }]
+                      : [{ text: tr("Installé", "Installed"), tone: "ok" as const }]
                     : []),
-                  ...(m.isDeprecated ? [{ text: "Obsolète", tone: "warn" as const }] : []),
-                  ...(m.isNsfw ? [{ text: "Adulte", tone: "warn" as const }] : []),
+                  ...(m.isDeprecated ? [{ text: tr("Obsolète", "Outdated"), tone: "warn" as const }] : []),
+                  ...(m.isNsfw ? [{ text: tr("Adulte", "Adult"), tone: "warn" as const }] : []),
                 ]}
               />
               <span class="card-title">{m.name.replaceAll("_", " ")}</span>
-              <span class="card-meta"><span class="author">par {m.namespace}</span></span>
+              <span class="card-meta"><span class="author">{tr("par", "by")} {m.namespace}</span></span>
               {#if m.description}<span class="desc">{m.description}</span>{/if}
               <span class="card-meta">
-                <span title="Téléchargements"><Icon name="download" size={14} />{count(m.downloadCount)}</span>
-                <span title="Notes"><Icon name="thumb" size={14} />{count(m.ratingCount)}</span>
+                <span title={tr("Téléchargements", "Downloads")}><Icon name="download" size={14} />{count(m.downloadCount)}</span>
+                <span title={tr("Notes", "Ratings")}><Icon name="thumb" size={14} />{count(m.ratingCount)}</span>
               </span>
             </button>
           </li>

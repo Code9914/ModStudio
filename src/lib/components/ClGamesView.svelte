@@ -1,6 +1,7 @@
 <script lang="ts">
   // Jeux dont la communauté tient sa propre liste de mods.
   import { onMount } from "svelte";
+  import { tr } from "$lib/i18n.svelte";
   import { listsStore } from "$lib/lists.svelte";
   import { nav } from "$lib/nav.svelte";
   import { launcherNames, nexusStore } from "$lib/nexus.svelte";
@@ -24,12 +25,13 @@
 
 <div class="view">
   <header class="head">
-    <p class="source">Communautés</p>
-    <h1>Jeux</h1>
+    <p class="source">{tr("Communautés", "Communities")}</p>
+    <h1>{tr("Jeux", "Games")}</h1>
     <p class="intro muted">
-      Pour ces jeux, la plupart des mods ne sont ni sur mod.io, ni sur Nexus Mods, ni sur Thunderstore : leur communauté tient
-      sa propre liste, avec son chargeur de mods. ModStudio installe le chargeur s'il manque, puis chaque mod avec ceux dont il
-      a besoin, rangé là où le jeu le lit. Les fichiers sont vérifiés quand la liste publie leur empreinte.
+      {tr(
+        "Pour ces jeux, la plupart des mods ne sont ni sur mod.io, ni sur Nexus Mods, ni sur Thunderstore : leur communauté tient sa propre liste, avec son chargeur de mods. ModStudio installe le chargeur s'il manque, puis chaque mod avec ceux dont il a besoin, rangé là où le jeu le lit. Les fichiers sont vérifiés quand la liste publie leur empreinte.",
+        "For these games, most mods aren't on mod.io, Nexus Mods or Thunderstore: their community keeps its own list, with its own mod loader. ModStudio installs the loader if it's missing, then each mod along with the ones it needs, placed where the game reads it. Files are verified when the list publishes their hash.",
+      )}
     </p>
   </header>
 
@@ -60,7 +62,7 @@
           <Thumb src={resonite.coverImageUrl} label={resonite.name} badges={[{ text: "Thunderstore", tone: "neutral" as const }]} />
           <span class="card-title">{resonite.name}</span>
           <span class="card-meta"><span>ResoniteModLoader</span></span>
-          <span class="card-meta"><span>dans la page Thunderstore</span></span>
+          <span class="card-meta"><span>{tr("dans la page Thunderstore", "on the Thunderstore page")}</span></span>
         </button>
       </li>
     {/if}

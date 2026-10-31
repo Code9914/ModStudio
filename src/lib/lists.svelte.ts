@@ -1,5 +1,6 @@
 // Jeux dont la communauté tient sa propre liste de mods : état partagé par toutes les vues.
 import { asAppError, cl, type AppError, type ClGame, type ClInstalled, type ClLoader, type ClMod, type DetectedGame, type GameInstall, type ProfileEdit } from "./api";
+import { tr } from "./i18n.svelte";
 import { describe, type Progress } from "./installs.svelte";
 import { nexusStore } from "./nexus.svelte";
 import { normalizeName } from "./thunderstore.svelte";
@@ -114,12 +115,12 @@ class ListsStore {
   async install(game: ClGame, mod: ClMod, version?: string | null): Promise<ClInstalled> {
     const gameId = game.gameId;
     let step = "";
-    this.progress[gameId] = { modId: mod.modId, label: "Préparation…", ratio: null };
+    this.progress[gameId] = { modId: mod.modId, label: tr("Préparation…", "Preparing…"), ratio: null };
     try {
       const result = await cl.install(game.id, mod.id, version ?? null, (e) => {
         if (e.phase === "step") {
-          step = e.total > 1 ? `${e.name} (${e.index} sur ${e.total}), ` : "";
-          this.progress[gameId] = { modId: mod.modId, label: `${step}préparation…`, ratio: null };
+          step = e.total > 1 ? tr(`${e.name} (${e.index} sur ${e.total}), `, `${e.name} (${e.index} of ${e.total}), `) : "";
+          this.progress[gameId] = { modId: mod.modId, label: tr(`${step}préparation…`, `${step}preparing…`), ratio: null };
           return;
         }
         const p = describe(e);

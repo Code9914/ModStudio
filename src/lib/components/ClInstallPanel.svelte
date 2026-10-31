@@ -1,6 +1,7 @@
 <script lang="ts">
   // Installer, mettre à jour, désactiver ou désinstaller un mod d'une liste de communauté.
   import { asAppError, cl, type AppError, type ClGame, type ClMod } from "$lib/api";
+  import { tr } from "$lib/i18n.svelte";
   import { listsStore } from "$lib/lists.svelte";
   import ClSetup from "./ClSetup.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
@@ -23,7 +24,9 @@
   const latest = $derived(record ? listsStore.latest(game.gameId, mod.modId) : null);
   const loader = $derived(listsStore.loaders[game.id] ?? null);
 
-  const blocked = $derived(mod.broken ? (mod.note ?? "Ce mod est signalé comme cassé.") : !mod.compatible ? mod.note : null);
+  const blocked = $derived(
+    mod.broken ? (mod.note ?? tr("Ce mod est signalé comme cassé.", "This mod is marked as broken.")) : !mod.compatible ? mod.note : null,
+  );
 
   /** Ce qui sera installé avec ce mod. */
   const missing = $derived.by(() => {
@@ -41,9 +44,15 @@
   /** Où viennent les fichiers, quand la liste ne publie pas leur empreinte. */
   const unchecked = $derived(
     game.id === "raft"
-      ? "RaftModding ne publie pas d'empreinte pour ses fichiers : ils sont seulement analysés par VirusTotal sur son site."
+      ? tr(
+          "RaftModding ne publie pas d'empreinte pour ses fichiers : ils sont seulement analysés par VirusTotal sur son site.",
+          "RaftModding doesn't publish hashes for its files: they're only scanned by VirusTotal on its website.",
+        )
       : game.id === "outer-wilds"
-        ? "La base d'OWML ne publie pas d'empreinte : le fichier vient de la page GitHub du mod."
+        ? tr(
+            "La base d'OWML ne publie pas d'empreinte : le fichier vient de la page GitHub du mod.",
+            "The OWML database doesn't publish hashes: the file comes from the mod's GitHub page.",
+          )
         : null,
   );
 
@@ -62,7 +71,11 @@
     try {
       const r = await listsStore.install(game, mod, version);
       const others = r.installed.filter((n) => n !== mod.name);
-      if (others.length) note = `Installé avec ${others.length > 1 ? "les mods nécessaires" : "le mod nécessaire"} : ${others.join(", ")}.`;
+      if (others.length)
+        note = tr(
+          `Installé avec ${others.length > 1 ? "les mods nécessaires" : "le mod nécessaire"} : ${others.join(", ")}.`,
+          `Installed with ${others.length > 1 ? "the required mods" : "the required mod"}: ${others.join(", ")}.`,
+        );
     } catch (e) {
       const err = asAppError(e);
       if (err.kind !== "cancelled") error = err;
@@ -97,7 +110,11 @@
     try {
       const r = await listsStore.uninstall(game.gameId, mod.modId);
       orphans = r.orphans;
-      if (r.leftFolder) note = `Le dossier « ${r.leftFolder} » contient des fichiers créés depuis : il a été laissé en place.`;
+      if (r.leftFolder)
+        note = tr(
+          `Le dossier « ${r.leftFolder} » contient des fichiers créés depuis : il a été laissé en place.`,
+          `The "${r.leftFolder}" folder contains files created since the install: it was left in place.`,
+        );
     } catch (e) {
       error = asAppError(e);
     } finally {
@@ -125,9 +142,9 @@
   }
 </script>
 
-<section class="panel" aria-label="Installation">
+<section class="panel" aria-label={tr("Installation", "Installation")}>
   {#if !config}
-    <p class="small">Pour installer ce mod, indique d'abord où se trouve {game.name}.</p>
+    <p class="small">{tr(`Pour installer ce mod, indique d'abord où se trouve ${game.name}.`, `To install this mod, first tell ModStudio where ${game.name} is.`)}</p>
     <ClSetup {game} />
   {:else if mine && job}
     <ProgressBar progress={job} oncancel={() => listsStore.cancel(game)} />
@@ -135,37 +152,50 @@
     <div class="state">
       <p class="installed">
         <Icon name="check" size={16} />
-        <span>Installé{record.version ? ` (${record.version})` : ""}{record.disabled ? ", désactivé" : ""}</span>
+        <span>{tr("Installé", "Installed")}{record.version ? ` (${record.version})` : ""}{record.disabled ? tr(", désactivé", ", disabled") : ""}</span>
       </p>
       <ModToggle enabled={!record.disabled} name={record.name} busy={busy || !!job} ontoggle={toggle} />
     </div>
     {#if latest && !record.disabled}
       <button class="btn btn-primary" onclick={() => install()} disabled={!!job}>
-        <Icon name="download" size={15} />Mettre à jour vers {latest}
+        <Icon name="download" size={15} />{tr(`Mettre à jour vers ${latest}`, `Update to ${latest}`)}
       </button>
     {/if}
     {#if record.auto}
-      <p class="small muted">Installé comme mod nécessaire{neededBy.length ? ` de ${neededBy.join(", ")}` : ""}.</p>
+      <p class="small muted">
+        {tr(
+          `Installé comme mod nécessaire${neededBy.length ? ` de ${neededBy.join(", ")}` : ""}.`,
+          `Installed as a required mod${neededBy.length ? ` for ${neededBy.join(", ")}` : ""}.`,
+        )}
+      </p>
     {/if}
     <div class="row">
-      <button class="btn" onclick={() => cl.reveal(game.gameId, mod.modId).catch((e) => (error = asAppError(e)))}>Ouvrir le dossier</button>
+      <button class="btn" onclick={() => cl.reveal(game.gameId, mod.modId).catch((e) => (error = asAppError(e)))}>{tr("Ouvrir le dossier", "Open folder")}</button>
       <button class="btn btn-ghost" class:danger={confirmRemove} onclick={remove} disabled={busy || !!job}>
-        {confirmRemove ? "Confirmer" : "Désinstaller"}
+        {confirmRemove ? tr("Confirmer", "Confirm") : tr("Désinstaller", "Uninstall")}
       </button>
     </div>
   {:else if blocked}
     <p class="small">{blocked}</p>
   {:else if mod.loader && loader?.present}
-    <p class="small">{loader.name} est déjà installé dans le dossier du jeu (sans ModStudio) : il est gardé tel quel.</p>
+    <p class="small">
+      {tr(
+        `${loader.name} est déjà installé dans le dossier du jeu (sans ModStudio) : il est gardé tel quel.`,
+        `${loader.name} is already installed in the game folder (without ModStudio): it's kept as is.`,
+      )}
+    </p>
   {:else}
     <button class="btn btn-primary big" onclick={() => install()} disabled={!!job}>
-      <Icon name="download" size={16} />Installer
+      <Icon name="download" size={16} />{tr("Installer", "Install")}
     </button>
     {#if job}
-      <p class="small muted">Une autre installation est en cours pour ce jeu.</p>
+      <p class="small muted">{tr("Une autre installation est en cours pour ce jeu.", "Another installation is in progress for this game.")}</p>
     {:else if missing.length}
       <p class="small muted">
-        Avec {missing.length > 1 ? `les ${missing.length} mods nécessaires` : "le mod nécessaire"} : {missing.join(", ")}.
+        {tr(
+          `Avec ${missing.length > 1 ? `les ${missing.length} mods nécessaires` : "le mod nécessaire"} : ${missing.join(", ")}.`,
+          `With ${missing.length > 1 ? `the ${missing.length} required mods` : "the required mod"}: ${missing.join(", ")}.`,
+        )}
       </p>
     {/if}
     {#if unchecked}<p class="small muted">{unchecked}</p>{/if}
@@ -174,12 +204,14 @@
   {#if orphans.length}
     <div class="orphans">
       <p class="small">
-        {orphans.length > 1 ? "Ces mods nécessaires ne servent plus" : "Ce mod nécessaire ne sert plus"} :
-        {orphans.map((o) => o.name).join(", ")}.
+        {tr(
+          `${orphans.length > 1 ? "Ces mods nécessaires ne servent plus" : "Ce mod nécessaire ne sert plus"} : ${orphans.map((o) => o.name).join(", ")}.`,
+          `${orphans.length > 1 ? "These required mods are no longer needed" : "This required mod is no longer needed"}: ${orphans.map((o) => o.name).join(", ")}.`,
+        )}
       </p>
       <div class="row">
-        <button class="btn" onclick={removeOrphans} disabled={busy}>Les désinstaller aussi</button>
-        <button class="btn btn-ghost" onclick={() => (orphans = [])}>Les garder</button>
+        <button class="btn" onclick={removeOrphans} disabled={busy}>{tr("Les désinstaller aussi", "Uninstall them too")}</button>
+        <button class="btn btn-ghost" onclick={() => (orphans = [])}>{tr("Les garder", "Keep them")}</button>
       </div>
     </div>
   {/if}

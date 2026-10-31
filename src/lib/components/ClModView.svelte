@@ -4,6 +4,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import type { ClDep, ClGame } from "$lib/api";
   import { date, exact } from "$lib/format";
+  import { tr } from "$lib/i18n.svelte";
   import { listsStore } from "$lib/lists.svelte";
   import { nav } from "$lib/nav.svelte";
   import { isoToUnix } from "$lib/nexus.svelte";
@@ -46,37 +47,41 @@
 <div class="view">
   <div class="top">
     <button class="btn btn-ghost crumb" onclick={() => nav.back()}>
-      <Icon name="back" />{nav.clStack.length > 1 ? "Retour" : nav.clOrigin === "installed" ? "Retour aux mods installés" : `Retour à ${game.name}`}
+      <Icon name="back" />{nav.clStack.length > 1
+        ? tr("Retour", "Back")
+        : nav.clOrigin === "installed"
+          ? tr("Retour aux mods installés", "Back to installed mods")
+          : tr(`Retour à ${game.name}`, `Back to ${game.name}`)}
     </button>
   </div>
 
   {#if error && !mods}
     <div class="pad"><ErrorNotice {error} onretry={() => listsStore.loadMods(game, true)} /></div>
   {:else if !mods}
-    <div class="pad skeleton" aria-busy="true" aria-label="Chargement du mod">
+    <div class="pad skeleton" aria-busy="true" aria-label={tr("Chargement du mod", "Loading mod")}>
       <div class="line title"></div>
       <div class="line short"></div>
       <div class="line"></div>
     </div>
   {:else if !mod}
-    <div class="pad"><p>Ce mod n'est plus dans la liste {game.listName}.</p></div>
+    <div class="pad"><p>{tr(`Ce mod n'est plus dans la liste ${game.listName}.`, `This mod is no longer in the ${game.listName} list.`)}</p></div>
   {:else}
     <header class="head">
       <div class="icon"><Thumb src={mod.icon} fallback={mod.iconFallback} label={mod.name} /></div>
       <div class="head-text">
         <h1>{mod.name}</h1>
         <p class="byline">
-          {#if mod.author}<span>par <strong>{mod.author}</strong></span>{/if}
-          {#if mod.updated}<span class="muted">mis à jour le {date(isoToUnix(mod.updated))}</span>{/if}
+          {#if mod.author}<span>{tr("par", "by")} <strong>{mod.author}</strong></span>{/if}
+          {#if mod.updated}<span class="muted">{tr("mis à jour le", "updated on")} {date(isoToUnix(mod.updated))}</span>{/if}
           <span class="chip">{game.listName}</span>
           {#if mod.category}<span class="chip">{mod.category}</span>{/if}
-          {#if mod.loader}<span class="chip">Chargeur de mods</span>{/if}
-          {#if mod.broken}<span class="chip chip-warn">Cassé</span>{:else if mod.deprecated}<span class="chip chip-warn">Obsolète</span>{/if}
+          {#if mod.loader}<span class="chip">{tr("Chargeur de mods", "Mod loader")}</span>{/if}
+          {#if mod.broken}<span class="chip chip-warn">{tr("Cassé", "Broken")}</span>{:else if mod.deprecated}<span class="chip chip-warn">{tr("Obsolète", "Outdated")}</span>{/if}
         </p>
       </div>
       <div class="actions">
         {#if mod.page}
-          <button class="btn" onclick={() => open(mod.page)}>Page du mod <Icon name="external" size={14} /></button>
+          <button class="btn" onclick={() => open(mod.page)}>{tr("Page du mod", "Mod page")} <Icon name="external" size={14} /></button>
         {/if}
       </div>
     </header>
@@ -89,7 +94,7 @@
         {#if mod.description}
           <p class="description">{mod.description}</p>
         {:else}
-          <p class="muted">Pas de description dans la liste : la page du mod en dit plus.</p>
+          <p class="muted">{tr("Pas de description dans la liste : la page du mod en dit plus.", "No description in the list: the mod page has more details.")}</p>
         {/if}
 
         <section class="versions">
@@ -99,17 +104,17 @@
               <li class="version">
                 <div class="version-head">
                   <span class="version-name">{v.version}</span>
-                  {#if i === 0}<span class="chip">Dernière</span>{/if}
-                  {#if record?.version === v.version}<span class="chip chip-ok">Installée</span>{/if}
+                  {#if i === 0}<span class="chip">{tr("Dernière", "Latest")}</span>{/if}
+                  {#if record?.version === v.version}<span class="chip chip-ok">{tr("Installée", "Installed")}</span>{/if}
                   {#each v.gameVersions as gv (gv)}<span class="muted small">{gv}</span>{/each}
                   {#if v.releaseUrl}
                     <button class="btn btn-ghost small-btn" onclick={() => open(v.releaseUrl)}>
-                      Notes de version <Icon name="external" size={12} />
+                      {tr("Notes de version", "Release notes")} <Icon name="external" size={12} />
                     </button>
                   {/if}
                   {#if i > 0 && record?.version !== v.version && listsStore.config(game) && !mod.broken && mod.compatible}
                     <button class="btn btn-ghost small-btn" onclick={() => panel?.install(v.version)} disabled={!!job}>
-                      Installer celle-ci
+                      {tr("Installer celle-ci", "Install this one")}
                     </button>
                   {/if}
                 </div>
@@ -119,7 +124,7 @@
           </ol>
           {#if mod.versions.length > VERSIONS_SHOWN}
             <button class="btn btn-ghost" onclick={() => (allVersions = !allVersions)}>
-              {allVersions ? "Moins de versions" : `Les ${mod.versions.length} versions`}
+              {allVersions ? tr("Moins de versions", "Fewer versions") : tr(`Les ${mod.versions.length} versions`, `All ${mod.versions.length} versions`)}
             </button>
           {/if}
         </section>
@@ -136,22 +141,22 @@
           </div>
           {#if mod.downloads !== null}
             <div>
-              <dt>Téléchargements</dt>
+              <dt>{tr("Téléchargements", "Downloads")}</dt>
               <dd>{exact(mod.downloads)}</dd>
             </div>
           {/if}
           {#if current?.files.length}
             <div>
-              <dt>Fichiers installés</dt>
+              <dt>{tr("Fichiers installés", "Installed files")}</dt>
               <dd class="files">
-                {#each current.files.slice(0, 8) as f (f)}<code>{f.replace("{data}", "<données du jeu>")}</code>{/each}
-                {#if current.files.length > 8}<span class="muted">et {current.files.length - 8} autres</span>{/if}
+                {#each current.files.slice(0, 8) as f (f)}<code>{f.replace("{data}", tr("<données du jeu>", "<game data>"))}</code>{/each}
+                {#if current.files.length > 8}<span class="muted">{tr(`et ${current.files.length - 8} autres`, `and ${current.files.length - 8} more`)}</span>{/if}
               </dd>
             </div>
           {/if}
           {#if mod.tags.length}
             <div>
-              <dt>Mots-clés</dt>
+              <dt>{tr("Mots-clés", "Tags")}</dt>
               <dd class="small-dd">{mod.tags.join(", ")}</dd>
             </div>
           {/if}
@@ -159,30 +164,30 @@
 
         {#if deps.length}
           <section class="side-block">
-            <h2>Nécessite aussi</h2>
+            <h2>{tr("Nécessite aussi", "Also requires")}</h2>
             <ul class="deps">
               {#each deps as d (d.id)}
                 <li>
                   <button class="dep" onclick={() => listsStore.mod(game, d.id) && nav.openClMod(d.id)} disabled={!listsStore.mod(game, d.id)}>
                     <span class="dep-text"><span class="dep-name">{d.name}</span></span>
-                    {#if installedDep(d)}<span class="dep-ok">Installé</span>{/if}
+                    {#if installedDep(d)}<span class="dep-ok">{tr("Installé", "Installed")}</span>{/if}
                   </button>
                 </li>
               {/each}
             </ul>
-            <p class="muted small">ModStudio les installe en même temps que ce mod.</p>
+            <p class="muted small">{tr("ModStudio les installe en même temps que ce mod.", "ModStudio installs them along with this mod.")}</p>
           </section>
         {/if}
 
         {#if optional.length}
           <section class="side-block">
-            <h2>Peut aussi utiliser</h2>
+            <h2>{tr("Peut aussi utiliser", "Can also use")}</h2>
             <ul class="deps">
               {#each optional as d (d.id)}
                 <li>
                   <button class="dep" onclick={() => listsStore.mod(game, d.id) && nav.openClMod(d.id)} disabled={!listsStore.mod(game, d.id)}>
                     <span class="dep-text"><span class="dep-name">{d.name}</span></span>
-                    {#if installedDep(d)}<span class="dep-ok">Installé</span>{/if}
+                    {#if installedDep(d)}<span class="dep-ok">{tr("Installé", "Installed")}</span>{/if}
                   </button>
                 </li>
               {/each}
