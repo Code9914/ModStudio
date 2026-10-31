@@ -171,8 +171,11 @@ function prepare(source: Source): Prepared {
     current = "";
   };
   for (const node of [...doc.body.childNodes]) {
-    if (node.nodeType === Node.ELEMENT_NODE) current += (node as Element).outerHTML;
-    else if (node.nodeType === Node.TEXT_NODE) current += escapeHtml(node.textContent ?? "");
+    let part = "";
+    if (node.nodeType === Node.ELEMENT_NODE) part = (node as Element).outerHTML;
+    else if (node.nodeType === Node.TEXT_NODE) part = escapeHtml(node.textContent ?? "");
+    // Espaces insécables : de simples espaces pour le moteur.
+    current += part.replace(/&nbsp;|\u00a0/g, " ");
     if (current.length >= BATCH && BREAKS.has(node.nodeName)) flush();
   }
   flush();

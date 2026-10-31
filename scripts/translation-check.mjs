@@ -84,7 +84,7 @@ const samples = {
   "zh-Hans": "<p>这个模组增加了更多的玩家和新的服装。</p>",
   markup:
     '<h2>Installation</h2><p>Put the files in the <code data-ms-keep="0"></code> folder, then start the game.</p><pre data-ms-keep="1"></pre>' +
-    '<p>Features:<br>More players in every lobby<br>New suits &amp; hats</p><img src="https://example.org/a.png" alt="Screenshot">' +
+    '<p>Features:<br>More players in every lobby<br>New suits &amp; hats<br>Don\'t forget the "Cosmetics" option, it\'s &lt;on&gt; by default.</p><img src="https://example.org/a.png" alt="Screenshot">' +
     "<table><tbody><tr><td>Version</td><td>Notes</td></tr></tbody></table>",
 };
 
