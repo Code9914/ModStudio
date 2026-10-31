@@ -5,6 +5,7 @@ mod auth;
 mod commands;
 mod error;
 mod games;
+mod i18n;
 mod install_commands;
 mod installer;
 mod lists;
@@ -41,6 +42,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            i18n::set_locale,
             commands::get_settings,
             commands::app_package_manager,
             commands::save_settings,

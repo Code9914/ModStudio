@@ -1,9 +1,10 @@
-// Mise en forme des nombres, tailles et dates (français).
+// Mise en forme des nombres, tailles et dates, dans la langue de l'interface.
+import { intlLocale, tr } from "./i18n.svelte";
 
-const compact = new Intl.NumberFormat("fr-FR", { notation: "compact", maximumFractionDigits: 1 });
-const full = new Intl.NumberFormat("fr-FR");
-const dateFmt = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric" });
-const relative = new Intl.RelativeTimeFormat("fr-FR", { numeric: "auto" });
+const compact = new Intl.NumberFormat(intlLocale, { notation: "compact", maximumFractionDigits: 1 });
+const full = new Intl.NumberFormat(intlLocale);
+const dateFmt = new Intl.DateTimeFormat(intlLocale, { day: "numeric", month: "long", year: "numeric" });
+const relative = new Intl.RelativeTimeFormat(intlLocale, { numeric: "auto" });
 
 // Intl utilise l'espace fine insécable (U+202F), absente de certaines polices :
 // on la remplace par une espace insécable classique.
@@ -22,10 +23,10 @@ export function exact(n: number | null | undefined): string {
 export function bytes(n: number | null | undefined): string {
   const size = n ?? 0;
   if (size <= 0) return "—";
-  const units = ["o", "Ko", "Mo", "Go", "To"];
+  const units = tr("o Ko Mo Go To", "B KB MB GB TB").split(" ");
   const i = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
   const value = size / 1024 ** i;
-  return nbsp(`${value.toLocaleString("fr-FR", { maximumFractionDigits: i === 0 ? 0 : 1 })}\u00a0${units[i]}`);
+  return nbsp(`${value.toLocaleString(intlLocale, { maximumFractionDigits: i === 0 ? 0 : 1 })}\u00a0${units[i]}`);
 }
 
 /** Horodatage Unix (secondes) → « 3 mars 2026 ». */
@@ -49,7 +50,7 @@ export function ago(ts: number | null | undefined): string {
   for (const [unit, ms] of steps) {
     if (Math.abs(diff) >= ms) return relative.format(Math.round(diff / ms), unit);
   }
-  return "à l'instant";
+  return tr("à l'instant", "just now");
 }
 
 /** Libellé lisible d'une plateforme mod.io. */

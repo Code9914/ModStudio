@@ -1,5 +1,6 @@
 // Appels au backend Rust (voir src-tauri/src/commands.rs).
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { backendLocale } from "./i18n.svelte";
 
 // ------------------------------------------------------------------ Types
 
@@ -227,6 +228,8 @@ export function asAppError(e: unknown): AppError {
 }
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  // Les messages du backend arrivent dans la langue de l'interface.
+  await backendLocale;
   try {
     return await invoke<T>(cmd, args);
   } catch (e) {

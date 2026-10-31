@@ -1,30 +1,37 @@
 <script lang="ts">
   // Réglages d'apparence : couleurs, thème, tailles. Appliqués tout de suite.
   import { appearance, defaults, palettes, type Corners, type Size, type ThemeMode } from "$lib/appearance.svelte";
+  import { chosenLocale, setLocale, tr, type Locale } from "$lib/i18n.svelte";
 
   const value = $derived(appearance.value);
   const custom = $derived(value.palette === "custom");
   const isDefault = $derived(JSON.stringify(value) === JSON.stringify(defaults));
 
   const themes: { value: ThemeMode; label: string }[] = [
-    { value: "system", label: "Comme Windows" },
-    { value: "dark", label: "Sombre" },
-    { value: "light", label: "Clair" },
+    { value: "system", label: tr("Comme le système", "System default") },
+    { value: "dark", label: tr("Sombre", "Dark") },
+    { value: "light", label: tr("Clair", "Light") },
   ];
   const textSizes: { value: Size; label: string }[] = [
-    { value: "small", label: "Petite" },
-    { value: "normal", label: "Normale" },
-    { value: "large", label: "Grande" },
+    { value: "small", label: tr("Petite", "Small") },
+    { value: "normal", label: tr("Normale", "Normal") },
+    { value: "large", label: tr("Grande", "Large") },
   ];
   const thumbSizes: { value: Size; label: string }[] = [
-    { value: "small", label: "Petites" },
-    { value: "normal", label: "Moyennes" },
-    { value: "large", label: "Grandes" },
+    { value: "small", label: tr("Petites", "Small") },
+    { value: "normal", label: tr("Moyennes", "Medium") },
+    { value: "large", label: tr("Grandes", "Large") },
   ];
   const cornerStyles: { value: Corners; label: string }[] = [
-    { value: "square", label: "Droits" },
-    { value: "soft", label: "Légers" },
-    { value: "round", label: "Arrondis" },
+    { value: "square", label: tr("Droits", "Square") },
+    { value: "soft", label: tr("Légers", "Soft") },
+    { value: "round", label: tr("Arrondis", "Round") },
+  ];
+  // Chaque langue écrite dans sa propre langue, pour la retrouver quelle que soit celle affichée.
+  const languages: { value: Locale | "system"; label: string }[] = [
+    { value: "system", label: tr("Comme le système", "System default") },
+    { value: "fr", label: "Français" },
+    { value: "en", label: "English" },
   ];
 </script>
 
@@ -56,10 +63,16 @@
 {/snippet}
 
 <section class="block">
-  <h2>Apparence</h2>
+  <h2>{tr("Langue et apparence", "Language and appearance")}</h2>
+
+  <div class="prefs">
+    {@render choice("language", tr("Langue", "Language"), languages, chosenLocale ?? "system", (v) =>
+      setLocale(v === "system" ? null : v),
+    )}
+  </div>
 
   <div class="colors">
-    <span class="label" id="ap-colors">Couleurs</span>
+    <span class="label" id="ap-colors">{tr("Couleurs", "Colours")}</span>
     <div class="swatches" role="radiogroup" aria-labelledby="ap-colors">
       {#each palettes as p (p.id)}
         <label class="swatch" class:on={value.palette === p.id}>
@@ -87,7 +100,7 @@
           class:any={!custom}
           style:background={custom ? `linear-gradient(135deg, ${value.colorA}, ${value.colorB})` : null}
         ></span>
-        <span class="name">À ton goût</span>
+        <span class="name">{tr("À ton goût", "Your choice")}</span>
       </label>
     </div>
 
@@ -99,7 +112,7 @@
             value={value.colorA}
             oninput={(e) => appearance.setCustom(e.currentTarget.value, value.colorB)}
           />
-          Première couleur
+          {tr("Première couleur", "First colour")}
         </label>
         <label class="picker">
           <input
@@ -107,9 +120,9 @@
             value={value.colorB}
             oninput={(e) => appearance.setCustom(value.colorA, e.currentTarget.value)}
           />
-          Deuxième couleur
+          {tr("Deuxième couleur", "Second colour")}
         </label>
-        <span class="help muted">Mets deux fois la même couleur pour une couleur unie.</span>
+        <span class="help muted">{tr("Mets deux fois la même couleur pour une couleur unie.", "Pick the same colour twice for a solid colour.")}</span>
       </div>
     {/if}
   </div>
@@ -117,16 +130,16 @@
   <label class="toggle">
     <input type="checkbox" checked={value.tint} onchange={(e) => appearance.set({ tint: e.currentTarget.checked })} />
     <span>
-      Teinter le fond avec la première couleur
-      <span class="help muted">Sinon, les fonds restent gris.</span>
+      {tr("Teinter le fond avec la première couleur", "Tint the background with the first colour")}
+      <span class="help muted">{tr("Sinon, les fonds restent gris.", "Otherwise, backgrounds stay grey.")}</span>
     </span>
   </label>
 
   <div class="prefs">
-    {@render choice("theme", "Thème", themes, value.theme, (v) => appearance.set({ theme: v }))}
-    {@render choice("text", "Taille du texte", textSizes, value.text, (v) => appearance.set({ text: v }))}
-    {@render choice("thumbs", "Vignettes", thumbSizes, value.thumbs, (v) => appearance.set({ thumbs: v }))}
-    {@render choice("corners", "Coins", cornerStyles, value.corners, (v) => appearance.set({ corners: v }))}
+    {@render choice("theme", tr("Thème", "Theme"), themes, value.theme, (v) => appearance.set({ theme: v }))}
+    {@render choice("text", tr("Taille du texte", "Text size"), textSizes, value.text, (v) => appearance.set({ text: v }))}
+    {@render choice("thumbs", tr("Vignettes", "Thumbnails"), thumbSizes, value.thumbs, (v) => appearance.set({ thumbs: v }))}
+    {@render choice("corners", tr("Coins", "Corners"), cornerStyles, value.corners, (v) => appearance.set({ corners: v }))}
   </div>
 
   <label class="toggle">
@@ -136,15 +149,15 @@
       onchange={(e) => appearance.set({ railGames: e.currentTarget.checked })}
     />
     <span>
-      Raccourcis des jeux dans la barre latérale
-      <span class="help muted">Les jeux qui ont au moins un mod installé apparaissent sous « Jeux ».</span>
+      {tr("Raccourcis des jeux dans la barre latérale", "Game shortcuts in the sidebar")}
+      <span class="help muted">{tr("Les jeux qui ont au moins un mod installé apparaissent sous « Jeux ».", "Games with at least one installed mod appear under \"Games\".")}</span>
     </span>
   </label>
 
   {#if !isDefault}
     <div>
       <button class="btn btn-ghost reset" type="button" onclick={() => appearance.reset()}>
-        Rétablir l'apparence par défaut
+        {tr("Rétablir l'apparence par défaut", "Restore the default appearance")}
       </button>
     </div>
   {/if}

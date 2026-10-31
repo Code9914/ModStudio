@@ -1,6 +1,7 @@
 // Apparence de ModStudio : couleurs, thème, tailles. Gardée sur cet ordinateur
 // (localStorage) et appliquée par des attributs sur <html> : src/app.html la
 // pose déjà avant le premier affichage, pour éviter un éclair d'anciennes couleurs.
+import { tr } from "./i18n.svelte";
 
 export type ThemeMode = "system" | "dark" | "light";
 export type Size = "small" | "normal" | "large";
@@ -30,12 +31,12 @@ export interface Palette {
 }
 
 export const palettes: Palette[] = [
-  { id: "mauve-bleu", name: "Mauve et bleu", a: "#c39bff", b: "#8db4ff" },
-  { id: "mauve", name: "Mauve", a: "#b48cff", b: "#dba6ff" },
-  { id: "bleu", name: "Bleu", a: "#7faeff", b: "#72d2ff" },
-  { id: "rose", name: "Rose", a: "#ff9ccb", b: "#ffb19c" },
-  { id: "menthe", name: "Menthe", a: "#6fdcb8", b: "#86c9ff" },
-  { id: "ambre", name: "Ambre", a: "#f2b544", b: "#f7cf6e" },
+  { id: "mauve-bleu", name: tr("Mauve et bleu", "Mauve and blue"), a: "#c39bff", b: "#8db4ff" },
+  { id: "mauve", name: tr("Mauve", "Mauve"), a: "#b48cff", b: "#dba6ff" },
+  { id: "bleu", name: tr("Bleu", "Blue"), a: "#7faeff", b: "#72d2ff" },
+  { id: "rose", name: tr("Rose", "Pink"), a: "#ff9ccb", b: "#ffb19c" },
+  { id: "menthe", name: tr("Menthe", "Mint"), a: "#6fdcb8", b: "#86c9ff" },
+  { id: "ambre", name: tr("Ambre", "Amber"), a: "#f2b544", b: "#f7cf6e" },
 ];
 
 export const defaults: Appearance = {
