@@ -162,6 +162,8 @@
     if ((event.key === "Escape" || (event.altKey && event.key === "ArrowLeft")) && nav.view.name !== "games") {
       const v = nav.view.name;
       if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods" || v === "tsMod" || v === "tsMods" || v === "rmlMod" || v === "clMod" || v === "clMods" || v === "import") nav.back();
+      // Comptes : des pages des réglages (sauf l'accueil du premier lancement).
+      else if (v === "account" || (v === "nexusAccount" && !nav.nexusWelcome)) nav.openSettings();
       else if (v === "nexusAccount" || v === "nexusTracked") nav.openNexusGames();
       else if (v !== "nexusGames" && v !== "tsGames" && v !== "clGames") nav.openGames();
     }
@@ -243,8 +245,6 @@
   }
 
   const ready = $derived(nav.settings?.hasApiKey === true);
-  const user = $derived(nav.auth?.user ?? null);
-  const avatar = $derived(user?.avatar?.thumb_50x50 ?? user?.avatar?.thumb_100x100 ?? user?.avatar?.original ?? null);
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -461,7 +461,11 @@
       <li>
         <button
           class="nav-item"
-          aria-current={nav.view.name === "settings" ? "page" : undefined}
+          aria-current={nav.view.name === "settings" ||
+          nav.view.name === "account" ||
+          (nav.view.name === "nexusAccount" && !nav.nexusWelcome)
+            ? "page"
+            : undefined}
           onclick={() => nav.openSettings()}
         >
           <Icon name="gear" size={18} />{tr("Réglages", "Settings")}
@@ -469,52 +473,6 @@
       </li>
     </ul>
 
-    <div class="rail-foot">
-      {#if ready}
-        <button
-          class="account"
-          aria-current={nav.view.name === "account" ? "page" : undefined}
-          aria-label={nav.loggedIn ? tr("Mon compte mod.io", "My mod.io account") : tr("Se connecter à mod.io", "Sign in to mod.io")}
-          onclick={() => nav.openAccount()}
-        >
-          {#if nav.loggedIn}
-            {#if avatar}
-              <img class="account-avatar" src={avatar} alt="" />
-            {:else}
-              <span class="account-avatar placeholder"><Icon name="user" size={16} /></span>
-            {/if}
-            <span class="account-text">
-              <span class="ellipsis account-name">{user?.username ?? user?.display_name_portal ?? tr("Connecté", "Signed in")}</span>
-              <span class="account-sub">{tr("Compte mod.io", "mod.io account")}</span>
-            </span>
-          {:else}
-            <span class="account-avatar placeholder"><Icon name="user" size={16} /></span>
-            <span class="account-text">
-              <span class="account-name">{tr("Se connecter", "Sign in")}</span>
-              <span class="account-sub">{tr("pour s'abonner", "to subscribe")}</span>
-            </span>
-          {/if}
-        </button>
-      {/if}
-      <button
-        class="account"
-        aria-current={nav.view.name === "nexusAccount" ? "page" : undefined}
-        aria-label={nexusStore.ready ? tr("Mon compte Nexus Mods", "My Nexus Mods account") : tr("Ajouter ma clé Nexus Mods", "Add my Nexus Mods key")}
-        onclick={() => nav.openNexusAccount()}
-      >
-        <span class="account-avatar placeholder nexus"><Icon name="user" size={16} /></span>
-        <span class="account-text">
-          {#if nexusStore.ready}
-            <span class="ellipsis account-name">{nexusStore.auth?.user?.name ?? tr("Clé enregistrée", "Key saved")}</span>
-            <span class="account-sub">Nexus Mods{nexusStore.premium ? ", Premium" : ""}</span>
-          {:else}
-            <span class="account-name">Nexus Mods</span>
-            <span class="account-sub">{tr("ajouter ma clé", "add my key")}</span>
-          {/if}
-        </span>
-      </button>
-      <p class="version muted">{tr("Version 0.14, client non officiel", "Version 0.14, unofficial client")}</p>
-    </div>
   </nav>
 
   <main class="stage">
@@ -716,8 +674,7 @@
   }
 
   /* Élément actif : un trait vertical aux deux couleurs. */
-  .nav-item[aria-current="page"],
-  .account[aria-current="page"] {
+  .nav-item[aria-current="page"] {
     background:
       linear-gradient(var(--accent-a-ink), var(--accent-b-ink)) left / 3px 100% no-repeat,
       var(--raise);
@@ -748,74 +705,11 @@
     color: var(--muted);
   }
 
-  .account-avatar.nexus {
-    color: var(--accent);
-  }
-
   .ellipsis {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
-  }
-
-  .rail-foot {
-    margin-top: auto;
-    display: grid;
-    gap: 0.9rem;
-  }
-
-  .account {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    width: 100%;
-    padding: 0.5rem 0.6rem;
-    border: 0;
-    border-radius: var(--r-sm);
-    background: none;
-    text-align: left;
-    color: var(--text);
-  }
-
-  .account:hover .account-name {
-    color: var(--accent);
-  }
-
-  .account-avatar {
-    width: 2rem;
-    height: 2rem;
-    border-radius: 50%;
-    object-fit: cover;
-    flex: none;
-    background: var(--raise);
-  }
-
-  .account-avatar.placeholder {
-    display: grid;
-    place-items: center;
-    color: var(--muted);
-  }
-
-  .account-text {
-    display: grid;
-    min-width: 0;
-    line-height: 1.25;
-  }
-
-  .account-name {
-    font-weight: 600;
-    font-size: var(--t-sm);
-  }
-
-  .account-sub {
-    font-size: var(--t-xs);
-    color: var(--muted);
-  }
-
-  .version {
-    padding: 0 0.6rem;
-    font-size: var(--t-xs);
   }
 
   .badge {

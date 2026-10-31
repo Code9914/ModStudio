@@ -77,6 +77,9 @@
 
 <div class="view">
   <div class="inner">
+    {#if !welcome}
+      <button class="btn btn-ghost crumb" onclick={() => nav.openSettings()}><Icon name="back" />{tr("Réglages", "Settings")}</button>
+    {/if}
     {#if auth?.loggedIn}
       <h1>{tr("Compte Nexus Mods", "Nexus Mods account")}</h1>
       <section class="profile">
@@ -245,6 +248,11 @@
     max-width: 38rem;
     display: grid;
     gap: 1.6rem;
+  }
+
+  .crumb {
+    justify-self: start;
+    margin: -0.75rem 0 -0.75rem -0.5rem;
   }
 
   h1 {

@@ -82,6 +82,7 @@
 
 <div class="view">
   <div class="inner">
+    <button class="btn btn-ghost crumb" onclick={() => nav.openSettings()}><Icon name="back" />{tr("Réglages", "Settings")}</button>
     {#if auth?.loggedIn}
       <h1>{tr("Compte mod.io", "mod.io account")}</h1>
 
@@ -263,6 +264,11 @@
     max-width: 38rem;
     display: grid;
     gap: 1.6rem;
+  }
+
+  .crumb {
+    justify-self: start;
+    margin: -0.75rem 0 -0.75rem -0.5rem;
   }
 
   h1 {

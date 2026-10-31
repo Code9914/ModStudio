@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getVersion } from "@tauri-apps/api/app";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api, type AppError } from "$lib/api";
   import { nav } from "$lib/nav.svelte";
@@ -6,6 +7,7 @@
   import { tr } from "$lib/i18n.svelte";
   import { bytes } from "$lib/format";
   import { translator } from "$lib/translate.svelte";
+  import { nexusStore } from "$lib/nexus.svelte";
   import AppearanceSettings from "./AppearanceSettings.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
   import Icon from "./Icon.svelte";
@@ -61,6 +63,18 @@
     }
   }
 
+  // Version de ModStudio (aussi en mode développement).
+  let version = $state<string | null>(updates.current);
+  $effect(() => {
+    getVersion().then(
+      (v) => (version = v),
+      () => {},
+    );
+  });
+
+  const user = $derived(nav.auth?.user ?? null);
+  const avatar = $derived(user?.avatar?.thumb_100x100 ?? user?.avatar?.thumb_50x50 ?? user?.avatar?.original ?? null);
+
   async function toggleMature(event: Event) {
     const value = (event.currentTarget as HTMLInputElement).checked;
     try {
@@ -71,6 +85,50 @@
     }
   }
 </script>
+
+{#snippet accounts()}
+  <section class="block">
+    <h2>{tr("Comptes", "Accounts")}</h2>
+    <div class="accounts">
+      {#if !first}
+        <div class="account">
+          {#if nav.loggedIn && avatar}
+            <img class="account-avatar" src={avatar} alt="" />
+          {:else}
+            <span class="account-avatar placeholder" aria-hidden="true"><Icon name="user" size={18} /></span>
+          {/if}
+          <span class="account-text">
+            <span class="account-name">
+              {nav.loggedIn ? (user?.username ?? user?.display_name_portal ?? tr("Connecté", "Signed in")) : tr("Pas connecté", "Not signed in")}
+            </span>
+            <span class="help muted">
+              {nav.loggedIn ? tr("Compte mod.io", "mod.io account") : tr("mod.io : connecte-toi pour t'abonner aux mods", "mod.io: sign in to subscribe to mods")}
+            </span>
+          </span>
+          <button class="btn" onclick={() => nav.openAccount({ name: "settings" })}>
+            {nav.loggedIn ? tr("Gérer", "Manage") : tr("Se connecter", "Sign in")}
+          </button>
+        </div>
+      {/if}
+      <div class="account">
+        <span class="account-avatar placeholder nexus" aria-hidden="true"><Icon name="user" size={18} /></span>
+        <span class="account-text">
+          <span class="account-name">
+            {nexusStore.ready ? (nexusStore.auth?.user?.name ?? tr("Clé enregistrée", "Key saved")) : tr("Pas de clé", "No key")}
+          </span>
+          <span class="help muted">
+            {nexusStore.ready
+              ? `Nexus Mods${nexusStore.premium ? ", Premium" : ""}`
+              : tr("Nexus Mods : ajoute ta clé pour installer des mods", "Nexus Mods: add your key to install mods")}
+          </span>
+        </span>
+        <button class="btn" onclick={() => nav.openNexusAccount({ name: "settings" })}>
+          {nexusStore.ready ? tr("Gérer", "Manage") : tr("Ajouter ma clé", "Add my key")}
+        </button>
+      </div>
+    </div>
+  </section>
+{/snippet}
 
 <div class="view">
   <div class="inner">
@@ -84,6 +142,7 @@
       </p>
     {:else}
       <h1>{tr("Réglages", "Settings")}</h1>
+      {@render accounts()}
       <AppearanceSettings />
     {/if}
 
@@ -157,6 +216,7 @@
     </section>
 
     {#if first}
+      {@render accounts()}
       <AppearanceSettings />
     {:else}
       <section class="block">
@@ -241,8 +301,8 @@
 
     <p class="disclaimer muted">
       {tr(
-        "ModStudio est un client non officiel. Il n'est ni affilié à mod.io ni soutenu par mod.io. La clé API est enregistrée sur cet ordinateur uniquement.",
-        "ModStudio is an unofficial client. It is not affiliated with or endorsed by mod.io. The API key is stored on this computer only.",
+        `ModStudio${version ? ` ${version}` : ""}, client non officiel : il n'est affilié à aucun des sites qu'il utilise (mod.io, Nexus Mods, Thunderstore…) ni soutenu par eux. Tes clés restent sur cet ordinateur.`,
+        `ModStudio${version ? ` ${version}` : ""}, unofficial client: it is not affiliated with or endorsed by any of the sites it uses (mod.io, Nexus Mods, Thunderstore…). Your keys stay on this computer.`,
       )}
     </p>
   </div>
@@ -365,6 +425,53 @@
 
   .toggle .help {
     display: block;
+  }
+
+  .accounts {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .account {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+  }
+
+  .account-avatar {
+    flex: none;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--raise);
+  }
+
+  .account-avatar.placeholder {
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+  }
+
+  .account-avatar.nexus {
+    color: var(--accent);
+  }
+
+  .account-text {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    line-height: 1.3;
+  }
+
+  .account-name {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .disclaimer {
