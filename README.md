@@ -1,620 +1,155 @@
-# ModStudio — client de bureau pour mod.io, Nexus Mods, Thunderstore et les listes des communautés (v0.12)
+# ModStudio
 
-ModStudio parcourt et installe les mods de [mod.io](https://mod.io), de
-[Nexus Mods](https://www.nexusmods.com) et de
-[Thunderstore](https://thunderstore.io) depuis une appli de bureau
-(Windows et Linux), construite avec Tauri 2, Rust et Svelte 5.
+Une appli de bureau (Windows et Linux) pour trouver, installer et gérer les
+mods de tes jeux depuis plusieurs sources : [mod.io](https://mod.io),
+[Nexus Mods](https://www.nexusmods.com), [Thunderstore](https://thunderstore.io)
+et les listes tenues par certaines communautés. Construite avec Tauri 2, Rust
+et Svelte 5.
 
-> Client **non officiel** : il n'est ni affilié à mod.io, à Nexus Mods ou à
-> Thunderstore, ni soutenu par eux.
+> Client **non officiel** : ModStudio n'est affilié à aucun de ces sites, ni
+> soutenu par eux.
 
-## Parcourir (v0.1)
+## Ce qu'il fait
 
-- Premier lancement guidé : saisie et test de la clé API mod.io.
-- Liste de tous les jeux mod.io, avec recherche et tri.
-- Liste des mods d'un jeu : recherche, 7 tris (tendances, plus téléchargés,
-  mieux notés, nouveautés…), filtres par tags du jeu, chargement progressif.
-- Fiche d'un mod : galerie d'images, description, statistiques, évaluations,
-  plateformes, tags, dépendances (cliquables) et historique des versions avec
-  le statut antivirus de chaque fichier.
-- Option pour masquer les mods marqués « contenu adulte ».
-- Thème clair ou sombre selon le système. `Échap` revient en arrière.
+| Source | Ce que ModStudio sait faire |
+| --- | --- |
+| **mod.io** | Parcourir tous les jeux et leurs mods, s'abonner avec ton compte, installer dans le dossier du jeu. |
+| **Nexus Mods** | Parcourir sans compte ; installer avec ta clé API (Premium : directement ; compte gratuit : la page du fichier s'ouvre dans l'appli et tu cliques sur « Slow download »). Installateurs FOMOD, archives zip / 7z / RAR, mods nécessaires. |
+| **Thunderstore** | Les jeux du site, avec leur chargeur (BepInEx, MelonLoader…) et les dépendances de chaque mod, rangés comme le ferait r2modman. Mods de ResoniteModLoader pour Resonite. |
+| **Communautés** | Hollow Knight (ModLinks), Outer Wilds (OWML), Beat Saber (BeatMods), ChilloutVR (CVRMG), Raft (RaftModding). |
 
-## Prérequis
+Et pour tous les jeux :
 
-### Windows
+- **Jeux trouvés tout seuls** dans Steam et Epic Games (Heroic sous Linux).
+  ModStudio reconnaît le moteur (Unreal, Unity, Bethesda) et range chaque mod
+  au bon endroit. Il installe aussi l'outil qu'il faut (UE4SS, BepInEx,
+  MelonLoader) quand tu le confirmes.
+- **Page « Installés »** : mises à jour, activer ou désactiver un mod sans le
+  désinstaller, profils par jeu (« Principal », « Coop »…), désinstallation
+  propre.
+- **Partager ses mods** : un code à envoyer à un ami, qui installe les mêmes
+  mods dans les mêmes versions (voir plus bas).
+- **Apparence** : thème clair ou sombre, couleurs, taille du texte et des
+  vignettes.
 
-1. **Microsoft C++ Build Tools** : installe-les avec la charge de travail
-   « Développement Desktop en C++ ».
-2. **Rust** : installe-le via [rustup](https://rustup.rs) (toolchain MSVC par défaut).
-3. **Node.js** 20 ou plus récent.
-4. **WebView2** : déjà présent sur Windows 10 et 11.
+## Télécharger
 
-### Linux (CachyOS / Arch)
+Les installateurs sont dans les [Releases](https://github.com/Code9914/ModStudio/releases/latest).
 
-```bash
-sudo pacman -S --needed webkit2gtk-4.1 base-devel curl wget file openssl \
-  appmenu-gtk-module libappindicator-gtk3 librsvg nodejs npm
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
+| Système | Fichier |
+| --- | --- |
+| Windows 10 / 11 | `ModStudio_x.y.z_x64-setup.exe` |
+| Linux | `ModStudio_x.y.z_amd64.AppImage` : rends-le exécutable (`chmod +x`) et lance-le |
+| Debian / Ubuntu | `ModStudio_x.y.z_amd64.deb` |
+| Arch Linux / CachyOS | paquet AUR `modstudio-bin` (en préparation) |
 
-### Linux (Debian / Ubuntu)
+ModStudio se met à jour tout seul : il cherche une nouvelle version à chaque
+lancement et te la propose. Les mises à jour sont signées. Installé depuis
+l'AUR, il te laisse les faire avec ton gestionnaire de paquets.
 
-```bash
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libssl-dev libayatana-appindicator3-dev librsvg2-dev
-```
+L'installateur Windows n'est pas signé : au premier lancement, SmartScreen
+affiche un avertissement (« Informations complémentaires », puis « Exécuter
+quand même »).
 
-## Lancer l'appli
+## Premiers pas
+
+- **Thunderstore et Communautés** : rien à configurer. Choisis un jeu, indique
+  son dossier (ou prends celui que ModStudio a trouvé), puis installe.
+- **Nexus Mods** : pour installer, crée une clé API sur
+  <https://www.nexusmods.com/settings/api-keys> et colle-la dans « Compte Nexus ».
+- **mod.io** : crée une clé API sur <https://mod.io/me/access> et colle-la avec
+  le chemin d'API affiché à côté (`https://u-12345.modapi.io/v1`). Pour
+  t'abonner à des mods, connecte-toi aussi à ton compte (code par e-mail ou
+  jeton d'accès).
+- **Sous Linux (Proton)** : quand un chargeur de mods passe par une DLL,
+  ModStudio affiche l'option de lancement Steam à ajouter (par exemple
+  `WINEDLLOVERRIDES="winhttp=n,b" %command%`).
+
+## Partager ses mods
+
+- **Partager** : dans « Installés », le bouton « Partager » d'un jeu donne un
+  code `MS1-…` avec la liste de ses mods activés et leurs versions. Le code ne
+  passe par aucun serveur : il se colle dans une discussion. Tu peux aussi
+  l'enregistrer dans un fichier `.modstudio`.
+- **Importer** : « Installés », puis « Importer un profil ». ModStudio montre ce
+  que tu as déjà et installe le reste. Pour mod.io et Nexus Mods, le profil
+  importé devient un profil du jeu, et tes mods d'avant restent dans
+  « Principal ».
+- **r2modman, Gale, Thunderstore Mod Manager** : leurs codes et fichiers `.r2z`
+  s'importent aussi. Pour un jeu Thunderstore, « Créer un code r2modman »
+  donne un code qu'un ami peut utiliser dans ces gestionnaires.
+
+## Vie privée et sécurité
+
+- **Clés** : la clé mod.io reste sur ton ordinateur (`settings.json` dans le
+  dossier de configuration de ModStudio). La clé Nexus et la connexion mod.io
+  sont rangées dans le trousseau du système. Chacune n'est envoyée qu'au site
+  qui l'a créée, en HTTPS.
+- **Statistiques** : ModStudio n'envoie aucune statistique d'utilisation.
+- **Fichiers vérifiés** : les mods ne viennent que du site de leur source, en
+  HTTPS. Quand la source publie une empreinte (mod.io, ResoniteModLoader et la
+  plupart des listes des communautés), chaque fichier est contrôlé avec. Un
+  fichier signalé par l'antivirus de mod.io n'est jamais téléchargé.
+- **Installation prudente** : extraction protégée contre les chemins piégés et
+  les archives démesurées. Un fichier qui existe déjà (à toi ou à un autre mod)
+  n'est jamais écrasé. La désinstallation retire exactement les fichiers
+  installés.
+- **Page Nexus** : affichée dans l'appli sans aucun accès à ses commandes. Le
+  téléchargement ne démarre que sur ton clic, et le protocole `nxm://` n'est pas
+  réquisitionné sur le système.
+- **Descriptions de mods** : nettoyées (DOMPurify) et affichées sous une
+  politique CSP stricte. Les liens s'ouvrent dans ton navigateur.
+
+## Compiler depuis les sources
+
+Il te faut Rust ([rustup](https://rustup.rs)), Node.js 20 ou plus récent, et
+les [dépendances système de Tauri](https://tauri.app/start/prerequisites/)
+(sous Windows : les outils C++ de Visual Studio ; sous Linux : `webkit2gtk-4.1`
+et ses paquets de développement).
 
 ```bash
 npm install
-npm run tauri dev
+npm run tauri dev      # lancer l'appli depuis le code
+npm run tauri build    # produire un installateur (src-tauri/target/release/bundle/)
+cd src-tauri && cargo test
 ```
 
-La première compilation Rust prend quelques minutes, les suivantes sont rapides.
+Sous Windows, `scripts/setup.bat` installe ce qui manque, récupère le projet
+(branche `dev`) et crée un raccourci « ModStudio (dev) » qui se met à jour et se
+lance depuis le code.
 
-Pour produire un installateur (`.msi` / `.exe` sous Windows, `.deb` / `.AppImage` /
-`.rpm` sous Linux) :
+Le développement se fait sur la branche `dev`. Un push sur `main` publie une
+version : le workflow « Build » compile, teste, et publie les installateurs
+Windows et Linux, le fichier de mise à jour (`latest.json`) et le paquet AUR.
 
-```bash
-npm run tauri build
-```
-
-Les fichiers sortent dans `src-tauri/target/release/bundle/`.
-
-### Développer sur ton PC (mode rapide)
-
-Pour essayer chaque modification sans attendre GitHub :
-
-1. **Une seule fois :** double-clique sur `scripts/setup.bat`. Il installe ce
-   qui manque (outils C++ de Visual Studio, Git, Node.js, Rust) avec winget,
-   télécharge le projet dans `Documents\ModStudio` (branche `dev`) et crée le
-   raccourci **« ModStudio (dev) »** sur le Bureau.
-2. **À chaque nouvelle version :** double-clique sur « ModStudio (dev) »
-   (`dev.bat`). Il récupère les dernières modifications de la branche `dev` et
-   lance l'appli directement depuis le code (`npm run tauri dev`).
-3. `build.bat` produit un installateur sur ton PC si besoin.
-
-Le développement se fait sur la branche `dev`, que GitHub ne compile pas. Une
-fois la version validée, `dev` est fusionnée dans `main` et GitHub produit
-l'installateur officiel.
-
-### Build Windows automatique (GitHub Actions)
-
-À chaque push sur `main` (pas sur `dev`), le workflow `.github/workflows/build-windows.yml`
-compile l'appli sur une machine Windows de GitHub, lance les tests, puis publie
-l'installateur `.exe` et le paquet `.msi` dans l'onglet **Releases** du dépôt.
-Le build se relance aussi à la main depuis l'onglet **Actions** (« Run workflow »).
-
-L'installateur n'est pas signé : au premier lancement, Windows SmartScreen
-affiche un avertissement. Clique sur « Informations complémentaires » puis
-« Exécuter quand même ».
-
-### Mises à jour automatiques
-
-ModStudio installé cherche une nouvelle version à chaque lancement (fichier
-`latest.json` de la dernière release) et propose de l'installer ; la page
-Réglages permet aussi de chercher à la main. Les mises à jour sont signées : la
-clé publique est dans `tauri.conf.json`, la clé privée et son mot de passe dans
-les secrets du dépôt (`TAURI_SIGNING_PRIVATE_KEY`,
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Sans cette clé, aucune mise à jour ne
-peut être publiée pour les installations existantes : garde-en une copie. La
-version de développement (`dev.bat`) ne cherche pas de mise à jour : elle suit
-la branche `dev`.
-
-## Compte et abonnements (v0.2)
-
-- Connexion au compte mod.io, au choix :
-  - **par code e-mail** : ModStudio demande un code à mod.io, tu le recopies ;
-  - **par jeton d'accès** : tu crées un jeton (lecture + écriture) sur
-    <https://mod.io/me/access> et tu le colles. C'est la solution de repli si
-    mod.io refuse la connexion par e-mail avec une clé API personnelle.
-- Bouton « S'abonner » sur la fiche d'un mod, avec option pour s'abonner aussi
-  aux mods nécessaires (dépendances).
-- Badge « Abonné » dans les listes de mods.
-- Page « Mes mods » : tous tes abonnements, regroupés par jeu, avec filtre et
-  désabonnement (annulable tant que la page est ouverte).
-- Les jeux qui gèrent mod.io téléchargent tes abonnements à leur prochain lancement.
-
-## Installation manuelle (v0.3)
-
-Pour les jeux qui chargent leurs mods depuis un dossier, sans passer par mod.io :
-
-- Panneau « Sur ce PC » sur la fiche d'un mod : bouton « Installer », barre de
-  progression, annulation, puis « Mettre à jour », « Ouvrir le dossier » et
-  « Désinstaller ».
-- Au premier mod d'un jeu, tu choisis son dossier de mods et le rangement :
-  un sous-dossier par mod (par défaut), extraction directe dans le dossier, ou
-  archive gardée telle quelle.
-- Option pour installer aussi les mods nécessaires (dépendances). Ils sont
-  notés comme tels : quand tu désinstalles le mod qui en avait besoin,
-  ModStudio propose de les retirer aussi s'ils ne servent plus à rien.
-- Jeux qui installent leurs mods eux-mêmes grâce au kit de mod.io : ModStudio
-  les repère (dossier `C:\Users\Public\mod.io\<id du jeu>`, ou celui réglé dans
-  `%LOCALAPPDATA%\mod.io\globalsettings.json`) et conseille de s'abonner
-  plutôt que d'installer à la main.
-- Aide au choix du dossier : dossier habituel proposé pour les jeux connus
-  (Bonelab pour l'instant, créé s'il n'existe pas encore), alerte si le dossier
-  choisi ressemble au dossier d'installation du jeu, conseils pour trouver le
-  bon dossier.
-- Page « Installés » : mods installés par jeu, versions, mises à jour
-  disponibles (badge dans le menu), « Tout mettre à jour », désinstallation.
-- Badges « Installé » et « Mise à jour » dans les listes de mods.
-
-Sécurité de l'installation :
-
-- Lien de téléchargement redemandé à mod.io juste avant chaque téléchargement,
-  et accepté seulement s'il vient d'un domaine mod.io.
-- Somme de contrôle MD5 vérifiée ; un fichier signalé par l'antivirus de
-  mod.io n'est jamais téléchargé.
-- Extraction protégée contre les chemins qui sortent du dossier (« zip slip »)
-  et contre les archives démesurées (« zip bombs »).
-- Aucun fichier existant n'est écrasé : si un fichier du mod existe déjà (à toi
-  ou à un autre mod), l'installation s'arrête avant de toucher quoi que ce soit.
-- Chaque fichier installé est noté dans `installed.json` : la désinstallation
-  retire exactement ces fichiers, et laisse en place un dossier où tu as ajouté
-  tes propres fichiers.
-
-## Nexus Mods (v0.4)
-
-Deuxième source de mods, dans la section « Nexus Mods » du menu :
-
-- Parcourir les jeux (plus de 5 600), chercher et trier les mods d'un jeu,
-  fiche complète (description BBCode, fichiers par catégorie, mods nécessaires).
-  Aucun compte n'est nécessaire pour parcourir.
-- **Premier lancement** : ModStudio propose de se connecter à Nexus Mods dans sa
-  page intégrée (la session y reste ouverte pour les téléchargements) puis
-  de coller la clé API (bouton « Plus tard » pour passer).
-- **Clé API personnelle** (page « Compte Nexus ») pour installer : elle se crée
-  sur <https://www.nexusmods.com/settings/api-keys>. Elle est vérifiée puis
-  rangée dans le trousseau du système, et n'est envoyée qu'à `api.nexusmods.com`.
-- **Compte Premium** : téléchargement direct depuis ModStudio.
-- **Compte gratuit** : Nexus Mods impose de passer par son site. ModStudio
-  affiche la page du fichier directement dans sa fenêtre, à la place du
-  contenu (vue web intégrée, sans aucun accès aux commandes de l'appli ; une
-  fenêtre séparée sert de repli) ; quand tu cliques sur « Slow download », le
-  lien `nxm://` produit par la page est capté par ModStudio, qui ferme la page
-  et installe le fichier. Aucun autre
-  gestionnaire de mods n'est lancé et le protocole `nxm://` n'est pas
-  réquisitionné sur le système.
-- Archives **zip** (v0.8 : y compris bzip2, LZMA, XZ, zstd, Deflate64), **7z** et
-  **RAR** (RAR 4 et 5, archives solides ; décompresseur officiel UnRAR). Les
-  archives protégées par mot de passe ou en plusieurs parties sont refusées
-  avec un message clair.
-- **Archive dans l'archive** (v0.8) : un fichier qui ne contient qu'une archive (avec
-  au plus un lisez-moi ou des images) est ouvert d'office, sur deux niveaux ;
-  s'il en contient plusieurs (une par version, par option…), ModStudio demande
-  lesquelles installer, puis les installe comme le fichier téléchargé (FOMOD,
-  règles du jeu).
-- **Bonelab** : rangement automatique. Le contenu (« pallets » : avatars,
-  cartes, armes) va dans `AppData\LocalLow\Stress Level Zero\BONELAB\Mods`,
-  les mods de code MelonLoader (`.dll`) dans le dossier du jeu (`Mods`,
-  `Plugins`, `UserLibs`…), retrouvé dans les bibliothèques Steam. Les versions
-  Quest présentes dans les archives sont ignorées ; les sauvegardes et
-  MelonLoader lui-même sont refusés avec une explication.
-- Autres jeux : dossier et rangement au choix, comme pour mod.io.
-- Les mods installés sont suivis dans `installed-nexus.json` et apparaissent
-  dans « Installés ». Un fichier remplacé sur Nexus (passé en « ancienne
-  version ») est signalé comme mise à jour.
-- Les fichiers des mods installés depuis mod.io ne sont jamais écrasés, et
-  inversement.
-
-## Jeux installés et outils de mods (v0.5)
-
-- **Jeux détectés** : ModStudio lit les bibliothèques Steam (`libraryfolders.vdf`,
-  `appmanifest_*.acf`, dossier de Steam lu dans le registre) et les manifestes
-  d'Epic Games (`%PROGRAMDATA%\Epic\EpicGamesLauncher\Data\Manifests`). Les
-  jeux qui ont une page sur Nexus Mods (liste publiée par Nexus sur
-  `data.nexusmods.com`, gardée une semaine dans `nexus-games.json`) apparaissent
-  dans « Installés sur ce PC », en tête de la liste des jeux Nexus.
-- **Dossier du jeu en un clic** : sur la page d'un jeu trouvé, « Installer les
-  mods dans ce dossier ». ModStudio reconnaît alors le moteur et range chaque
-  mod au bon endroit :
-  - **Unreal Engine** : `.pak` / `.ucas` / `.utoc` dans `Content/Paks/~mods`,
-    mods UE4SS (`Scripts/main.lua`, `dlls/main.dll`) dans le dossier `Mods`
-    d'UE4SS avec leur `enabled.txt`, mods Blueprint dans `Content/Paks/LogicMods`.
-  - **Unity** : plugins BepInEx dans `BepInEx/plugins/<mod>`, mods MelonLoader
-    dans `Mods`, `Plugins`, `UserLibs`, `UserData`.
-  - **Jeux Bethesda** (Skyrim, Fallout, Starfield, Oblivion) : contenu dans
-    `Data`, plugins `.esp/.esm/.esl` ajoutés à la fin de `plugins.txt` (copie
-    de sécurité faite une fois) et retirés à la désinstallation ; script
-    extender à la racine du jeu.
-- **Outils de mods**, installés après confirmation, depuis leur page GitHub
-  officielle (empreinte SHA-256 vérifiée) : **UE4SS** (version expérimentale,
-  compatible Unreal 5.4+), **BepInEx 5** (Unity Mono), **MelonLoader** ; et
-  **BepInEx 6** (Unity IL2CPP) depuis ses versions « Bleeding Edge » officielles
-  (`builds.bepinex.dev`), seules compatibles avec les jeux Unity récents. Si les
-  mods du jeu demandent une version précise (`6.0.0-be.791`), c'est celle-là.
-  Un outil installé par ModStudio se met à jour depuis la page du jeu (les
-  fichiers générés au premier lancement de l'ancienne version sont refaits).
-- Les versions « autonomes » d'un mod (avec leur propre `winhttp.dll` ou
-  `version.dll`) sont refusées quand le jeu a déjà BepInEx ou MelonLoader, et
-  ModStudio conseille la version du mod faite pour le chargeur installé. L'outil conseillé dépend du moteur, du chargeur
-  déjà présent, et des mods nécessaires indiqués par les mods les plus
-  recommandés du jeu. Il se retire depuis la page du jeu ou « Installés ».
-  Les **script extenders** (SKSE64, F4SE, SFSE, xNVSE, FOSE, xOBSE) s'installent
-  depuis leur page Nexus Mods, comme un mod ; ModStudio indique la version du
-  jeu à laquelle le fichier doit correspondre.
-- Après l'installation d'un mod qui a besoin d'un outil absent (UE4SS,
-  MelonLoader…), ModStudio le signale et propose de l'installer.
-
-## Mods nécessaires, activation, profils, FOMOD (v0.6)
-
-- **Mods nécessaires** (Nexus) : la fiche d'un mod liste ceux qui sont sur
-  Nexus pour le même jeu ; cochés par défaut, ils s'installent avant le mod
-  (fichier conseillé, une page Nexus chacun pour un compte gratuit), marqués
-  « nécessaire à … ». À la désinstallation, ModStudio propose de retirer ceux
-  qui ne servent plus.
-- **Activer / désactiver** sans désinstaller (mod.io et Nexus) : les fichiers
-  sont mis de côté — dans `.modstudio-disabled` à la racine du dossier pour les
-  jeux à règles, que le jeu ne lit pas, sinon dans `disabled/` du dossier de
-  configuration — et reviennent d'un clic, sans jamais écraser un autre mod.
-  Les plugins Bethesda sont retirés puis remis dans `plugins.txt`.
-- **Profils** par jeu : ensembles de mods activés (« Principal », « Coop »…),
-  créés à partir de l'état actuel ; le profil actif suit les changements.
-- **Installateurs FOMOD** (`fomod/ModuleConfig.xml`, UTF-8 ou UTF-16) :
-  étapes, groupes (une option, au plus une, au moins une, toutes, au choix),
-  options obligatoires / conseillées / indisponibles, images et descriptions,
-  étapes et types qui dépendent des choix précédents (« flags »), conditions
-  sur les fichiers et plugins actifs du jeu, version du jeu, fichiers
-  obligatoires et conditionnels, priorités. Les destinations partent de `Data`
-  pour les jeux Bethesda. L'archive reste extraite le temps des choix.
-- **Barre latérale et « Installés »** (v0.6.2) : seuls les jeux qui ont au
-  moins un mod installé y figurent. Un chargeur de mods (MelonLoader, BepInEx,
-  UE4SS, script extender) compte comme un mod : ceux de ModStudio avec leur
-  version et « Retirer », ceux installés à la main repérés dans le dossier du
-  jeu.
-- **Apparence** (Réglages, v0.7) : thème mauve et bleu par défaut, autres couleurs
-  ou deux couleurs au choix (dégradé), fond teinté ou gris, thème clair /
-  sombre / comme Windows, taille du texte, des vignettes, coins, raccourcis
-  des jeux dans la barre latérale. Gardée sur l'ordinateur et appliquée avant
-  le premier affichage.
-- **Suivre et recommander** (Nexus, v0.9) : boutons « Suivre » et « Recommander »
-  sur la fiche d'un mod (refus de Nexus expliqués : mod pas encore
-  téléchargé…), vue « Mods suivis » de tous les jeux.
-- **Descriptions Nexus** (v0.7) : balises `[/*]`, entités HTML (`&#92;`…),
-  listes imbriquées ; un `[code]` d'une ligne reste dans la phrase.
-
-## Linux (v0.9)
-
-ModStudio est aussi publié pour Linux, à côté des installateurs Windows :
-
-- `ModStudio_x.y.z_amd64.AppImage` (recommandé) : rends-le exécutable
-  (`chmod +x`) et lance-le ; il se met à jour tout seul, comme sous Windows.
-- `ModStudio_x.y.z_amd64.deb` : paquet Debian / Ubuntu.
-- **CachyOS, Arch Linux et dérivées** (v0.12) : paquet AUR `modstudio-bin`,
-  à installer avec un assistant AUR (`paru -S modstudio-bin` ou
-  `yay -S modstudio-bin`). Il reprend le `.deb` de la release, sans
-  recompilation, et se met à jour avec le reste du système (`paru -Syu`) :
-  ModStudio ne propose alors plus d'installer ses mises à jour lui-même, il
-  signale seulement la nouvelle version.
-
-### Paquet AUR (pour le mainteneur)
-
-Le PKGBUILD est dans `packaging/aur/`. À chaque release, le workflow « Build »
-le met à la nouvelle version (`update.sh`), le construit avec `makepkg` dans un
-conteneur Arch Linux, puis le publie sur l'AUR si le secret
-`AUR_SSH_PRIVATE_KEY` existe. Pour l'activer, une fois :
-
-1. Crée un compte sur <https://aur.archlinux.org/register> et ajoute-y la clé
-   SSH publique d'une paire faite pour l'AUR (`ssh-keygen -t ed25519 -f aur`).
-2. Range la clé privée (fichier `aur`) dans les secrets du dépôt GitHub sous le
-   nom `AUR_SSH_PRIVATE_KEY` (Settings, Secrets and variables, Actions).
-3. À la release suivante, le paquet `modstudio-bin` est créé sur l'AUR.
-
-Sans le secret, le PKGBUILD de chaque version reste dans les artefacts du
-workflow : `makepkg -si` dans son dossier installe ModStudio à la main.
-
-Ce qui change sous Linux :
-
-- Jeux trouvés dans Steam (y compris Flatpak et Snap) et dans Heroic Games
-  Launcher (jeux Epic).
-- Les jeux Windows tournent avec Proton : ModStudio range les réglages là où le
-  jeu les cherche, dans son préfixe (`steamapps/compatdata/<numéro>/pfx`) :
-  `plugins.txt` des jeux Bethesda, dossier Mods de BONELAB, mods des jeux qui
-  utilisent mod.io.
-- BepInEx, MelonLoader et UE4SS se chargent par une DLL que Proton ignore par
-  défaut : ModStudio affiche l'option de lancement Steam à ajouter
-  (`WINEDLLOVERRIDES="winhttp=n,b" %command%` pour BepInEx), ou la variable
-  d'environnement à mettre dans Heroic.
-
-## Thunderstore (v0.10)
-
-Thunderstore rassemble les mods de plus de 350 jeux (Lethal Company, R.E.P.O.,
-Valheim, Risk of Rain 2, Schedule I…). Son API est publique : pas de compte ni
-de clé à ajouter.
-
-- **Jeux** : tous les jeux de Thunderstore, avec recherche et tri ; ceux
-  installés sur ce PC (Steam, Epic, Heroic) en premier, reconnus par leur nom.
-  Chaque jeu indique son chargeur de mods.
-- **Mods** : liste paginée (recherche, tris « plus téléchargés », « mieux
-  notés », « récemment mis à jour », « nouveautés »), fiche avec le README
-  (Markdown), les versions, les mods nécessaires.
-- **Dossier du jeu** : celui qui contient l'exécutable, trouvé dans Steam ou
-  Epic quand c'est possible.
-
-### Ce que chaque jeu demande
-
-ModStudio suit les données que Thunderstore publie pour les gestionnaires de
-mods (le « schéma de l'écosystème », utilisé par r2modman) : pour chaque jeu,
-son chargeur et ses règles d'installation (où va chaque fichier d'un mod).
-Elles sont téléchargées une fois par jour, avec une copie livrée dans
-l'appli pour le hors-ligne (`scripts/trim-thunderstore-ecosystem.py`).
-
-| Chargeur | Jeux | Où vont les mods |
-|---|---|---|
-| BepInEx | environ 270 | `BepInEx/plugins`… selon les règles du jeu (Valheim, Subnautica, GTFO, H3VR, Timberborn…) |
-| MelonLoader 0.7+ | environ 36 (Schedule I…) | `Mods/<Équipe-Nom>`, `UserData/<Équipe-Nom>` |
-| MelonLoader | 6 (BONELAB, BONEWORKS…) | `Mods`, `UserLibs`, `UserData`… |
-| UE4SS (Shimloader) | 10 jeux Unreal (Voices of the Void, Palworld…) | UE4SS dans `Binaries/Win64`, mods dans `Binaries/Win64/Mods` (activés), paks dans `Content/Paks/LogicMods`, réglages dans `Config` |
-| GDWeave | WEBFISHING | `GDWeave/mods/<Équipe-Nom>` |
-| Return of Modding | Hades II, Risk of Rain Returns | à côté de l'exécutable : `ReturnOfModding/plugins` (et `config`) |
-| Lovely | Balatro | `%AppData%/Balatro/Mods` (dans le préfixe Proton sous Linux) |
-| BepisLoader | Resonite | `BepInEx/plugins`, `Renderer/BepInEx/plugins` (avec BepInExRenderer pour les mods du moteur de rendu) ; `hookfxr.ini` activé, `LinuxBootstrap.sh` remplacé (l'original gardé, remis à la désinstallation) |
-| Godot Mod Loader | Brotato, Dome Keeper… | chaque mod zippé dans `mods` ; option de lancement `--script res://addons/mod_loader/mod_loader_setup.gd` affichée |
-| Unity Mod Manager | Broforce, A Dance of Fire and Ice | `UMM/Mods` |
-| Rivet | Scrap Mechanic | `Release/Rivet/Mods`, `Rivet.ini` activé |
-| Northstar | Titanfall 2 | `R2Northstar/mods` |
-| Aucun (Ancient Dungeon VR) | 1 | `Mods/<Équipe-Nom>` |
-| MIO | 1 | non : son chargeur n'est pas publié sur Thunderstore |
-| Pas de règles publiées (ReSkate, jeux N64 « Recompiled »…) | 27 | non |
-
-- **Le chargeur d'abord** : s'il manque, il est installé avec le premier mod
-  (même si le mod ne le demande pas), ou tout de suite depuis la page du jeu.
-  Le bon paquet pour le jeu : celui que sa communauté met en avant, BepInEx 6
-  IL2CPP pour un jeu Unity IL2CPP même si le mod demande BepInEx 5 (erreur
-  fréquente des auteurs), et le dossier propre à chaque paquet
-  (`BepInExPack_Valheim`…). Un BepInEx qui ne convient pas est signalé, et
-  remplacé s'il vient de ModStudio.
-- **Chaque fichier à sa place**, comme r2modman : par extension (`.dll` dans
-  `BepInEx/plugins`, `.mm.dll` dans `BepInEx/monomod`, `.lib.dll` dans
-  `UserLibs`…) et par nom de dossier (`plugins`, `patchers`, `config`,
-  `CustomMaps`…) ; dans le dossier du mod (`<Équipe-Nom>`) ou tel quel selon la
-  règle. Les réglages par défaut (`BepInEx/config`) ne remplacent jamais ceux
-  qui existent, et restent en place à la désinstallation.
-- **Suivi** : mises à jour (une par une ou toutes), activer / désactiver,
-  désinstaller (les mods nécessaires devenus inutiles sont proposés à la
-  désinstallation), version précise au choix, progression mod par mod.
-- Rien n'écrase les fichiers des mods installés depuis mod.io ou Nexus Mods
-  (ni l'inverse).
-- Sous Linux, l'option de lancement Steam pour Proton
-  (`WINEDLLOVERRIDES="winhttp=n,b" %command%`, ou `winmm`, `version`, `dwmapi`,
-  `d3d12`, `hostfxr` selon le chargeur) est affichée sur la page du jeu.
-
-### ResoniteModLoader (Resonite)
-
-La page de Resonite a un deuxième onglet pour les mods de **ResoniteModLoader**
-(RML), l'autre chargeur de mods du jeu : ceux de la
-[liste vérifiée par la communauté](https://github.com/resonite-modding-group/resonite-mod-manifest)
-(celle de Resolute), avec recherche et catégories (Optimisation, Inspecteurs…).
-
-- **RML installé avec le premier mod** : `Libraries/ResoniteModLoader.dll`,
-  Harmony dans `rml_libs`, et le plugin « Resonite Mod Loader Loader »
-  (Thunderstore) qui le fait charger par BepisLoader : pas d'option
-  `-LoadAssembly` à ajouter dans Steam. Un RML installé à la main est gardé
-  tel quel.
-- **Chaque fichier vérifié** : l'empreinte SHA-256 publiée dans la liste est
-  contrôlée avant de placer le fichier (`rml_mods`, ou l'endroit indiqué par la
-  liste), téléchargé en HTTPS depuis la forge de l'auteur.
-- Mods nécessaires installés avec le mod, mods connus pour ne pas marcher
-  ensemble refusés, mods cassés ou faits pour les serveurs (headless) cachés et
-  refusés, un fichier identique déjà là est repris sans être retéléchargé.
-- Mises à jour, activer / désactiver et désinstaller comme les autres mods, dans
-  « Installés » avec ceux de Thunderstore.
-
-## Communautés (v0.11)
-
-Section « Communautés » du menu : des jeux dont la communauté tient sa propre
-liste de mods, hors de mod.io, Nexus Mods et Thunderstore. ModStudio installe
-le chargeur du jeu s'il manque, puis chaque mod avec ceux dont il a besoin, là
-où le chargeur le lit. Mises à jour, activer / désactiver et désinstaller comme
-les autres mods, dans « Installés ».
-
-| Jeu | Liste | Chargeur | Où vont les mods | Vérification |
-| --- | --- | --- | --- | --- |
-| Hollow Knight | [ModLinks](https://github.com/hk-modding/modlinks) (celle de Lumafly) | Modding API : remplace quelques fichiers de `hollow_knight_Data/Managed` (les originaux gardés de côté et remis à la désinstallation) ; refusé si le jeu n'est pas en version 1.5.78.11833 | `Managed/Mods/<Nom>/` | SHA-256 |
-| Outer Wilds | [base d'OWML](https://github.com/ow-mods/ow-mod-db) | OWML, dans le dossier d'Outer Wilds Mod Manager ; bouton « Lancer avec OWML » (il prépare le jeu, ensuite Steam suffit) | `OWML/Mods/<uniqueName>/` (mods demandés par leur `manifest.json` installés ensuite, `config.json` laissé à l'utilisateur) | HTTPS (GitHub) |
-| Beat Saber | [BeatMods](https://beatmods.com), mods vérifiés pour la version du jeu lue dans `globalgamemanagers` | BSIPA, placé comme le ferait `IPA.exe` (`IPA/Data` → `Beat Saber_Data`, `IPA/Libs` → `Libs`, `winhttp.dll`) | dossier du jeu (`Plugins`, `Libs`…) | MD5 de chaque fichier |
-| ChilloutVR | [ChilloutVR Modding Group](https://api.cvrmg.com/v1/mods) | MelonLoader (dernière version GitHub) | `Mods/` ou `Plugins/`, sous le nom donné par le serveur | SHA-256 |
-| Raft | [RaftModding](https://www.raftmodding.com/mods) | Raft Mod Loader, installé par son propre lanceur (lien sur la page du jeu) | `mods/*.rmod` | HTTPS (la liste ne publie pas d'empreinte) |
-
-Les mods marqués cassés, retirés, ou faits pour une ancienne version du jeu
-sont cachés par défaut. Resonite (ResoniteModLoader) reste dans sa page
-Thunderstore, avec un raccourci depuis cette section. Sous Linux, l'option de
-lancement Proton (`winhttp` ou `version`) est affichée quand le chargeur passe
-par une DLL.
-
-## Profils partagés (v0.12)
-
-Pour jouer avec les mêmes mods qu'un ami :
-
-- **Partager** (dans « Installés », bouton « Partager » d'un jeu) : un code
-  `MS1-…` qui contient la liste des mods activés du jeu, avec leur version (et
-  les mods nécessaires, chargeur compris). Le code ne passe par aucun serveur :
-  il se colle dans une discussion. « Enregistrer dans un fichier… » donne la
-  même liste dans un fichier `.modstudio`.
-- **Importer** (« Installés », puis « Importer un profil ») : colle le code ou
-  ouvre le fichier. ModStudio montre les mods, ce qui est déjà installé, et
-  installe ceux qui manquent, l'un après l'autre (dossier du jeu demandé
-  d'abord s'il n'est pas encore choisi). Options :
-  - mêmes versions que dans le profil (Nexus Mods, Thunderstore, communautés ;
-    mod.io installe toujours la dernière version) ;
-  - mod.io et Nexus Mods : le profil importé devient un profil du jeu ; les
-    autres mods y sont désactivés et restent dans le profil « Principal » ;
-  - Nexus Mods sans Premium : la page de chaque fichier s'ouvre pour le clic
-    sur « Slow download », et les installateurs FOMOD demandent leurs options.
-- **r2modman, Gale, Thunderstore Mod Manager** : ModStudio lit leurs codes de
-  profil (récupérés sur Thunderstore) et leurs fichiers `.r2z`, devine le jeu
-  d'après les mods (modifiable), et peut appliquer leurs réglages de mods
-  (`BepInEx/config`, seulement `.cfg`, `.txt`, `.json`, `.yml`, `.yaml`,
-  `.ini` ; les fichiers remplacés sont copiés dans `profile-backups` du dossier
-  de ModStudio). Pour un jeu Thunderstore, « Créer un code r2modman » publie le
-  profil sur Thunderstore, comme le fait r2modman, pour un ami qui utilise un de
-  ces gestionnaires.
-
-## Obtenir ta clé API
-
-1. Ouvre <https://mod.io/me/access> et connecte-toi.
-2. Dans la section API, crée une clé.
-3. Copie la clé **et** le chemin d'API affiché à côté
-   (de la forme `https://u-12345.modapi.io/v1`), puis colle-les dans ModStudio.
-
-La clé est en lecture seule : elle permet de parcourir, pas de modifier ton compte.
-
-## Organisation du code
+### Organisation du code
 
 ```
-src-tauri/src/
-  lib.rs          démarrage de l'appli, enregistrement des commandes
-  commands.rs     commandes de navigation (jeux, mods, fichiers…)
-  account.rs      connexion, déconnexion, abonnements
-  installer.rs    téléchargement, MD5, extraction, placement, désinstallation
-  install_commands.rs  commandes d'installation (dossiers, progression…)
-  modio_sdk.rs    détection des jeux qui gèrent leurs mods via mod.io
-  archive.rs      extraction zip / 7z / RAR protégée, archives imbriquées
-  toggle.rs       activer / désactiver un mod, profils
-  share/          profils partagés :
-    mod.rs        code MS1 (liste compressée), fichier .modstudio, import et export
-    r2modman.rs   profils r2modman (.r2z, codes Thunderstore, réglages des mods)
-  nexus/          source Nexus Mods :
-    client.rs     requêtes GraphQL v2 et REST v1, en-têtes Application-Name
-    browse.rs     jeux, mods, fiches, fichiers
-    account.rs    clé API (vérification, trousseau)
-    window.rs     page Nexus intégrée (ou fenêtre de repli), capture des liens nxm://
-    install.rs    installation, désinstallation, mises à jour
-    rules.rs      règles de Bonelab (pallets, MelonLoader, versions Quest)
-    engine_rules.rs  rangement Unreal / Unity / Bethesda, plugins.txt
-    tools.rs      outils de mods depuis GitHub (UE4SS, BepInEx, MelonLoader)
-    fomod.rs      installateurs FOMOD (lecture, conditions, fichiers choisis)
-    local.rs      jeux installés reconnus, moteur, outil conseillé
-  thunderstore/   source Thunderstore :
-    api.rs        jeux, mods, fiches, versions, README (API publique)
-    ecosystem.rs  chargeur et règles d'installation de chaque jeu (+ copie embarquée)
-    install.rs    dépendances, chargeur, rangement selon les règles, mises à jour
-    rml.rs        mods de ResoniteModLoader (liste vérifiée, empreintes, RML chargé par BepisLoader)
-  lists/          listes des communautés :
-    mod.rs        jeux, listes en cache, commandes
-    games.rs      lecture de chaque liste (ModLinks, OWML, BeatMods, CVRMG, RaftModding) et chargeurs
-    install.rs    plan (chargeur, dépendances), téléchargement vérifié, rangement, mises à jour
-  games/          jeux installés sur ce PC :
-    steam.rs      bibliothèques et jeux Steam
-    epic.rs       jeux Epic Games
-    engine.rs     moteur (Unreal, Unity Mono/IL2CPP, Bethesda), outils présents
-    catalog.rs    liste des jeux Nexus et correspondance par nom
-  auth.rs         jeton de connexion et trousseau du système
-  settings.rs     réglages (clé, chemin d'API), vérification des domaines
-  error.rs        erreurs envoyées à l'interface ({ kind, message, retryAfter })
-  api/client.rs   requêtes HTTP vers mod.io, gestion des erreurs 401 / 429
-  api/models.rs   objets mod.io (tolérants aux champs nuls ou manquants)
-src/
-  routes/+page.svelte        coquille : rail de navigation + vues
-  lib/api.ts                 types et appels au backend
-  lib/nav.svelte.ts          navigation entre les vues
-  lib/paged.svelte.ts        listes paginées « afficher plus »
-  lib/components/            GamesView, ModsView, ModView, LibraryView,
-                             AccountView, InstalledView, InstallPanel,
-                             FolderSetup, SettingsView…
-  lib/installs.svelte.ts     état des mods installés
+src-tauri/src/        backend Rust
+  api/, account.rs    mod.io (requêtes, compte, abonnements)
+  nexus/              Nexus Mods (API, page intégrée, règles des jeux, FOMOD, outils)
+  thunderstore/       Thunderstore et ResoniteModLoader
+  lists/              listes des communautés
+  share/              profils partagés (code MS1, r2modman)
+  games/              jeux installés (Steam, Epic, Heroic, moteur)
+  installer.rs        téléchargement vérifié, extraction, désinstallation
+  toggle.rs           activer / désactiver, profils
+src/                  interface Svelte (routes/+page.svelte, lib/components/)
+packaging/aur/        paquet AUR modstudio-bin
 ```
 
-## Tests
+### Pour le mainteneur
 
-```bash
-cd src-tauri
-cargo test
-```
+- **Signature des mises à jour** : la clé publique est dans `tauri.conf.json`.
+  La clé privée et son mot de passe sont dans les secrets du dépôt
+  (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Sans
+  elle, plus aucune mise à jour possible : garde-en une copie.
+- **Paquet AUR** : publié automatiquement quand le secret `AUR_SSH_PRIVATE_KEY`
+  existe. Pour l'activer :
+  1. Crée un compte sur <https://aur.archlinux.org/register>.
+  2. Ajoutes-y la clé publique d'une paire faite pour l'AUR
+     (`ssh-keygen -t ed25519 -f aur`).
+  3. Range la clé privée dans ce secret.
 
-Ils couvrent la lecture des réponses mod.io (champs nuls, tableaux vides),
-la gestion des erreurs 401 et 429 (avec nouvel essai automatique si l'attente
-est courte), la liste blanche des tris et des domaines d'API, et le fait que la
-clé API n'apparaît jamais dans un message d'erreur.
-
-Pour le compte : connexion par code et par jeton, rangement du jeton dans le
-trousseau, session restaurée au lancement, session expirée oubliée, messages
-clairs pour un code expiré ou refusé, abonnements idempotents, pagination de
-« Mes mods », et déconnexion qui ne révoque que les jetons obtenus par e-mail.
-
-Pour l'installation : installation complète contre un faux mod.io, MD5 faux,
-téléchargement annulé, fichier signalé par l'antivirus, « zip slip »,
-« zip bomb », conflits de fichiers, mise à jour qui retire les anciens
-fichiers, désinstallation qui garde les fichiers ajoutés par l'utilisateur, et
-découpage du jeton pour la limite du Gestionnaire d'identification Windows.
-
-Pour Nexus Mods : lecture des réponses GraphQL et REST, clé vérifiée et rangée
-(ou refusée), liens `nxm://` (et refus des liens malformés), installation
-Premium et via le site contre un faux Nexus, lien expiré, archives 7z (taille
-démesurée, annulation), règles de Bonelab (pallets, versions Quest, mods de
-code, dossiers d'emballage, sauvegardes, MelonLoader), et refus d'écraser les
-fichiers d'un mod mod.io.
-
-Pour les jeux installés : lecture des bibliothèques Steam et des manifestes
-Epic, correspondance avec la liste des jeux Nexus (éditions, noms Steam
-différents), moteur reconnu (en-tête PE, version de l'exécutable), rangement
-Unreal / Unity / Bethesda, `plugins.txt` activé puis restauré, et installation
-d'UE4SS contre un faux GitHub (empreinte, fichiers du jeu jamais touchés).
-
-Pour les listes des communautés : chaque jeu contre un faux serveur (Hollow
-Knight : Modding API puis mods, fichiers du jeu remis à la désinstallation,
-version du jeu refusée ; ChilloutVR : MelonLoader, mods nommés par le serveur,
-empreinte en base64 ; Raft : page d'avertissement refusée ; Beat Saber :
-version lue dans le jeu, BSIPA placé comme `IPA.exe`, fichier modifié refusé ;
-Outer Wilds : OWML et sa configuration, mods demandés par le `manifest.json`).
-
-Pour les profils partagés : code ModStudio lu et relu à l'identique (même au
-milieu d'un message), code abîmé ou d'une version plus récente refusé, mods
-impossibles refusés, export des seuls mods activés (mods nécessaires d'abord),
-profil r2modman lu tel que l'écrit r2modman, réglages qui sortiraient de
-`config/` ou programmes ignorés, réglages remplacés copiés avant, codes
-r2modman récupérés et publiés contre un faux Thunderstore, profil importé qui
-garde l'état actuel dans « Principal ».
-
-Pour ResoniteModLoader : liste lue sans les fichiers douteux (adresse non
-HTTPS, empreinte mal formée, chemin qui sortirait du dossier du jeu), RML et
-Harmony installés avant le mod, RML installé à la main gardé, fichier abîmé
-refusé (empreinte SHA-256), mods cassés, de serveur ou en conflit refusés avant
-tout téléchargement, plugin BepInEx qui charge RML installé depuis Thunderstore.
-
-Pour Thunderstore : noms et versions vérifiés avant toute requête,
-téléchargements limités à `thunderstore.io` et son CDN, règles des jeux (BepInEx,
-MelonLoader et MelonLoader 0.7+, règles propres à Timberborn, BONELAB…, dossier
-propre au paquet de Valheim, règle « package-zip »), chargeur installé quand il
-manque et sauté quand il est là, BepInEx 6 IL2CPP pour les jeux IL2CPP,
-remplacement d'un mauvais BepInEx installé par ModStudio (jamais d'un installé à
-la main), jeux non pris en charge refusés avant tout téléchargement, mise à jour
-qui garde les réglages, conflits refusés sans rien toucher.
-
-## Sécurité
-
-- La clé API ne quitte l'appli que vers un domaine mod.io
-  (`api.mod.io`, `*.modapi.io`, `*.test.mod.io`), toujours en HTTPS.
-- Elle est enregistrée dans `settings.json`, dans le dossier de configuration :
-  `%APPDATA%\fr.modstudio.app\` sous Windows,
-  `~/.config/fr.modstudio.app/` sous Linux (lisible par toi seul).
-- Le jeton de connexion (accès en écriture au compte) est rangé dans le
-  trousseau du système : Gestionnaire d'identification sous Windows, Secret
-  Service (GNOME Keyring, KWallet) sous Linux. L'interface ne le voit jamais.
-  Si le trousseau est indisponible, la session reste en mémoire et l'appli le
-  signale.
-- Se déconnecter révoque le jeton obtenu par e-mail. Un jeton créé à la main
-  sur mod.io est seulement oublié : supprime-le sur mod.io/me/access pour le
-  révoquer.
-- Les mods des listes des communautés ne viennent que de ces listes, en HTTPS ;
-  quand la liste publie une empreinte (SHA-256 ou MD5 par fichier), le fichier
-  qui ne correspond pas est refusé. Aucun programme n'est lancé sans un clic
-  (« Lancer avec OWML »).
-- Les mods de ResoniteModLoader ne sont installés que depuis la liste vérifiée
-  par la communauté, en HTTPS, et chaque fichier doit avoir l'empreinte SHA-256
-  publiée dans la liste.
-- Un profil importé n'est qu'une liste de mods : chaque mod est installé par
-  sa source habituelle, avec ses vérifications. Des réglages d'un profil
-  r2modman, seuls les fichiers texte de `config/` sont lus (jamais de
-  programmes, ni de chemin qui sortirait de `BepInEx/config`), et seulement
-  quand tu le demandes.
-- Les descriptions de mods (HTML, BBCode ou Markdown écrits par leurs auteurs)
-  passent par DOMPurify, et l'appli applique une politique CSP stricte. Les liens s'ouvrent
-  dans ton navigateur, jamais dans l'appli.
-
-## Idées pour la suite
-
-- Jeux GOG et Xbox (Game Pass).
+  Sans ce secret, le PKGBUILD de chaque version reste dans les artefacts du
+  workflow.
