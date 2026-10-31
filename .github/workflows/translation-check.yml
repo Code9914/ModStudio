@@ -9,6 +9,7 @@ on:
     paths:
       - "src-tauri/translation-models.json"
       - "scripts/translation-check.mjs"
+      - "scripts/translation-explore.mjs"
       - "package.json"
       - ".github/workflows/translation-check.yml"
   workflow_dispatch:
@@ -34,4 +35,4 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Télécharger les modèles et traduire
-        run: node scripts/translation-check.mjs enfr fren zhen
+        run: node scripts/translation-explore.mjs
