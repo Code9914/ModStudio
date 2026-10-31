@@ -331,17 +331,26 @@ pub fn create_profile(game: &mut GameInstall, name: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Profil avec ces mods (ceux qui sont installés), sans y passer : un profil
-/// du même nom est mis à jour. Le premier profil garde aussi l'état actuel
-/// sous « Principal ».
+/// Profil importé, avec ces mods (ceux qui sont installés), sans y passer :
+/// un profil du même nom est mis à jour. L'état actuel est d'abord gardé dans
+/// le profil actif, ou, sans profil actif, dans « Principal » (« Avant
+/// l'import » si « Principal » existe déjà) qui devient le profil actif.
 pub fn create_profile_with(game: &mut GameInstall, name: &str, mods: &[i64]) -> AppResult<()> {
     let name = check_name(name)?;
+    if name.eq_ignore_ascii_case("Principal") {
+        return Err(AppError::InvalidArgument("« Principal » garde tes mods d'avant l'import : choisis un autre nom.".into()));
+    }
     let wanted: Vec<i64> = mods.iter().copied().filter(|id| game.mods.contains_key(id)).collect();
-    // Le profil actif garde l'état actuel avant que la liste ne change.
-    sync_active(game);
-    if game.profiles.is_empty() && !name.eq_ignore_ascii_case("Principal") {
-        game.profiles.push(Profile { name: "Principal".into(), mods: enabled_mods(game) });
-        game.active_profile = Some("Principal".into());
+    if game.active_profile.is_some() {
+        sync_active(game);
+    } else {
+        let backup = if game.profiles.iter().any(|p| p.name.eq_ignore_ascii_case("Principal")) { "Avant l'import" } else { "Principal" };
+        let enabled = enabled_mods(game);
+        match game.profiles.iter_mut().find(|p| p.name == backup) {
+            Some(p) => p.mods = enabled,
+            None => game.profiles.push(Profile { name: backup.into(), mods: enabled }),
+        }
+        game.active_profile = Some(backup.into());
     }
     match game.profiles.iter_mut().find(|p| p.name.eq_ignore_ascii_case(&name)) {
         Some(p) => p.mods = wanted,
@@ -668,5 +677,24 @@ mod tests {
         create_profile_with(&mut g, "coop de léo", &[1]).unwrap();
         assert_eq!(g.profiles.len(), 2);
         assert_eq!(g.profiles[1].mods, vec![1]);
+        // « Principal » ne peut pas être écrasé par un import.
+        assert!(create_profile_with(&mut g, "principal", &[1]).is_err());
+    }
+
+    #[test]
+    fn without_an_active_profile_the_current_state_is_kept_before_importing() {
+        let folder = tempdir("tg-import2");
+        let mut g = game(&folder, None);
+        for id in [1, 2] {
+            g.mods.insert(id, record(id, &format!("Mod {id}"), &[], &[]));
+        }
+        g.profiles = vec![Profile { name: "Principal".into(), mods: vec![1] }, Profile { name: "Solo".into(), mods: vec![2] }];
+        g.active_profile = None;
+        create_profile_with(&mut g, "Coop", &[2]).unwrap();
+        let names: Vec<&str> = g.profiles.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["Principal", "Solo", "Avant l'import", "Coop"]);
+        assert_eq!(g.profiles[0].mods, vec![1], "le « Principal » existant n'est pas touché");
+        assert_eq!(g.profiles[2].mods, vec![1, 2]);
+        assert_eq!(g.active_profile.as_deref(), Some("Avant l'import"));
     }
 }

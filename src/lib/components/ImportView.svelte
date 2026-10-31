@@ -46,7 +46,7 @@
   let running = $state(false);
   let stopping = $state(false);
   let current = $state<SharedMod | null>(null);
-  let summary = $state<{ done: number; failed: number; notes: string[] } | null>(null);
+  let summary = $state<{ done: number; failed: number; stopped: number; notes: string[] } | null>(null);
   let runError = $state<AppError | null>(null);
 
   onMount(() => {
@@ -325,7 +325,36 @@
 
   function stop() {
     stopping = true;
+    // Options FOMOD ouvertes : l'installation de ce mod s'arrête là.
+    if (fomod) cancelFomod();
     cancelCurrent();
+  }
+
+  /** Nom du profil créé (mod.io, Nexus) : jamais « Principal », ni un profil à toi du même nom. */
+  const profileName = $derived.by(() => {
+    if (!profile) return "";
+    const clip = (t: string, n: number) => [...t].slice(0, n).join("").trim();
+    const taken = new Set((config?.profiles ?? []).map((p) => p.name.toLowerCase()));
+    const base = clip(profile.name, 40);
+    if (base.toLowerCase() !== "principal" && !taken.has(base.toLowerCase())) return base;
+    const suffix = " (importé)";
+    return clip(profile.name, 40 - suffix.length) + suffix;
+  });
+
+  /** Mods du profil créé : ceux de la liste et ceux dont ils ont besoin (même ajoutés depuis). */
+  function profileMods(game: GameInstall, ids: number[]): number[] {
+    const set = new Set(ids.filter((id) => game.mods[id]));
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const r of Object.values(game.mods)) {
+        if (!set.has(r.modId) && r.requiredBy.some((id) => set.has(id))) {
+          set.add(r.modId);
+          grew = true;
+        }
+      }
+    }
+    return [...set];
   }
 
   async function run() {
@@ -338,10 +367,15 @@
     const notes: string[] = [];
     let done = 0;
     let failed = 0;
+    let stopped = 0;
+    const before = new Set(Object.keys(config?.mods ?? {}).map(Number));
     const steps = plan.map((p) => ({ mod: p.mod, action: p.action }));
     for (const { mod, action } of steps) {
       if (stopping) {
-        if (action !== "keep") rows.set(mod.id, { status: "stopped" });
+        if (action !== "keep") {
+          rows.set(mod.id, { status: "stopped" });
+          stopped++;
+        }
         continue;
       }
       if (action === "keep") {
@@ -359,7 +393,11 @@
         const err = asAppError(e);
         if (err.kind === "cancelled") {
           rows.set(mod.id, { status: "stopped" });
+          stopped++;
           stopping = true;
+        } else if (err.kind === "tool_present") {
+          // Chargeur déjà installé à la main dans le jeu : il est gardé tel quel.
+          rows.set(mod.id, { status: "kept", message: "déjà installé dans le jeu (sans ModStudio)" });
         } else {
           rows.set(mod.id, { status: "error", message: err.message });
           failed++;
@@ -369,21 +407,29 @@
     current = null;
     try {
       if (!stopping && withProfiles && makeProfile) {
-        const name = imported.profile.name;
-        const ids = imported.profile.mods.map((m) => Number(m.id));
-        if (source === "modio") {
-          await installs.editProfiles(gameId, { action: "createWith", name, mods: ids });
-          const issues = await installs.applyProfile(gameId, name);
+        const name = profileName;
+        const store = source === "modio" ? installs : nexusStore;
+        const game = store.game(gameId);
+        if (game) {
+          // Avec les mods ajoutés pendant l'import (mods nécessaires d'une version plus récente).
+          const added = Object.keys(game.mods).map(Number).filter((id) => !before.has(id));
+          const ids = profileMods(game, [...imported.profile.mods.map((m) => Number(m.id)), ...added]);
+          await store.editProfiles(gameId, { action: "createWith", name, mods: ids });
+          const kept = store.game(gameId)?.activeProfile ?? null;
+          const issues = await store.applyProfile(gameId, name);
           for (const i of issues) notes.push(`${i.name} : ${i.message}`);
-        } else {
-          await nexusStore.editProfiles(gameId, { action: "createWith", name, mods: ids });
-          const issues = await nexusStore.applyProfile(gameId, name);
-          for (const i of issues) notes.push(`${i.name} : ${i.message}`);
+          notes.unshift(
+            kept && kept !== name
+              ? `Profil « ${name} » créé et activé : tes mods d'avant sont dans le profil « ${kept} ».`
+              : `Profil « ${name} » mis à jour et activé.`,
+          );
         }
-        notes.unshift(`Profil « ${name} » créé et activé : tes mods d'avant sont dans le profil « Principal ».`);
       }
       if (!stopping && applyConfigs && imported.token && source === "ts") {
         const r = await share.applyConfigs(imported.token, gameId);
+        // Appliqués une fois : pas à chaque nouvel essai.
+        applyConfigs = false;
+        imported.token = null;
         notes.push(
           `${r.written} ${r.written > 1 ? "fichiers de réglages appliqués" : "fichier de réglages appliqué"}${r.backup ? ` (les anciens sont gardés dans ${r.backup})` : ""}.`,
         );
@@ -391,7 +437,7 @@
     } catch (e) {
       runError = asAppError(e);
     }
-    summary = { done, failed, notes };
+    summary = { done, failed, stopped, notes };
     running = false;
     stopping = false;
   }
@@ -516,8 +562,9 @@
             <label class="check small">
               <input type="checkbox" bind:checked={makeProfile} disabled={running} />
               <span>
-                Créer le profil « {profile.name} » avec ces mods : tes autres mods y sont désactivés, et tu les retrouves
-                dans le profil « Principal ».
+                Créer le profil « {profileName} » avec ces mods : tes autres mods y sont désactivés, et tu retrouves tes
+                mods actuels dans le profil « {config?.activeProfile ??
+                  (config?.profiles?.some((p) => p.name.toLowerCase() === "principal") ? "Avant l'import" : "Principal")} ».
               </span>
             </label>
           {/if}
@@ -561,18 +608,20 @@
         {:else if summary}
           <div class="done" role="status">
             <p class="strong">
-              {#if summary.done === 0 && summary.failed === 0}
+              {#if summary.done === 0 && summary.failed === 0 && summary.stopped === 0}
                 Tout était déjà installé.
               {:else}
                 {summary.done} {summary.done > 1 ? "mods installés ou activés" : "mod installé ou activé"}{summary.failed
                   ? `, ${summary.failed} en échec`
-                  : ""}.
+                  : ""}{summary.stopped ? `, ${summary.stopped} pas encore installé${summary.stopped > 1 ? "s" : ""} (arrêté)` : ""}.
               {/if}
             </p>
             {#each summary.notes as n (n)}<p class="small">{n}</p>{/each}
             <div class="row">
               <button class="btn btn-primary" onclick={() => nav.openInstalled()}>Voir les mods installés</button>
-              {#if summary.failed}<button class="btn" onclick={run}>Réessayer ceux qui ont échoué</button>{/if}
+              {#if summary.failed || summary.stopped}
+                <button class="btn" onclick={run}>{summary.failed ? "Réessayer ceux qui ont échoué" : "Reprendre"}</button>
+              {/if}
             </div>
           </div>
         {:else}
@@ -617,7 +666,7 @@
               {:else if row?.status === "stopped"}
                 <span class="muted">Arrêté</span>
               {:else if row?.status === "kept"}
-                <span class="muted">{config ? stateLabel(p) : "Déjà installé"}</span>
+                <span class="muted">{row.message ?? (config ? stateLabel(p) : "Déjà installé")}</span>
               {:else}
                 <span class="muted">{config ? stateLabel(p) : "À installer"}</span>
               {/if}

@@ -9,6 +9,7 @@ use std::path::Path;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use yaml_rust2::parser::{Event, Parser};
 use yaml_rust2::{Yaml, YamlLoader};
 use zip::write::SimpleFileOptions;
 
@@ -23,6 +24,10 @@ const MAX_CONFIG_FILE: u64 = 4 * 1024 * 1024;
 const MAX_CONFIG_TOTAL: u64 = 64 * 1024 * 1024;
 const MAX_CONFIG_FILES: usize = 5000;
 const MAX_LIST: u64 = 4 * 1024 * 1024;
+/// Entrées d'archive lues au plus (une archive de profil en a quelques centaines).
+const MAX_ENTRIES: usize = 20_000;
+/// Éléments YAML lus au plus dans `export.r2x`.
+const MAX_YAML_EVENTS: usize = 500_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct R2Mod {
@@ -43,6 +48,8 @@ pub struct ConfigFile {
 #[derive(Debug, Clone)]
 pub struct R2Profile {
     pub name: String,
+    /// Jeu Thunderstore du profil, quand il est écrit (profils de Gale).
+    pub community: Option<String>,
     pub mods: Vec<R2Mod>,
     pub configs: Vec<ConfigFile>,
 }
@@ -84,11 +91,31 @@ fn version_of(y: &Yaml) -> Option<String> {
     }
 }
 
-/// Lit `export.r2x` : nom du profil et mods.
-pub fn parse_list(text: &str) -> AppResult<(String, Vec<R2Mod>)> {
+/// Refuse les alias YAML (`*nom`) : recopiés à chaque usage, quelques lignes
+/// suffiraient à remplir la mémoire. Un vrai profil n'en a jamais.
+fn check_yaml(text: &str) -> AppResult<()> {
+    let mut parser = Parser::new_from_str(text);
+    for _ in 0..MAX_YAML_EVENTS {
+        match parser.next_token().map_err(|_| invalid("liste des mods"))?.0 {
+            Event::StreamEnd => return Ok(()),
+            Event::Alias(_) => return Err(invalid("liste des mods")),
+            _ => {}
+        }
+    }
+    Err(invalid("liste des mods trop longue"))
+}
+
+/// Lit `export.r2x` : nom du profil, jeu (s'il est écrit) et mods.
+pub fn parse_list(text: &str) -> AppResult<(String, Option<String>, Vec<R2Mod>)> {
+    check_yaml(text)?;
     let docs = YamlLoader::load_from_str(text).map_err(|_| invalid("liste des mods"))?;
     let doc = docs.first().ok_or_else(|| invalid("liste vide"))?;
     let name = doc["profileName"].as_str().unwrap_or("").to_string();
+    let community = doc["community"]
+        .as_str()
+        .map(str::trim)
+        .filter(|c| !c.is_empty() && c.len() <= 100 && c.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.')))
+        .map(str::to_string);
     let list = doc["mods"].as_vec().ok_or_else(|| invalid("liste des mods"))?;
     let mut mods = Vec::new();
     for m in list {
@@ -104,7 +131,7 @@ pub fn parse_list(text: &str) -> AppResult<(String, Vec<R2Mod>)> {
     if mods.is_empty() {
         return Err(AppError::ShareInvalid("Ce profil r2modman ne contient aucun mod.".into()));
     }
-    Ok((name, mods))
+    Ok((name, community, mods))
 }
 
 fn config_extension_ok(path: &str) -> bool {
@@ -112,10 +139,13 @@ fn config_extension_ok(path: &str) -> bool {
     CONFIG_EXTENSIONS.iter().any(|e| lower.ends_with(e))
 }
 
-/// Chemin sûr sous `config/` : pas de `..`, pas de chemin absolu.
+/// Chemin sûr sous `config/` (r2modman) ou `BepInEx/config/` (Gale) : pas
+/// de `..`, pas de chemin absolu.
 fn config_path(entry: &str) -> Option<String> {
     let norm = entry.replace('\\', "/");
-    let rest = norm.strip_prefix("config/")?;
+    let lower = norm.to_ascii_lowercase();
+    let skip = ["config/", "bepinex/config/"].iter().find(|p| lower.starts_with(*p))?.len();
+    let rest = &norm[skip..];
     let parts: Vec<&str> = rest.split('/').collect();
     if rest.is_empty()
         || parts.iter().any(|p| p.is_empty() || *p == "." || *p == ".." || p.contains(':'))
@@ -132,8 +162,12 @@ pub fn parse_r2z(bytes: &[u8]) -> AppResult<R2Profile> {
         return Err(AppError::ShareInvalid("Ce profil r2modman est trop gros.".into()));
     }
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| invalid("archive"))?;
+    if zip.len() > MAX_ENTRIES {
+        return Err(invalid("trop de fichiers"));
+    }
     let mut list = None;
     let mut configs = Vec::new();
+    // Tout ce qui est décompressé compte, même ce qui est ensuite écarté.
     let mut total = 0u64;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|_| invalid("archive"))?;
@@ -148,7 +182,7 @@ pub fn parse_r2z(bytes: &[u8]) -> AppResult<R2Profile> {
             continue;
         }
         let Some(path) = config_path(&name) else { continue };
-        if entry.size() > MAX_CONFIG_FILE || configs.len() >= MAX_CONFIG_FILES {
+        if entry.size() > MAX_CONFIG_FILE || configs.len() >= MAX_CONFIG_FILES || total >= MAX_CONFIG_TOTAL {
             continue;
         }
         let mut data = Vec::new();
@@ -159,8 +193,8 @@ pub fn parse_r2z(bytes: &[u8]) -> AppResult<R2Profile> {
         }
         configs.push(ConfigFile { path, data });
     }
-    let (name, mods) = parse_list(&list.ok_or_else(|| invalid("export.r2x manquant"))?)?;
-    Ok(R2Profile { name, mods, configs })
+    let (name, community, mods) = parse_list(&list.ok_or_else(|| invalid("export.r2x manquant"))?)?;
+    Ok(R2Profile { name, community, mods, configs })
 }
 
 /// Texte YAML sûr : une chaîne entre guillemets doubles (comme en JSON).

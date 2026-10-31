@@ -147,10 +147,14 @@ impl ShareState {
         Some(token)
     }
 
-    fn take(&self, token: &str) -> Option<Vec<r2modman::ConfigFile>> {
-        let mut pending = self.pending.lock().expect("pending");
-        let i = pending.iter().position(|(t, _)| t == token)?;
-        Some(pending.remove(i).1)
+    fn get(&self, token: &str) -> Option<Vec<r2modman::ConfigFile>> {
+        let pending = self.pending.lock().expect("pending");
+        pending.iter().find(|(t, _)| t == token).map(|(_, c)| c.clone())
+    }
+
+    /// Réglages appliqués : plus besoin de les garder.
+    fn forget(&self, token: &str) {
+        self.pending.lock().expect("pending").retain(|(t, _)| t != token);
     }
 }
 
@@ -197,7 +201,8 @@ pub fn validate(mut p: SharedProfile) -> AppResult<SharedProfile> {
     if p.game.name.is_empty() {
         p.game.name = if p.game.key.is_empty() { "Jeu".into() } else { p.game.key.clone() };
     }
-    p.name = clean_text(&p.name, 60);
+    // Même limite que les profils d'un jeu.
+    p.name = clean_text(&p.name, 40);
     if p.name.is_empty() {
         p.name = p.game.name.chars().take(60).collect();
     }
@@ -394,21 +399,27 @@ pub fn write_configs(game: &GameInstall, files: &[r2modman::ConfigFile], backup:
         AppError::ShareInvalid("Ce jeu ne charge pas ses mods avec BepInEx : les réglages du profil ne s'y appliquent pas.".into())
     })?;
     fs::create_dir_all(&dir).map_err(|e| AppError::Io(e.to_string()))?;
-    let root = dir.canonicalize().map_err(|e| AppError::Io(e.to_string()))?;
+    let is_link = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
     let mut written = 0;
     let mut saved = 0;
-    for f in files {
+    'files: for f in files {
         let Some(rel) = safe_rel(&f.path) else { continue };
-        let dest = dir.join(&rel);
-        // Un lien symbolique (fichier ou dossier) pourrait mener hors de `BepInEx/config`.
-        if dest.is_dir() || fs::symlink_metadata(&dest).is_ok_and(|m| m.file_type().is_symlink()) {
-            continue;
-        }
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent).map_err(|e| AppError::Io(e.to_string()))?;
-            if !parent.canonicalize().is_ok_and(|p| p.starts_with(&root)) {
-                continue;
+        // Dossiers créés un à un : un lien symbolique en chemin pourrait mener
+        // hors de `BepInEx/config`, il arrête tout pour ce fichier.
+        let mut at = dir.clone();
+        let parts: Vec<_> = rel.components().collect();
+        for c in &parts[..parts.len() - 1] {
+            at.push(c);
+            if is_link(&at) || at.is_file() {
+                continue 'files;
             }
+            if !at.exists() {
+                fs::create_dir(&at).map_err(|e| AppError::Io(e.to_string()))?;
+            }
+        }
+        let dest = dir.join(&rel);
+        if dest.is_dir() || is_link(&dest) {
+            continue;
         }
         if dest.is_file() {
             if fs::read(&dest).is_ok_and(|old| old == f.data) {
@@ -421,8 +432,15 @@ pub fn write_configs(game: &GameInstall, files: &[r2modman::ConfigFile], backup:
             fs::copy(&dest, &copy).map_err(|e| AppError::Io(e.to_string()))?;
             saved += 1;
         }
-        let tmp = dest.with_extension("modstudio-tmp");
-        fs::write(&tmp, &f.data).map_err(|e| AppError::Io(e.to_string()))?;
+        // Fichier temporaire tout neuf (jamais un lien laissé là) puis renommé.
+        let tmp = dest.with_extension(format!("modstudio-{}.tmp", std::process::id()));
+        if is_link(&tmp) || tmp.is_dir() {
+            continue;
+        }
+        let _ = fs::remove_file(&tmp);
+        let mut out = fs::OpenOptions::new().write(true).create_new(true).open(&tmp).map_err(|e| AppError::Io(e.to_string()))?;
+        out.write_all(&f.data).map_err(|e| AppError::Io(e.to_string()))?;
+        drop(out);
         fs::rename(&tmp, &dest).map_err(|e| AppError::Io(e.to_string()))?;
         written += 1;
     }
@@ -456,7 +474,8 @@ fn from_r2(state: &AppState, r2: r2modman::R2Profile) -> AppResult<ShareImport> 
     let profile = validate(SharedProfile {
         name: r2.name,
         source: Source::Ts,
-        game: SharedGame { id: 0, key: String::new(), name: String::new() },
+        // Gale écrit le jeu du profil ; r2modman non (il est alors deviné).
+        game: SharedGame { id: 0, key: r2.community.unwrap_or_default(), name: String::new() },
         mods,
     })?;
     let configs = r2.configs.len();
@@ -467,6 +486,9 @@ fn from_r2(state: &AppState, r2: r2modman::R2Profile) -> AppResult<ShareImport> 
 /// Devine le jeu Thunderstore d'un profil r2modman : celui où ses mods sont
 /// publiés (les chargeurs, publiés pour beaucoup de jeux, ne comptent pas).
 async fn guess_community(state: &AppState, import: &mut ShareImport) {
+    if !import.profile.game.key.is_empty() {
+        return;
+    }
     let candidates: Vec<(String, String)> = import
         .profile
         .mods
@@ -504,10 +526,17 @@ async fn guess_community(state: &AppState, import: &mut ShareImport) {
     }
 }
 
+/// Lecture de l'archive hors du fil des commandes (décompression bornée, mais longue).
+async fn parse_r2z(bytes: Vec<u8>) -> AppResult<r2modman::R2Profile> {
+    tokio::task::spawn_blocking(move || r2modman::parse_r2z(&bytes))
+        .await
+        .map_err(|e| AppError::Io(e.to_string()))?
+}
+
 async fn read_r2modman_code(state: &AppState, code: &str) -> AppResult<ShareImport> {
     let text = state.thunderstore.client.legacy_profile(code).await?;
     let zip = r2modman::decode_payload(&text)?;
-    let mut import = from_r2(state, r2modman::parse_r2z(&zip)?)?;
+    let mut import = from_r2(state, parse_r2z(zip).await?)?;
     guess_community(state, &mut import).await;
     Ok(import)
 }
@@ -547,14 +576,14 @@ pub async fn share_open_file(state: State<'_, AppState>, path: PathBuf) -> AppRe
     }
     let bytes = fs::read(&path).map_err(|e| AppError::Io(e.to_string()))?;
     if bytes.starts_with(b"PK") {
-        let mut import = from_r2(&state, r2modman::parse_r2z(&bytes)?)?;
+        let mut import = from_r2(&state, parse_r2z(bytes).await?)?;
         guess_community(&state, &mut import).await;
         return Ok(import);
     }
     let text = String::from_utf8_lossy(bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes)).into_owned();
     let trimmed = text.trim_start();
     if trimmed.starts_with(r2modman::PREFIX) {
-        let mut import = from_r2(&state, r2modman::parse_r2z(&r2modman::decode_payload(trimmed)?)?)?;
+        let mut import = from_r2(&state, parse_r2z(r2modman::decode_payload(trimmed)?).await?)?;
         guess_community(&state, &mut import).await;
         return Ok(import);
     }
@@ -601,9 +630,11 @@ pub fn share_apply_configs(state: State<'_, AppState>, token: String, game_id: i
     }
     let files = state
         .share
-        .take(&token)
+        .get(&token)
         .ok_or_else(|| AppError::ShareInvalid("Les réglages de ce profil ne sont plus en mémoire : importe-le à nouveau.".into()))?;
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let backup = state.library_path.with_file_name("profile-backups").join(format!("{game_id}-{stamp}"));
-    write_configs(&game, &files, &backup)
+    let applied = write_configs(&game, &files, &backup)?;
+    state.share.forget(&token);
+    Ok(applied)
 }

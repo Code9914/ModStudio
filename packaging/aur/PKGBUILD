@@ -32,7 +32,9 @@ optdepends=(
 provides=("$_pkgname")
 conflicts=("$_pkgname")
 options=('!strip' '!debug')
-source=("ModStudio_${pkgver}_amd64.deb::$url/releases/download/v$pkgver/ModStudio_${pkgver}_amd64.deb")
+# Le numéro de révision dans le nom local : un .deb republié sous la même
+# version (pkgrel augmenté) est téléchargé à nouveau, pas repris du cache.
+source=("ModStudio_${pkgver}-${pkgrel}_amd64.deb::$url/releases/download/v$pkgver/ModStudio_${pkgver}_amd64.deb")
 sha256sums=('0ec6a556a75ea74bb506de0f6ed5b3cbb84c1623cc0369368afb1d2724fe013e')
 
 package() {

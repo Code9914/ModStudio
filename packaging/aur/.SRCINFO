@@ -22,7 +22,7 @@ pkgbase = modstudio-bin
 	conflicts = modstudio
 	options = !strip
 	options = !debug
-	source = ModStudio_0.11.0_amd64.deb::https://github.com/Code9914/ModStudio/releases/download/v0.11.0/ModStudio_0.11.0_amd64.deb
+	source = ModStudio_0.11.0-1_amd64.deb::https://github.com/Code9914/ModStudio/releases/download/v0.11.0/ModStudio_0.11.0_amd64.deb
 	sha256sums = 0ec6a556a75ea74bb506de0f6ed5b3cbb84c1623cc0369368afb1d2724fe013e
 
 pkgname = modstudio-bin

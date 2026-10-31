@@ -15,7 +15,8 @@
   let saved = $state<string | null>(null);
 
   // Code r2modman (jeux Thunderstore) : publié sur Thunderstore à la demande.
-  let withConfigs = $state(true);
+  // Publiés pour tous : pas de réglages sans le demander (certains mods y gardent un jeton).
+  let withConfigs = $state(false);
   let r2Code = $state<string | null>(null);
   let r2Busy = $state(false);
   let r2Error = $state<AppError | null>(null);
@@ -124,6 +125,12 @@
             <input type="checkbox" bind:checked={withConfigs} />
             Joindre les réglages des mods (dossier BepInEx/config)
           </label>
+          {#if withConfigs}
+            <p class="small warn">
+              Les réglages sont publiés avec le profil : vérifie qu'ils ne contiennent rien de personnel (jeton Twitch,
+              lien Discord…).
+            </p>
+          {/if}
           <div>
             <button class="btn" onclick={makeR2} disabled={r2Busy}>{r2Busy ? "Publication…" : "Créer un code r2modman"}</button>
           </div>
@@ -215,6 +222,10 @@
 
   .small {
     font-size: var(--t-sm);
+  }
+
+  .warn {
+    color: var(--warn, var(--accent));
   }
 
   .ok {

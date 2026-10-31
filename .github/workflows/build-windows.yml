@@ -139,6 +139,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Récupérer le paquet AUR actuel
+        if: env.HAS_AUR_KEY == 'true'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$HOME/.ssh/aur"
+          chmod 600 "$HOME/.ssh/aur"
+          # Clé du serveur de l'AUR, vérifiée avec l'empreinte publiée par Arch Linux.
+          ssh-keyscan -t ed25519 aur.archlinux.org > "$HOME/.ssh/aur_host" 2>/dev/null
+          ssh-keygen -lf "$HOME/.ssh/aur_host" | grep -q 'SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4' \
+            || { echo "Clé du serveur de l'AUR inattendue : publication annulée."; exit 1; }
+          echo "GIT_SSH_COMMAND=ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/aur_host" >> "$GITHUB_ENV"
+          GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/aur_host" \
+            git clone ssh://aur@aur.archlinux.org/modstudio-bin.git "$RUNNER_TEMP/aur"
+
       - name: Mettre le PKGBUILD à la nouvelle version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -146,7 +162,16 @@ jobs:
           version=$(node -p "require('./src-tauri/tauri.conf.json').version")
           deb="ModStudio_${version}_amd64.deb"
           gh release download "v$version" --pattern "$deb" --dir "$RUNNER_TEMP"
-          packaging/aur/update.sh "$version" "$(sha256sum "$RUNNER_TEMP/$deb" | cut -d' ' -f1)"
+          sum=$(sha256sum "$RUNNER_TEMP/$deb" | cut -d' ' -f1)
+          rel=1
+          # Même version déjà publiée : .deb identique, rien ne change ; .deb
+          # refait (nouvelle compilation), la révision augmente.
+          current="$RUNNER_TEMP/aur/PKGBUILD"
+          if [ -f "$current" ] && [ "$(sed -n 's/^pkgver=//p' "$current")" = "$version" ]; then
+            rel=$(sed -n 's/^pkgrel=//p' "$current")
+            grep -q "$sum" "$current" || rel=$((rel + 1))
+          fi
+          packaging/aur/update.sh "$version" "$sum" "$rel"
 
       - name: Construire le paquet avec makepkg (Arch Linux)
         run: |
@@ -162,19 +187,8 @@ jobs:
 
       - name: Publier sur l'AUR
         if: env.HAS_AUR_KEY == 'true'
-        env:
-          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
           version=$(node -p "require('./src-tauri/tauri.conf.json').version")
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$HOME/.ssh/aur"
-          chmod 600 "$HOME/.ssh/aur"
-          # Clé du serveur de l'AUR, vérifiée avec l'empreinte publiée par Arch Linux.
-          ssh-keyscan -t ed25519 aur.archlinux.org > "$HOME/.ssh/aur_host" 2>/dev/null
-          ssh-keygen -lf "$HOME/.ssh/aur_host" | grep -q 'SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4' \
-            || { echo "Clé du serveur de l'AUR inattendue : publication annulée."; exit 1; }
-          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/aur_host"
-          git clone ssh://aur@aur.archlinux.org/modstudio-bin.git "$RUNNER_TEMP/aur"
           cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO "$RUNNER_TEMP/aur/"
           cd "$RUNNER_TEMP/aur"
           git config user.name "Code9914"
@@ -183,7 +197,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "Le paquet AUR est déjà à jour."
           else
-            git commit -m "v$version"
+            git commit -m "v$version-$(sed -n 's/^pkgrel=//p' PKGBUILD)"
             git push origin HEAD:master
           fi
 

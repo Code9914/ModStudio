@@ -158,6 +158,32 @@ fn r2modman_profiles_are_read_with_only_safe_config_files() {
 }
 
 #[test]
+fn yaml_aliases_are_refused_before_they_can_fill_the_memory() {
+    let mut bomb = String::from("a0: &a0 [x, x, x, x, x, x, x, x, x, x]\n");
+    for i in 1..9 {
+        bomb.push_str(&format!("a{i}: &a{i} [{}]\n", vec![format!("*a{}", i - 1); 10].join(", ")));
+    }
+    bomb.push_str("profileName: x\nmods: []\n");
+    let zip = r2z(&[("export.r2x", bomb.as_bytes())]);
+    assert!(matches!(r2modman::parse_r2z(&zip), Err(AppError::ShareInvalid(_))));
+}
+
+#[test]
+fn gale_profiles_name_their_game_and_keep_configs_under_bepinex() {
+    let r2x = format!("profileName: Gale\ncommunity: lethal-company\n{}", &R2X[R2X.find("mods:").unwrap()..]);
+    let zip = r2z(&[("export.r2x", r2x.as_bytes()), ("BepInEx/config/Mod.cfg", b"a=1"), ("bepinex/config/../../x.cfg", b"no")]);
+    let p = r2modman::parse_r2z(&zip).unwrap();
+    assert_eq!(p.community.as_deref(), Some("lethal-company"));
+    assert_eq!(p.configs.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), ["Mod.cfg"]);
+}
+
+#[test]
+fn profile_names_fit_the_profiles_of_a_game() {
+    let long = SharedProfile { name: "x".repeat(60), ..sample() };
+    assert_eq!(validate(long).unwrap().name.chars().count(), 40);
+}
+
+#[test]
 fn a_built_r2modman_profile_reads_back_the_same() {
     let dir = tempdir("share-r2-config");
     fs::create_dir_all(dir.join("MoreCompany")).unwrap();
