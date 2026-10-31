@@ -1,0 +1,50 @@
+# Maintainer: Code9914 <https://github.com/Code9914>
+#
+# Paquet AUR de ModStudio pour CachyOS, Arch Linux et dérivées : le paquet
+# .deb publié dans la release GitHub, sans recompilation. Mis à jour par le
+# workflow « Build » à chaque nouvelle version (packaging/aur/update.sh).
+
+pkgname=modstudio-bin
+_pkgname=modstudio
+pkgver=0.11.0
+pkgrel=1
+pkgdesc="Client de bureau non officiel pour les mods de mod.io, Nexus Mods, Thunderstore et des communautés"
+arch=('x86_64')
+url="https://github.com/Code9914/ModStudio"
+license=('MIT')
+depends=(
+  'cairo'
+  'dbus'
+  'gcc-libs'
+  'gdk-pixbuf2'
+  'glib2'
+  'glibc'
+  'gtk3'
+  'hicolor-icon-theme'
+  'libsoup3'
+  'openssl'
+  'webkit2gtk-4.1'
+)
+optdepends=(
+  'gnome-keyring: garder la session mod.io dans un trousseau (ou KWallet, ou un autre service Secret Service)'
+  'xdg-utils: ouvrir les liens dans le navigateur et les dossiers dans le gestionnaire de fichiers'
+)
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+options=('!strip' '!debug')
+source=("ModStudio_${pkgver}_amd64.deb::$url/releases/download/v$pkgver/ModStudio_${pkgver}_amd64.deb")
+sha256sums=('0ec6a556a75ea74bb506de0f6ed5b3cbb84c1623cc0369368afb1d2724fe013e')
+
+package() {
+  # makepkg a déjà ouvert le .deb : ses fichiers sont dans data.tar.*.
+  bsdtar -xf "$srcdir"/data.tar.* -C "$pkgdir"
+  chmod 755 "$pkgdir/usr/bin/$_pkgname"
+
+  # Rangé avec les jeux dans le menu des applications.
+  sed -i 's/^Categories=$/Categories=Game;/' "$pkgdir/usr/share/applications/ModStudio.desktop"
+
+  # ModStudio laisse alors le gestionnaire de paquets faire ses mises à jour.
+  install -d "$pkgdir/usr/share/$_pkgname"
+  printf 'aur\n' > "$pkgdir/usr/share/$_pkgname/package-manager"
+  chmod 644 "$pkgdir/usr/share/$_pkgname/package-manager"
+}

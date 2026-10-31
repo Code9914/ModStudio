@@ -283,6 +283,28 @@ ModStudio est aussi publié pour Linux, à côté des installateurs Windows :
 - `ModStudio_x.y.z_amd64.AppImage` (recommandé) : rends-le exécutable
   (`chmod +x`) et lance-le ; il se met à jour tout seul, comme sous Windows.
 - `ModStudio_x.y.z_amd64.deb` : paquet Debian / Ubuntu.
+- **CachyOS, Arch Linux et dérivées** (v0.12) : paquet AUR `modstudio-bin`,
+  à installer avec un assistant AUR (`paru -S modstudio-bin` ou
+  `yay -S modstudio-bin`). Il reprend le `.deb` de la release, sans
+  recompilation, et se met à jour avec le reste du système (`paru -Syu`) :
+  ModStudio ne propose alors plus d'installer ses mises à jour lui-même, il
+  signale seulement la nouvelle version.
+
+### Paquet AUR (pour le mainteneur)
+
+Le PKGBUILD est dans `packaging/aur/`. À chaque release, le workflow « Build »
+le met à la nouvelle version (`update.sh`), le construit avec `makepkg` dans un
+conteneur Arch Linux, puis le publie sur l'AUR si le secret
+`AUR_SSH_PRIVATE_KEY` existe. Pour l'activer, une fois :
+
+1. Crée un compte sur <https://aur.archlinux.org/register> et ajoute-y la clé
+   SSH publique d'une paire faite pour l'AUR (`ssh-keygen -t ed25519 -f aur`).
+2. Range la clé privée (fichier `aur`) dans les secrets du dépôt GitHub sous le
+   nom `AUR_SSH_PRIVATE_KEY` (Settings, Secrets and variables, Actions).
+3. À la release suivante, le paquet `modstudio-bin` est créé sur l'AUR.
+
+Sans le secret, le PKGBUILD de chaque version reste dans les artefacts du
+workflow : `makepkg -si` dans son dossier installe ModStudio à la main.
 
 Ce qui change sous Linux :
 

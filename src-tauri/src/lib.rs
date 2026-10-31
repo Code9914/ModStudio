@@ -42,6 +42,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
+            commands::app_package_manager,
             commands::save_settings,
             commands::set_hide_mature,
             commands::list_games,

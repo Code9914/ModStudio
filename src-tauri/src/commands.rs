@@ -86,6 +86,34 @@ impl AppState {
     }
 }
 
+// ---------------------------------------------------------------- Paquet du système
+
+/// Fichier posé par un paquet du système (AUR…) : il contient le nom du
+/// gestionnaire de paquets qui met ModStudio à jour.
+pub const PACKAGE_MARKER: &str = "/usr/share/modstudio/package-manager";
+
+/// Gestionnaire de paquets qui a installé ce ModStudio, d'après le fichier
+/// posé par son paquet, pour un programme installé dans `/usr`.
+pub fn package_manager(marker: &std::path::Path, exe: Option<&std::path::Path>) -> Option<String> {
+    if !exe?.starts_with("/usr/") {
+        return None;
+    }
+    let raw = std::fs::read_to_string(marker).ok()?;
+    let name = raw.trim();
+    let ok = !name.is_empty() && name.len() <= 32 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    ok.then(|| name.to_string())
+}
+
+/// ModStudio installé par un paquet du système (AUR…) : ses mises à jour
+/// passent par le gestionnaire de paquets, pas par l'appli.
+#[tauri::command]
+pub fn app_package_manager() -> Option<String> {
+    if !cfg!(target_os = "linux") || std::env::var_os("APPIMAGE").is_some() {
+        return None;
+    }
+    package_manager(std::path::Path::new(PACKAGE_MARKER), std::env::current_exe().ok().as_deref())
+}
+
 // ---------------------------------------------------------------- Réglages
 
 #[tauri::command]
@@ -357,6 +385,20 @@ mod tests {
         assert_eq!(pick(None, MOD_SORTS, "-downloads_today").unwrap(), "-downloads_today");
         assert_eq!(pick(Some("name".into()), MOD_SORTS, "x").unwrap(), "name");
         assert!(pick(Some("id;drop".into()), MOD_SORTS, "x").is_err());
+    }
+
+    #[test]
+    fn a_system_package_only_counts_for_a_program_installed_in_usr() {
+        let dir = crate::installer::tests::tempdir("pkg-marker");
+        let marker = dir.join("package-manager");
+        std::fs::write(&marker, "aur\n").unwrap();
+        let usr = std::path::Path::new("/usr/bin/modstudio");
+        assert_eq!(package_manager(&marker, Some(usr)).as_deref(), Some("aur"));
+        // Copie lancée ailleurs (AppImage, dossier perso) : elle se met à jour toute seule.
+        assert_eq!(package_manager(&marker, Some(std::path::Path::new("/home/u/ModStudio.AppImage"))), None);
+        assert_eq!(package_manager(&dir.join("absent"), Some(usr)), None);
+        std::fs::write(&marker, "<script>").unwrap();
+        assert_eq!(package_manager(&marker, Some(usr)), None);
     }
 
     #[test]

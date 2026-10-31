@@ -27,7 +27,8 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "shortDescription": "Client de bureau non officiel pour mod.io et Nexus Mods",
+    "category": "Game",
+    "shortDescription": "Client de bureau non officiel pour les mods de mod.io, Nexus Mods, Thunderstore et des communautés",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

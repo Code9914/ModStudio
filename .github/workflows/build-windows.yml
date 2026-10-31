@@ -126,3 +126,73 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error
+
+  # Paquet AUR (CachyOS, Arch Linux) : le PKGBUILD reprend le .deb de la
+  # release. Construit par makepkg dans un conteneur Arch, puis publié sur
+  # l'AUR quand la clé SSH du compte AUR est dans les secrets du dépôt
+  # (AUR_SSH_PRIVATE_KEY) ; sans elle, le PKGBUILD reste dans les artefacts.
+  aur:
+    needs: linux
+    runs-on: ubuntu-latest
+    env:
+      HAS_AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mettre le PKGBUILD à la nouvelle version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          deb="ModStudio_${version}_amd64.deb"
+          gh release download "v$version" --pattern "$deb" --dir "$RUNNER_TEMP"
+          packaging/aur/update.sh "$version" "$(sha256sum "$RUNNER_TEMP/$deb" | cut -d' ' -f1)"
+
+      - name: Construire le paquet avec makepkg (Arch Linux)
+        run: |
+          docker run --rm -v "$PWD/packaging/aur:/aur" archlinux:base-devel bash -euo pipefail -c '
+            useradd -m builder
+            cp -r /aur /home/builder/pkg
+            chown -R builder /home/builder/pkg
+            cd /home/builder/pkg
+            su builder -c "makepkg --nodeps --noconfirm --cleanbuild"
+            su builder -c "makepkg --printsrcinfo" > /aur/.SRCINFO
+            bsdtar -tf modstudio-bin-*.pkg.tar.* | grep -E "usr/bin/modstudio$|usr/share/modstudio/package-manager$"
+          '
+
+      - name: Publier sur l'AUR
+        if: env.HAS_AUR_KEY == 'true'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$HOME/.ssh/aur"
+          chmod 600 "$HOME/.ssh/aur"
+          # Clé du serveur de l'AUR, vérifiée avec l'empreinte publiée par Arch Linux.
+          ssh-keyscan -t ed25519 aur.archlinux.org > "$HOME/.ssh/aur_host" 2>/dev/null
+          ssh-keygen -lf "$HOME/.ssh/aur_host" | grep -q 'SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4' \
+            || { echo "Clé du serveur de l'AUR inattendue : publication annulée."; exit 1; }
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/aur_host"
+          git clone ssh://aur@aur.archlinux.org/modstudio-bin.git "$RUNNER_TEMP/aur"
+          cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO "$RUNNER_TEMP/aur/"
+          cd "$RUNNER_TEMP/aur"
+          git config user.name "Code9914"
+          git config user.email "Code9914@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "Le paquet AUR est déjà à jour."
+          else
+            git commit -m "v$version"
+            git push origin HEAD:master
+          fi
+
+      - name: Garder le PKGBUILD
+        uses: actions/upload-artifact@v4
+        with:
+          name: modstudio-aur
+          path: |
+            packaging/aur/PKGBUILD
+            packaging/aur/.SRCINFO
+          include-hidden-files: true
+          if-no-files-found: error

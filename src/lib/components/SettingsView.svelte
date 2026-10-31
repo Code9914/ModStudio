@@ -135,7 +135,12 @@
             <button class="btn" type="button" onclick={() => updates.check(true)} disabled={updates.checking}>
               <Icon name="refresh" size={15} />{updates.checking ? "Recherche…" : "Rechercher une mise à jour"}
             </button>
-            {#if updates.available}
+            {#if updates.available && updates.packageManager}
+              <span class="help">
+                Version {updates.available.version} disponible : mets ModStudio à jour avec ton gestionnaire de paquets
+                (installé depuis l'AUR).
+              </span>
+            {:else if updates.available}
               <button class="btn btn-primary" type="button" onclick={() => updates.install()} disabled={!!updates.progress}>
                 Installer la version {updates.available.version}
               </button>

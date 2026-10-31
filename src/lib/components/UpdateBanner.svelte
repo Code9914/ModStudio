@@ -11,6 +11,14 @@
     {#if updates.progress}
       <ProgressBar progress={updates.progress} />
       <p class="small muted">ModStudio redémarrera tout seul une fois la mise à jour installée.</p>
+    {:else if updates.packageManager}
+      <p class="small muted">
+        Tu as la version {updates.current ?? updates.available.currentVersion}, installée depuis l'AUR : mets-la à jour
+        avec ton gestionnaire de paquets (par exemple <code>paru -Syu</code> ou <code>yay -Syu</code>).
+      </p>
+      <div class="row">
+        <button class="btn btn-ghost" onclick={() => (updates.dismissed = true)}>Compris</button>
+      </div>
     {:else}
       <p class="small muted">
         Tu as la version {updates.current ?? updates.available.currentVersion}. Tes réglages, ta clé Nexus et tes mods

@@ -1,6 +1,7 @@
 // Mises à jour de ModStudio : nouvelle version publiée dans les releases
 // GitHub (fichier latest.json signé), téléchargée puis installée à la demande.
 import { getVersion } from "@tauri-apps/api/app";
+import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { bytes } from "./format";
@@ -18,6 +19,8 @@ class AppUpdates {
   error = $state<string | null>(null);
   /** « Plus tard » : le bandeau ne revient qu'au prochain lancement. */
   dismissed = $state(false);
+  /** Installé par un paquet du système (`aur`…) : mises à jour par le gestionnaire de paquets. */
+  packageManager = $state<string | null>(null);
 
   /** Mode développement (« ModStudio (dev) ») : le code se met à jour par git. */
   get enabled() {
@@ -30,6 +33,7 @@ class AppUpdates {
     this.error = null;
     try {
       this.current ??= await getVersion();
+      this.packageManager = await invoke<string | null>("app_package_manager").catch(() => null);
       this.available = await check();
       if (manual) this.dismissed = false;
     } catch (e) {
@@ -43,7 +47,7 @@ class AppUpdates {
 
   async install() {
     const update = this.available;
-    if (!update || this.progress) return;
+    if (!update || this.progress || this.packageManager) return;
     this.error = null;
     let received = 0;
     let total = 0;
