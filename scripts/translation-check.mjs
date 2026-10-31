@@ -13,6 +13,21 @@ import { extname, join, normalize } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { chromium } from "playwright";
 
+// Sur GitHub, les résultats et l'erreur éventuelle deviennent des annotations
+// (lisibles sans télécharger le journal).
+const ci = !!process.env.GITHUB_ACTIONS;
+const annotate = (kind, text) => ci && console.log(`::${kind}::${String(text).replace(/\r?\n/g, "%0A")}`);
+process.on("uncaughtException", (e) => {
+  annotate("error", e?.stack ?? e);
+  console.error(e);
+  process.exit(1);
+});
+process.on("unhandledRejection", (e) => {
+  annotate("error", e?.stack ?? e);
+  console.error(e);
+  process.exit(1);
+});
+
 const root = new URL("..", import.meta.url).pathname;
 const table = JSON.parse(readFileSync(join(root, "src-tauri/translation-models.json"), "utf8"));
 const pairs = process.argv.slice(2).length ? process.argv.slice(2) : ["enfr", "fren"];
@@ -72,7 +87,10 @@ const samples = {
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
-page.on("console", (m) => console.log("[page]", m.text()));
+page.on("console", (m) => {
+  console.log("[page]", m.text());
+  if (m.type() === "error") annotate("warning", `[page] ${m.text()}`);
+});
 await page.goto(base);
 const results = await page.evaluate(
   async ({ pairs, samples }) => {
@@ -125,6 +143,7 @@ const results = await page.evaluate(
   { pairs, samples },
 );
 console.log(JSON.stringify(results, null, 1));
+annotate("notice", JSON.stringify(results, null, 1));
 await browser.close();
 server.close();
 
