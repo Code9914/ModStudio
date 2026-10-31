@@ -473,7 +473,7 @@
           {/if}
         </span>
       </button>
-      <p class="version muted">Version 0.10, client non officiel</p>
+      <p class="version muted">Version 0.11, client non officiel</p>
     </div>
   </nav>
 
