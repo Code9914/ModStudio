@@ -10,7 +10,7 @@ A desktop app (Windows and Linux) to find, install and manage the mods of your
 games from several sources: [mod.io](https://mod.io),
 [Nexus Mods](https://www.nexusmods.com), [Thunderstore](https://thunderstore.io)
 and mod lists run by some game communities. Built with Tauri 2, Rust and
-Svelte 5. The interface is in French.
+Svelte 5. The interface is available in English and French.
 
 > **Unofficial** client: ModStudio is not affiliated with or endorsed by any of
 > these sites.
@@ -143,7 +143,7 @@ Une appli de bureau (Windows et Linux) pour trouver, installer et gérer les
 mods de tes jeux depuis plusieurs sources : [mod.io](https://mod.io),
 [Nexus Mods](https://www.nexusmods.com), [Thunderstore](https://thunderstore.io)
 et les listes tenues par certaines communautés. Construite avec Tauri 2, Rust
-et Svelte 5.
+et Svelte 5. L'interface existe en français et en anglais.
 
 > Client **non officiel** : ModStudio n'est affilié à aucun de ces sites, ni
 > soutenu par eux.

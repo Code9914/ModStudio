@@ -442,7 +442,7 @@ impl RmlSource {
         // Les fichiers viennent des forges des auteurs (GitHub, Codeberg…) : en https seulement.
         let policy = redirect::Policy::custom(|attempt| {
             if attempt.previous().len() > 5 {
-                attempt.error("trop de redirections")
+                attempt.error(crate::i18n::pick("trop de redirections", "too many redirects"))
             } else if download_allowed(attempt.url()) {
                 attempt.follow()
             } else {
@@ -484,7 +484,7 @@ impl RmlSource {
                         }
                         c
                     }
-                    None => from_disk().ok_or_else(|| AppError::RmlUnavailable("liste illisible".into()))?,
+                    None => from_disk().ok_or_else(|| AppError::RmlUnavailable(crate::i18n::pick("liste illisible", "unreadable list").into()))?,
                 },
                 Err(e) => from_disk().ok_or(e)?,
             },
@@ -502,13 +502,13 @@ impl RmlSource {
             .await
             .map_err(|e| AppError::RmlUnavailable(e.without_url().to_string()))?;
         if !response.status().is_success() {
-            return Err(AppError::RmlUnavailable(format!("erreur {}", response.status().as_u16())));
+            return Err(AppError::RmlUnavailable(crate::tr!("erreur {}", "error {}", response.status().as_u16())));
         }
         let mut out = Vec::new();
         while let Some(chunk) = response.chunk().await.map_err(|e| AppError::RmlUnavailable(e.without_url().to_string()))? {
             out.extend_from_slice(&chunk);
             if out.len() > MANIFEST_LIMIT {
-                return Err(AppError::RmlUnavailable("liste démesurée".into()));
+                return Err(AppError::RmlUnavailable(crate::i18n::pick("liste démesurée", "list too large").into()));
             }
         }
         Ok(out)
@@ -590,7 +590,7 @@ fn plan(catalog: &Catalog, config: &GameInstall, target: &RmlMod, version: &str)
             plan.order.push(Step { id, version: ver });
             continue;
         }
-        let m = catalog.get(&id).ok_or_else(|| AppError::InvalidArgument(format!("« {id} » n'est plus dans la liste.")))?;
+        let m = catalog.get(&id).ok_or_else(|| AppError::InvalidArgument(crate::tr!("« {id} » n'est plus dans la liste.", "\"{id}\" is no longer in the list.")))?;
         let v = m.version(&ver).unwrap_or_else(|| m.newest());
         let mut deps: Vec<(String, String)> = v.dependencies.iter().filter(|d| !d.optional).map(|d| (d.id.clone(), d.version.clone())).collect();
         let lower = m.id.to_lowercase();
@@ -615,7 +615,7 @@ fn plan(catalog: &Catalog, config: &GameInstall, target: &RmlMod, version: &str)
                 _ => {}
             }
             if visited.len() > MAX_MODS {
-                return Err(AppError::InvalidArgument("ce mod demande beaucoup trop d'autres mods.".into()));
+                return Err(AppError::InvalidArgument(crate::i18n::pick("ce mod demande beaucoup trop d'autres mods.", "this mod requires far too many other mods.").into()));
             }
             children.push((d.id.clone(), d.latest.clone()));
         }
@@ -641,8 +641,9 @@ fn check_conflicts(catalog: &Catalog, config: &GameInstall, plan: &Plan) -> AppR
             if let Some((_, ver, name)) = installed.iter().find(|(id, ..)| id.eq_ignore_ascii_case(&c.id))
                 && conflicting(ver.as_deref(), &c.version)
             {
-                return Err(AppError::InvalidArgument(format!(
+                return Err(AppError::InvalidArgument(crate::tr!(
                     "« {} » ne marche pas avec « {name} », déjà installé : désinstalle-le d'abord.",
+                    "\"{}\" doesn't work with \"{name}\", which is already installed: uninstall it first.",
                     m.name
                 )));
             }
@@ -650,8 +651,9 @@ fn check_conflicts(catalog: &Catalog, config: &GameInstall, plan: &Plan) -> AppR
         for (id, ver, name) in &installed {
             let Some(other) = catalog.get(id).and_then(|o| ver.as_deref().and_then(|v| o.version(v))) else { continue };
             if other.conflicts.iter().any(|c| c.id.eq_ignore_ascii_case(&m.id) && conflicting(Some(&step.version), &c.version)) {
-                return Err(AppError::InvalidArgument(format!(
+                return Err(AppError::InvalidArgument(crate::tr!(
                     "« {} » ne marche pas avec « {name} », déjà installé : désinstalle-le d'abord.",
+                    "\"{}\" doesn't work with \"{name}\", which is already installed: uninstall it first.",
                     m.name
                 )));
             }
@@ -664,7 +666,7 @@ fn platforms_label(platforms: &[String]) -> String {
     let names: Vec<&str> = platforms
         .iter()
         .map(|p| match p.as_str() {
-            "headless" => "les serveurs (headless)",
+            "headless" => crate::i18n::pick("les serveurs (headless)", "servers (headless)"),
             "windows" => "Windows",
             "linux" | "linux-native" => "Linux",
             "linux-wine" => "Linux (Proton)",
@@ -680,8 +682,8 @@ fn download_error(e: AppError, name: &str, url: &str) -> AppError {
     let host = Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_default();
     let detail = match e {
         AppError::Network(d) => d,
-        AppError::NotFound => "fichier introuvable".into(),
-        AppError::Api { status, .. } => format!("erreur {status}"),
+        AppError::NotFound => crate::i18n::pick("fichier introuvable", "file not found").into(),
+        AppError::Api { status, .. } => crate::tr!("erreur {status}", "error {status}"),
         AppError::DownloadRefused(d) => d,
         other => return other,
     };
@@ -725,7 +727,7 @@ impl ThunderstoreState {
         let game_id = stable_id(COMMUNITY);
         let config = self.library.lock().expect("library").games.get(&game_id).cloned().ok_or(AppError::NoGameFolder)?;
         if !config.folder.is_dir() {
-            return Err(AppError::Io(format!("le dossier du jeu n'existe plus : {}", config.folder.display())));
+            return Err(AppError::Io(crate::tr!("le dossier du jeu n'existe plus : {}", "the game folder no longer exists: {}", config.folder.display())));
         }
         if self.jobs.lock().expect("jobs").contains_key(&game_id) {
             return Err(AppError::InstallInProgress);
@@ -734,23 +736,35 @@ impl ThunderstoreState {
         let catalog = self.rml.catalog(false).await?;
         let target = catalog
             .get(id)
-            .ok_or_else(|| AppError::InvalidArgument("ce mod n'est plus dans la liste de ResoniteModLoader.".into()))?;
+            .ok_or_else(|| {
+                AppError::InvalidArgument(
+                    crate::i18n::pick("ce mod n'est plus dans la liste de ResoniteModLoader.", "this mod is no longer in the ResoniteModLoader list.").into(),
+                )
+            })?;
         let version = match version {
             Some(v) => target
                 .version(&v)
                 .map(|x| x.version.clone())
-                .ok_or_else(|| AppError::InvalidArgument(format!("la version {v} de « {} » n'est plus dans la liste.", target.name)))?,
+                .ok_or_else(|| {
+                    AppError::InvalidArgument(crate::tr!(
+                        "la version {v} de « {} » n'est plus dans la liste.",
+                        "version {v} of \"{}\" is no longer in the list.",
+                        target.name
+                    ))
+                })?,
             None => target.latest.clone(),
         };
         if target.broken {
-            return Err(AppError::InvalidArgument(format!(
+            return Err(AppError::InvalidArgument(crate::tr!(
                 "« {} » est signalé comme cassé dans la liste de ResoniteModLoader : il ne marche plus avec Resonite.",
+                "\"{}\" is reported as broken in the ResoniteModLoader list: it no longer works with Resonite.",
                 target.name
             )));
         }
         if !target.compatible {
-            return Err(AppError::WrongPlatform(format!(
+            return Err(AppError::WrongPlatform(crate::tr!(
                 "« {} » est fait pour {} : il ne se charge pas dans le jeu sur ce PC.",
+                "\"{}\" is made for {}: it doesn't load in the game on this PC.",
                 target.name,
                 platforms_label(&target.platforms)
             )));
@@ -851,7 +865,7 @@ impl ThunderstoreState {
             (config, owned_by_others(&libs, game_id, m.mod_id), old)
         };
         if old.as_ref().is_some_and(|o| o.disabled) {
-            return Err(AppError::InvalidArgument(format!("réactive « {} » avant de le mettre à jour.", m.name)));
+            return Err(AppError::InvalidArgument(crate::tr!("réactive « {} » avant de le mettre à jour.", "enable \"{}\" again before updating it.", m.name)));
         }
         let owners = others.get(&config.folder);
         let old_files: HashSet<&str> = old.iter().flat_map(|o| o.files.iter().map(String::as_str)).collect();
@@ -860,7 +874,7 @@ impl ThunderstoreState {
         let mut adopted = Vec::new();
         let mut size: i64 = 0;
         for (i, a) in v.artifacts.iter().enumerate() {
-            let dest = installer::resolve_rel(&config.folder, &a.dest).ok_or_else(|| AppError::BadArchive(format!("chemin invalide : {}", a.dest)))?;
+            let dest = installer::resolve_rel(&config.folder, &a.dest).ok_or_else(|| AppError::BadArchive(crate::tr!("chemin invalide : {}", "invalid path: {}", a.dest)))?;
             // Déjà là, identique (installé à la main) : gardé tel quel.
             let unowned = !old_files.contains(a.dest.as_str()) && owners.is_none_or(|o| !o.contains_key(&a.dest));
             if unowned && dest.is_file() && sha256_file(&dest).is_ok_and(|h| h == a.sha256) {

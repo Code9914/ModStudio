@@ -55,7 +55,7 @@ pub struct R2Profile {
 }
 
 fn invalid(detail: &str) -> AppError {
-    AppError::ShareInvalid(format!("Ce profil r2modman est illisible ({detail})."))
+    AppError::ShareInvalid(crate::tr!("Ce profil r2modman est illisible ({detail}).", "This r2modman profile can't be read ({detail})."))
 }
 
 /// Un code r2modman : un identifiant comme `0192f0a1-…` (36 caractères).
@@ -67,10 +67,10 @@ pub fn is_code(text: &str) -> bool {
 
 /// `#r2modman` + base64 → l'archive du profil.
 pub fn decode_payload(text: &str) -> AppResult<Vec<u8>> {
-    let body = text.trim_start().strip_prefix(PREFIX).ok_or_else(|| invalid("en-tête manquant"))?;
+    let body = text.trim_start().strip_prefix(PREFIX).ok_or_else(|| invalid(crate::i18n::pick("en-tête manquant", "missing header")))?;
     let b64: String = body.chars().filter(|c| !c.is_whitespace()).collect();
     if b64.len() > MAX_ZIP / 3 * 4 + 8 {
-        return Err(AppError::ShareInvalid("Ce profil r2modman est trop gros.".into()));
+        return Err(AppError::ShareInvalid(crate::i18n::pick("Ce profil r2modman est trop gros.", "This r2modman profile is too big.").into()));
     }
     STANDARD.decode(b64).map_err(|_| invalid("base64"))
 }
@@ -96,27 +96,27 @@ fn version_of(y: &Yaml) -> Option<String> {
 fn check_yaml(text: &str) -> AppResult<()> {
     let mut parser = Parser::new_from_str(text);
     for _ in 0..MAX_YAML_EVENTS {
-        match parser.next_token().map_err(|_| invalid("liste des mods"))?.0 {
+        match parser.next_token().map_err(|_| invalid(crate::i18n::pick("liste des mods", "mod list")))?.0 {
             Event::StreamEnd => return Ok(()),
-            Event::Alias(_) => return Err(invalid("liste des mods")),
+            Event::Alias(_) => return Err(invalid(crate::i18n::pick("liste des mods", "mod list"))),
             _ => {}
         }
     }
-    Err(invalid("liste des mods trop longue"))
+    Err(invalid(crate::i18n::pick("liste des mods trop longue", "mod list too long")))
 }
 
 /// Lit `export.r2x` : nom du profil, jeu (s'il est écrit) et mods.
 pub fn parse_list(text: &str) -> AppResult<(String, Option<String>, Vec<R2Mod>)> {
     check_yaml(text)?;
-    let docs = YamlLoader::load_from_str(text).map_err(|_| invalid("liste des mods"))?;
-    let doc = docs.first().ok_or_else(|| invalid("liste vide"))?;
+    let docs = YamlLoader::load_from_str(text).map_err(|_| invalid(crate::i18n::pick("liste des mods", "mod list")))?;
+    let doc = docs.first().ok_or_else(|| invalid(crate::i18n::pick("liste vide", "empty list")))?;
     let name = doc["profileName"].as_str().unwrap_or("").to_string();
     let community = doc["community"]
         .as_str()
         .map(str::trim)
         .filter(|c| !c.is_empty() && c.len() <= 100 && c.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.')))
         .map(str::to_string);
-    let list = doc["mods"].as_vec().ok_or_else(|| invalid("liste des mods"))?;
+    let list = doc["mods"].as_vec().ok_or_else(|| invalid(crate::i18n::pick("liste des mods", "mod list")))?;
     let mut mods = Vec::new();
     for m in list {
         let Some(full) = m["name"].as_str().map(str::trim) else { continue };
@@ -129,7 +129,7 @@ pub fn parse_list(text: &str) -> AppResult<(String, Option<String>, Vec<R2Mod>)>
         mods.push(R2Mod { full_name: full.to_string(), version, enabled });
     }
     if mods.is_empty() {
-        return Err(AppError::ShareInvalid("Ce profil r2modman ne contient aucun mod.".into()));
+        return Err(AppError::ShareInvalid(crate::i18n::pick("Ce profil r2modman ne contient aucun mod.", "This r2modman profile doesn't contain any mods.").into()));
     }
     Ok((name, community, mods))
 }
@@ -159,11 +159,11 @@ fn config_path(entry: &str) -> Option<String> {
 /// Lit une archive `.r2z`.
 pub fn parse_r2z(bytes: &[u8]) -> AppResult<R2Profile> {
     if bytes.len() > MAX_ZIP * 2 {
-        return Err(AppError::ShareInvalid("Ce profil r2modman est trop gros.".into()));
+        return Err(AppError::ShareInvalid(crate::i18n::pick("Ce profil r2modman est trop gros.", "This r2modman profile is too big.").into()));
     }
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| invalid("archive"))?;
     if zip.len() > MAX_ENTRIES {
-        return Err(invalid("trop de fichiers"));
+        return Err(invalid(crate::i18n::pick("trop de fichiers", "too many files")));
     }
     let mut list = None;
     let mut configs = Vec::new();
@@ -177,7 +177,7 @@ pub fn parse_r2z(bytes: &[u8]) -> AppResult<R2Profile> {
         let Ok(name) = entry.name().map(|n| n.to_string()) else { continue };
         if name.eq_ignore_ascii_case("export.r2x") {
             let mut text = String::new();
-            (&mut entry).take(MAX_LIST).read_to_string(&mut text).map_err(|_| invalid("liste des mods"))?;
+            (&mut entry).take(MAX_LIST).read_to_string(&mut text).map_err(|_| invalid(crate::i18n::pick("liste des mods", "mod list")))?;
             list = Some(text);
             continue;
         }
@@ -186,14 +186,14 @@ pub fn parse_r2z(bytes: &[u8]) -> AppResult<R2Profile> {
             continue;
         }
         let mut data = Vec::new();
-        (&mut entry).take(MAX_CONFIG_FILE + 1).read_to_end(&mut data).map_err(|_| invalid("réglages"))?;
+        (&mut entry).take(MAX_CONFIG_FILE + 1).read_to_end(&mut data).map_err(|_| invalid(crate::i18n::pick("réglages", "settings")))?;
         total += data.len() as u64;
         if data.len() as u64 > MAX_CONFIG_FILE || total > MAX_CONFIG_TOTAL {
             continue;
         }
         configs.push(ConfigFile { path, data });
     }
-    let (name, community, mods) = parse_list(&list.ok_or_else(|| invalid("export.r2x manquant"))?)?;
+    let (name, community, mods) = parse_list(&list.ok_or_else(|| invalid(crate::i18n::pick("export.r2x manquant", "export.r2x missing")))?)?;
     Ok(R2Profile { name, community, mods, configs })
 }
 
@@ -239,7 +239,11 @@ fn add_configs(zip: &mut zip::ZipWriter<Cursor<Vec<u8>>>, root: &Path, dir: &Pat
         }
         if *total + meta.len() > (MAX_ZIP as u64) * 3 / 4 {
             return Err(AppError::ShareInvalid(
-                "Les réglages des mods sont trop gros pour un code : partage le profil sans eux.".into(),
+                crate::i18n::pick(
+                    "Les réglages des mods sont trop gros pour un code : partage le profil sans eux.",
+                    "The mods' settings are too big for a code: share the profile without them.",
+                )
+                .into(),
             ));
         }
         let Ok(data) = fs::read(&path) else { continue };
@@ -262,7 +266,13 @@ pub fn build_r2z(name: &str, mods: &[(String, String)], config_dir: Option<&Path
     }
     let bytes = zip.finish().map_err(|e| AppError::Io(e.to_string()))?.into_inner();
     if bytes.len() > MAX_ZIP {
-        return Err(AppError::ShareInvalid("Ce profil est trop gros pour un code : partage-le sans les réglages des mods.".into()));
+        return Err(AppError::ShareInvalid(
+            crate::i18n::pick(
+                "Ce profil est trop gros pour un code : partage-le sans les réglages des mods.",
+                "This profile is too big for a code: share it without the mods' settings.",
+            )
+            .into(),
+        ));
     }
     Ok(bytes)
 }

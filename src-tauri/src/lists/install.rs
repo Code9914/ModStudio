@@ -176,12 +176,14 @@ async fn fetch_inner(
         .and_then(|v| v.to_str().ok())
         .is_some_and(|t| t.starts_with("text/html"));
     if html && status != StatusCode::NOT_FOUND {
-        return Err(AppError::DownloadRefused("le site a renvoyé une page web au lieu du fichier".into()));
+        return Err(AppError::DownloadRefused(
+            crate::i18n::pick("le site a renvoyé une page web au lieu du fichier", "the site sent back a web page instead of the file").into(),
+        ));
     }
     if !status.is_success() {
         return Err(match status {
             StatusCode::NOT_FOUND => AppError::NotFound,
-            other => AppError::Api { status: other.as_u16(), message: other.canonical_reason().unwrap_or("erreur").into(), error_ref: None },
+            other => AppError::Api { status: other.as_u16(), message: other.canonical_reason().unwrap_or(crate::i18n::pick("erreur", "error")).into(), error_ref: None },
         });
     }
     let name = server_name(&response);
@@ -201,7 +203,7 @@ async fn fetch_inner(
         file.write_all(&chunk).map_err(installer::io_err)?;
         received += chunk.len() as u64;
         if received > limit {
-            return Err(AppError::DownloadRefused("taille de fichier inattendue".into()));
+            return Err(AppError::DownloadRefused(crate::i18n::pick("taille de fichier inattendue", "unexpected file size").into()));
         }
         if last.elapsed() >= Duration::from_millis(120) {
             progress(received, total);
@@ -232,8 +234,8 @@ fn download_error(e: AppError, name: &str, url: &str) -> AppError {
     let host = Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_default();
     let detail = match e {
         AppError::Network(d) => d,
-        AppError::NotFound => "fichier introuvable".into(),
-        AppError::Api { status, .. } => format!("erreur {status}"),
+        AppError::NotFound => crate::i18n::pick("fichier introuvable", "file not found").into(),
+        AppError::Api { status, .. } => crate::tr!("erreur {status}", "error {status}"),
         AppError::DownloadRefused(d) => d,
         other => return other,
     };
@@ -302,7 +304,7 @@ fn plan(game: &GameDef, catalog: &Catalog, config: &GameInstall, target: &ListMo
             plan.order.push(Step { id, version: ver });
             continue;
         }
-        let m = catalog.get(&id).ok_or_else(|| AppError::InvalidArgument(format!("« {id} » n'est plus dans la liste.")))?;
+        let m = catalog.get(&id).ok_or_else(|| AppError::InvalidArgument(crate::tr!("« {id} » n'est plus dans la liste.", "\"{id}\" is no longer in the list.")))?;
         let v = m.version(&ver).unwrap_or_else(|| m.newest());
         let mut deps: Vec<(String, String)> = v.dependencies.iter().filter(|d| !d.optional).map(|d| (d.id.clone(), d.version.clone())).collect();
         if let Some(l) = loader
@@ -329,7 +331,7 @@ fn plan(game: &GameDef, catalog: &Catalog, config: &GameInstall, target: &ListMo
                 _ => {}
             }
             if visited.len() > MAX_MODS {
-                return Err(AppError::InvalidArgument("ce mod demande beaucoup trop d'autres mods.".into()));
+                return Err(AppError::InvalidArgument(crate::i18n::pick("ce mod demande beaucoup trop d'autres mods.", "this mod requires far too many other mods.").into()));
             }
             children.push((d.id.clone(), d.latest.clone()));
         }
@@ -357,7 +359,11 @@ fn check_conflicts(game: &GameDef, catalog: &Catalog, config: &GameInstall, plan
         let Some(m) = catalog.get(&step.id) else { continue };
         let Some(v) = m.version(&step.version) else { continue };
         let refuse = |name: &str| {
-            AppError::InvalidArgument(format!("« {} » ne marche pas avec « {name} », déjà installé : désinstalle-le d'abord.", m.name))
+            AppError::InvalidArgument(crate::tr!(
+                "« {} » ne marche pas avec « {name} », déjà installé : désinstalle-le d'abord.",
+                "\"{}\" doesn't work with \"{name}\", which is already installed: uninstall it first.",
+                m.name
+            ))
         };
         for c in &v.conflicts {
             if let Some((_, ver, name)) = installed.iter().find(|(id, ..)| id.eq_ignore_ascii_case(&c.id))
@@ -397,12 +403,14 @@ impl ListsState {
         let path = PathBuf::from(folder);
         installer::check_folder(&path)?;
         if !path.is_dir() {
-            return Err(AppError::InvalidArgument(format!("le dossier n'existe pas : {folder}")));
+            return Err(AppError::InvalidArgument(crate::tr!("le dossier n'existe pas : {folder}", "the folder doesn't exist: {folder}")));
         }
         if !game.validate(&path) {
-            return Err(AppError::InvalidArgument(format!(
+            return Err(AppError::InvalidArgument(crate::tr!(
                 "ce dossier ne contient pas {} ({} introuvable). Choisis le dossier où se trouve son exécutable.",
-                game.name, game.exe[0]
+                "this folder doesn't contain {} ({} not found). Choose the folder that has its executable.",
+                game.name,
+                game.exe[0]
             )));
         }
         let id = game_id(game.id);
@@ -414,7 +422,9 @@ impl ListsState {
             && !existing.mods.is_empty()
             && existing.folder != path
         {
-            return Err(AppError::InvalidArgument("désinstalle d'abord les mods de ce jeu pour changer de dossier.".into()));
+            return Err(AppError::InvalidArgument(
+                crate::i18n::pick("désinstalle d'abord les mods de ce jeu pour changer de dossier.", "uninstall this game's mods first to change folders.").into(),
+            ));
         }
         let mods = lib.games.get(&id).map(|g| g.mods.clone()).unwrap_or_default();
         let config = GameInstall {
@@ -471,7 +481,7 @@ impl ListsState {
         let gid = game_id(game.id);
         let config = self.config(game).ok_or(AppError::NoGameFolder)?;
         if !config.folder.is_dir() {
-            return Err(AppError::Io(format!("le dossier du jeu n'existe plus : {}", config.folder.display())));
+            return Err(AppError::Io(crate::tr!("le dossier du jeu n'existe plus : {}", "the game folder no longer exists: {}", config.folder.display())));
         }
         let cancel = Arc::new(AtomicBool::new(false));
         {
@@ -484,25 +494,40 @@ impl ListsState {
         let _guard = JobGuard { state: self, game_id: gid };
         emit(InstallEvent::Preparing);
         let catalog = self.catalog(game, false).await?;
-        let target = catalog.get(id).ok_or_else(|| AppError::InvalidArgument(format!("ce mod n'est plus dans la liste {}.", game.list_name)))?;
+        let target = catalog.get(id).ok_or_else(|| AppError::InvalidArgument(crate::tr!("ce mod n'est plus dans la liste {}.", "this mod is no longer in the {} list.", game.list_name())))?;
         let version = match version {
             Some(v) => target
                 .version(&v)
                 .map(|x| x.version.clone())
-                .ok_or_else(|| AppError::InvalidArgument(format!("la version {v} de « {} » n'est plus dans la liste.", target.name)))?,
+                .ok_or_else(|| {
+                    AppError::InvalidArgument(crate::tr!(
+                        "la version {v} de « {} » n'est plus dans la liste.",
+                        "version {v} of \"{}\" is no longer in the list.",
+                        target.name
+                    ))
+                })?,
             None => target.latest.clone(),
         };
         if target.broken {
-            return Err(AppError::InvalidArgument(format!("« {} » est signalé comme cassé : il ne marche plus avec le jeu.", target.name)));
+            return Err(AppError::InvalidArgument(crate::tr!(
+                "« {} » est signalé comme cassé : il ne marche plus avec le jeu.",
+                "\"{}\" is reported as broken: it no longer works with the game.",
+                target.name
+            )));
         }
         if !target.compatible {
             return Err(AppError::WrongPlatform(
-                target.note.clone().unwrap_or_else(|| format!("« {} » ne se charge pas dans le jeu sur ce PC.", target.name)),
+                target.note.clone().unwrap_or_else(|| {
+                    crate::tr!("« {} » ne se charge pas dans le jeu sur ce PC.", "\"{}\" doesn't load in the game on this PC.", target.name)
+                }),
             ));
         }
         // Chargeur absent de la liste (site injoignable) et pas dans le jeu : rien n'est installé sans lui.
         if game.loader_installable() && catalog.loader().is_none() && !game.loader_present(&config) {
-            return Err(AppError::ListUnavailable { list: game.loader_name.to_string(), detail: "version introuvable, réessaie plus tard".into() });
+            return Err(AppError::ListUnavailable {
+                list: game.loader_name.to_string(),
+                detail: crate::i18n::pick("version introuvable, réessaie plus tard", "version not found, try again later").into(),
+            });
         }
         let plan = plan(game, &catalog, &config, target, &version)?;
         check_conflicts(game, &catalog, &config, &plan)?;
@@ -607,7 +632,7 @@ impl ListsState {
             (config, owned_by_others(&libs, gid, m.mod_id), old)
         };
         if old.as_ref().is_some_and(|o| o.disabled) {
-            return Err(AppError::InvalidArgument(format!("réactive « {} » avant de le mettre à jour.", m.name)));
+            return Err(AppError::InvalidArgument(crate::tr!("réactive « {} » avant de le mettre à jour.", "enable \"{}\" again before updating it.", m.name)));
         }
         let old_files: HashSet<(String, String)> = old
             .iter()
@@ -628,7 +653,13 @@ impl ListsState {
             let root = config.folder_for(&key).map(Path::to_path_buf).ok_or_else(|| AppError::NeedGameDir(game.name.to_string()))?;
             let dest_dir = game
                 .resolve(&config.folder, &raw_dir)
-                .ok_or_else(|| AppError::InvalidArgument(format!("dossier des données de {} introuvable dans le dossier du jeu.", game.name)))?;
+                .ok_or_else(|| {
+                    AppError::InvalidArgument(crate::tr!(
+                        "dossier des données de {} introuvable dans le dossier du jeu.",
+                        "{}'s data folder not found in the game folder.",
+                        game.name
+                    ))
+                })?;
             let owners = others.get(&root);
             let unowned = |rel: &str| !old_files.contains(&(key.clone(), rel.to_string())) && owners.is_none_or(|o| !o.contains_key(rel));
             // Fichier identique déjà là (installé à la main) : repris tel quel.
@@ -649,7 +680,7 @@ impl ListsState {
             let mut placed: Vec<(PathBuf, String)> = Vec::new();
             match place {
                 Place::File { name, .. } => {
-                    let n = name.clone().or(given).ok_or_else(|| AppError::BadArchive("nom de fichier inconnu".into()))?;
+                    let n = name.clone().or(given).ok_or_else(|| AppError::BadArchive(crate::i18n::pick("nom de fichier inconnu", "unknown file name").into()))?;
                     // ChilloutVR : MelonLoader ne lit que les `.dll`.
                     let n = if game.kind == Kind::ChilloutVr && !n.to_ascii_lowercase().ends_with(".dll") {
                         format!("{}.dll", installer::safe_name(&m.name))
@@ -846,7 +877,17 @@ impl ListsState {
                 r.files = removal.remaining;
             }
             self.save_library(&lib)?;
-            return Err(AppError::Io(format!("{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie.")));
+            return Err(AppError::Io(if n == 1 {
+                crate::tr!(
+                    "{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie.",
+                    "{n} file couldn't be deleted: {first}. Close the game, then try again."
+                )
+            } else {
+                crate::tr!(
+                    "{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie.",
+                    "{n} files couldn't be deleted, including {first}. Close the game, then try again."
+                )
+            }));
         }
         restore_originals(&game.folder, &record.files);
         for part in &record.parts {

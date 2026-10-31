@@ -343,13 +343,21 @@
     cancelCurrent();
   }
 
-  /** Nom du profil créé (mod.io, Nexus) : jamais « Principal », ni un profil à toi du même nom. */
+  /** Premier profil d'un jeu, qui garde l'état d'avant (« Main » en anglais). */
+  const isMain = (name: string) => ["principal", "main"].includes(name.toLowerCase());
+
+  /** Où l'état actuel sera gardé : le profil actif, sinon « Principal » (ou « Avant l'import » s'il existe déjà). */
+  const keptIn = $derived(
+    config?.activeProfile ?? (config?.profiles?.some((p) => isMain(p.name)) ? tr("Avant l'import", "Before import") : tr("Principal", "Main")),
+  );
+
+  /** Nom du profil créé : jamais « Principal », ni un profil à toi du même nom. */
   const profileName = $derived.by(() => {
     if (!profile) return "";
     const clip = (t: string, n: number) => [...t].slice(0, n).join("").trim();
     const taken = new Set((config?.profiles ?? []).map((p) => p.name.toLowerCase()));
     const base = clip(profile.name, 40);
-    if (base.toLowerCase() !== "principal" && !taken.has(base.toLowerCase())) return base;
+    if (!isMain(base) && !taken.has(base.toLowerCase())) return base;
     const suffix = tr(" (importé)", " (imported)");
     return clip(profile.name, 40 - suffix.length) + suffix;
   });
@@ -626,13 +634,10 @@
               <span>
                 {#if english}
                   Create the "{profileName}" profile with these mods: your other mods are disabled in it, and you'll find
-                  your current mods in the "{config?.activeProfile ??
-                    (config?.profiles?.some((p) => p.name.toLowerCase() === "principal") ? "Avant l'import" : "Principal")}"
-                  profile.
+                  your current mods in the "{keptIn}" profile.
                 {:else}
                   Créer le profil « {profileName} » avec ces mods : tes autres mods y sont désactivés, et tu retrouves tes
-                  mods actuels dans le profil « {config?.activeProfile ??
-                    (config?.profiles?.some((p) => p.name.toLowerCase() === "principal") ? "Avant l'import" : "Principal")} ».
+                  mods actuels dans le profil « {keptIn} ».
                 {/if}
               </span>
             </label>

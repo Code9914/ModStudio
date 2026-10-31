@@ -186,20 +186,20 @@ fn id_ok(source: Source, id: &str) -> bool {
 /// Remet un profil lu dans des limites sûres ; refuse ce qui ne peut pas être
 /// installé.
 pub fn validate(mut p: SharedProfile) -> AppResult<SharedProfile> {
-    let bad = |m: &str| AppError::ShareInvalid(format!("Ce profil est abîmé : {m}."));
+    let bad = |m: &str| AppError::ShareInvalid(crate::tr!("Ce profil est abîmé : {m}.", "This profile is damaged: {m}."));
     p.game.name = clean_text(&p.game.name, 100);
     p.game.key = p.game.key.trim().to_string();
     if !key_ok(&p.game.key) {
-        return Err(bad("jeu inconnu"));
+        return Err(bad(crate::i18n::pick("jeu inconnu", "unknown game")));
     }
     match p.source {
-        Source::Modio if p.game.id <= 0 => return Err(bad("jeu mod.io inconnu")),
-        Source::Nexus if p.game.id <= 0 || p.game.key.is_empty() => return Err(bad("jeu Nexus Mods inconnu")),
-        Source::Cl if p.game.key.is_empty() => return Err(bad("jeu inconnu")),
+        Source::Modio if p.game.id <= 0 => return Err(bad(crate::i18n::pick("jeu mod.io inconnu", "unknown mod.io game"))),
+        Source::Nexus if p.game.id <= 0 || p.game.key.is_empty() => return Err(bad(crate::i18n::pick("jeu Nexus Mods inconnu", "unknown Nexus Mods game"))),
+        Source::Cl if p.game.key.is_empty() => return Err(bad(crate::i18n::pick("jeu inconnu", "unknown game"))),
         _ => {}
     }
     if p.game.name.is_empty() {
-        p.game.name = if p.game.key.is_empty() { "Jeu".into() } else { p.game.key.clone() };
+        p.game.name = if p.game.key.is_empty() { crate::i18n::pick("Jeu", "Game").into() } else { p.game.key.clone() };
     }
     // Même limite que les profils d'un jeu.
     p.name = clean_text(&p.name, 40);
@@ -207,14 +207,14 @@ pub fn validate(mut p: SharedProfile) -> AppResult<SharedProfile> {
         p.name = p.game.name.chars().take(60).collect();
     }
     if p.mods.len() > MAX_MODS {
-        return Err(bad("trop de mods"));
+        return Err(bad(crate::i18n::pick("trop de mods", "too many mods")));
     }
     let mut seen = HashSet::new();
     let mut mods = Vec::with_capacity(p.mods.len());
     for mut m in p.mods {
         m.id = m.id.trim().to_string();
         if !id_ok(p.source, &m.id) {
-            return Err(bad(&format!("mod « {} » illisible", clean_text(&m.id, 60))));
+            return Err(bad(&crate::tr!("mod « {} » illisible", "unreadable mod \"{}\"", clean_text(&m.id, 60))));
         }
         if !seen.insert(m.id.to_lowercase()) {
             continue;
@@ -228,7 +228,7 @@ pub fn validate(mut p: SharedProfile) -> AppResult<SharedProfile> {
         mods.push(m);
     }
     if mods.is_empty() {
-        return Err(AppError::ShareInvalid("Ce profil ne contient aucun mod.".into()));
+        return Err(AppError::ShareInvalid(crate::i18n::pick("Ce profil ne contient aucun mod.", "This profile doesn't contain any mods.").into()));
     }
     p.mods = mods;
     Ok(p)
@@ -249,17 +249,21 @@ pub fn encode(profile: &SharedProfile) -> AppResult<String> {
 
 fn from_json(bytes: &[u8]) -> AppResult<SharedProfile> {
     let value: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|_| AppError::ShareInvalid("Ce fichier n'est pas un profil ModStudio.".into()))?;
+        serde_json::from_slice(bytes).map_err(|_| AppError::ShareInvalid(crate::i18n::pick("Ce fichier n'est pas un profil ModStudio.", "This file isn't a ModStudio profile.").into()))?;
     if value.get("format").and_then(|f| f.as_str()) != Some(FORMAT) {
-        return Err(AppError::ShareInvalid("Ce fichier n'est pas un profil ModStudio.".into()));
+        return Err(AppError::ShareInvalid(crate::i18n::pick("Ce fichier n'est pas un profil ModStudio.", "This file isn't a ModStudio profile.").into()));
     }
     let v = value.get("v").and_then(|v| v.as_u64()).unwrap_or(0);
     if v > u64::from(VERSION) {
         return Err(AppError::ShareInvalid(
-            "Ce profil vient d'une version plus récente de ModStudio : mets ModStudio à jour pour l'importer.".into(),
+            crate::i18n::pick(
+                "Ce profil vient d'une version plus récente de ModStudio : mets ModStudio à jour pour l'importer.",
+                "This profile comes from a newer version of ModStudio: update ModStudio to import it.",
+            )
+            .into(),
         ));
     }
-    let wire: Wire = serde_json::from_value(value).map_err(|e| AppError::ShareInvalid(format!("Ce profil est abîmé ({e}).")))?;
+    let wire: Wire = serde_json::from_value(value).map_err(|e| AppError::ShareInvalid(crate::tr!("Ce profil est abîmé ({e}).", "This profile is damaged ({e}).")))?;
     validate(wire.profile)
 }
 
@@ -273,16 +277,24 @@ pub fn find_code(text: &str) -> Option<&str> {
 }
 
 pub fn decode(text: &str) -> AppResult<SharedProfile> {
-    let invalid = || AppError::ShareInvalid("Ce code de profil est incomplet ou abîmé : copie-le en entier.".into());
+    let invalid = || {
+        AppError::ShareInvalid(
+            crate::i18n::pick(
+                "Ce code de profil est incomplet ou abîmé : copie-le en entier.",
+                "This profile code is incomplete or damaged: copy all of it.",
+            )
+            .into(),
+        )
+    };
     if text.len() > MAX_CODE {
-        return Err(AppError::ShareInvalid("Ce code est trop long pour être un profil.".into()));
+        return Err(AppError::ShareInvalid(crate::i18n::pick("Ce code est trop long pour être un profil.", "This code is too long to be a profile.").into()));
     }
     let body = find_code(text).ok_or_else(invalid)?;
     let packed = URL_SAFE_NO_PAD.decode(body).map_err(|_| invalid())?;
     let mut json = Vec::new();
     DeflateDecoder::new(packed.as_slice()).take(MAX_JSON + 1).read_to_end(&mut json).map_err(|_| invalid())?;
     if json.len() as u64 > MAX_JSON {
-        return Err(AppError::ShareInvalid("Ce profil est trop gros.".into()));
+        return Err(AppError::ShareInvalid(crate::i18n::pick("Ce profil est trop gros.", "This profile is too big.").into()));
     }
     from_json(&json)
 }
@@ -308,7 +320,11 @@ pub fn classify(text: &str) -> AppResult<Pasted<'_>> {
         return Ok(Pasted::R2modman(t));
     }
     Err(AppError::ShareInvalid(
-        "Ce n'est pas un code de profil : colle un code ModStudio (« MS1-… ») ou un code r2modman.".into(),
+        crate::i18n::pick(
+            "Ce n'est pas un code de profil : colle un code ModStudio (« MS1-… ») ou un code r2modman.",
+            "This isn't a profile code: paste a ModStudio code (\"MS1-…\") or an r2modman code.",
+        )
+        .into(),
     ))
 }
 
@@ -374,6 +390,13 @@ fn game_of(state: &AppState, source: Source, game_id: i64) -> AppResult<GameInst
 
 // ---------------------------------------------------------------- Réglages r2modman
 
+fn no_bepinex_configs() -> &'static str {
+    crate::i18n::pick(
+        "Ce jeu ne charge pas ses mods avec BepInEx : les réglages du profil ne s'y appliquent pas.",
+        "This game doesn't load its mods with BepInEx: the profile's settings don't apply to it.",
+    )
+}
+
 /// Où vont les réglages d'un profil r2modman : `BepInEx/config` du jeu.
 fn config_dir(game: &GameInstall) -> Option<PathBuf> {
     let dir = game.folder.join("BepInEx").join("config");
@@ -396,7 +419,7 @@ fn safe_rel(rel: &str) -> Option<PathBuf> {
 /// copiés avant dans `backup` (dossier de ModStudio).
 pub fn write_configs(game: &GameInstall, files: &[r2modman::ConfigFile], backup: &Path) -> AppResult<ConfigsApplied> {
     let dir = config_dir(game).ok_or_else(|| {
-        AppError::ShareInvalid("Ce jeu ne charge pas ses mods avec BepInEx : les réglages du profil ne s'y appliquent pas.".into())
+        AppError::ShareInvalid(no_bepinex_configs().into())
     })?;
     fs::create_dir_all(&dir).map_err(|e| AppError::Io(e.to_string()))?;
     let is_link = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
@@ -549,10 +572,12 @@ pub fn share_export(state: State<'_, AppState>, source: Source, game_id: i64) ->
     let game = game_of(&state, source, game_id)?;
     let (profile, left_out) = export(source, &game);
     if profile.mods.is_empty() {
-        return Err(AppError::ShareInvalid("Aucun mod activé à partager pour ce jeu.".into()));
+        return Err(AppError::ShareInvalid(crate::i18n::pick("Aucun mod activé à partager pour ce jeu.", "No enabled mods to share for this game.").into()));
     }
     if matches!(source, Source::Nexus | Source::Ts | Source::Cl) && profile.game.key.is_empty() {
-        return Err(AppError::ShareInvalid("ModStudio ne retrouve pas ce jeu : impossible de le partager.".into()));
+        return Err(AppError::ShareInvalid(
+            crate::i18n::pick("ModStudio ne retrouve pas ce jeu : impossible de le partager.", "ModStudio can't find this game, so it can't be shared.").into(),
+        ));
     }
     let code = encode(&profile)?;
     Ok(ShareExport { profile, code, left_out })
@@ -572,7 +597,9 @@ pub async fn share_decode(state: State<'_, AppState>, text: String) -> AppResult
 pub async fn share_open_file(state: State<'_, AppState>, path: PathBuf) -> AppResult<ShareImport> {
     let meta = fs::metadata(&path).map_err(|e| AppError::Io(e.to_string()))?;
     if !meta.is_file() || meta.len() > MAX_FILE {
-        return Err(AppError::ShareInvalid("Ce fichier n'est pas un profil (ou il est trop gros).".into()));
+        return Err(AppError::ShareInvalid(
+            crate::i18n::pick("Ce fichier n'est pas un profil (ou il est trop gros).", "This file isn't a profile (or it's too big).").into(),
+        ));
     }
     let bytes = fs::read(&path).map_err(|e| AppError::Io(e.to_string()))?;
     if bytes.starts_with(b"PK") {
@@ -611,7 +638,9 @@ pub async fn share_r2modman_create(state: State<'_, AppState>, game_id: i64, nam
         .filter_map(|m| Some((m.file_name.clone().filter(|f| !f.starts_with("rml:"))?, m.version.clone()?)))
         .collect();
     if mods.is_empty() {
-        return Err(AppError::ShareInvalid("Aucun mod de Thunderstore activé à partager pour ce jeu.".into()));
+        return Err(AppError::ShareInvalid(
+            crate::i18n::pick("Aucun mod de Thunderstore activé à partager pour ce jeu.", "No enabled Thunderstore mods to share for this game.").into(),
+        ));
     }
     let name = clean_text(&name, 60);
     let name = if name.is_empty() { game.game_name.clone() } else { name };
@@ -626,12 +655,20 @@ pub async fn share_r2modman_create(state: State<'_, AppState>, game_id: i64, nam
 pub fn share_apply_configs(state: State<'_, AppState>, token: String, game_id: i64) -> AppResult<ConfigsApplied> {
     let game = game_of(&state, Source::Ts, game_id)?;
     if config_dir(&game).is_none() {
-        return Err(AppError::ShareInvalid("Ce jeu ne charge pas ses mods avec BepInEx : les réglages du profil ne s'y appliquent pas.".into()));
+        return Err(AppError::ShareInvalid(no_bepinex_configs().into()));
     }
     let files = state
         .share
         .get(&token)
-        .ok_or_else(|| AppError::ShareInvalid("Les réglages de ce profil ne sont plus en mémoire : importe-le à nouveau.".into()))?;
+        .ok_or_else(|| {
+            AppError::ShareInvalid(
+                crate::i18n::pick(
+                    "Les réglages de ce profil ne sont plus en mémoire : importe-le à nouveau.",
+                    "This profile's settings are no longer in memory: import it again.",
+                )
+                .into(),
+            )
+        })?;
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let backup = state.library_path.with_file_name("profile-backups").join(format!("{game_id}-{stamp}"));
     let applied = write_configs(&game, &files, &backup)?;

@@ -81,8 +81,8 @@ pub fn loader_label(id: &str) -> &'static str {
         "bepisloader" => "BepisLoader",
         "rivet" => "Rivet",
         "mio" => "Mio",
-        "none" => "aucun chargeur",
-        _ => "un chargeur inconnu",
+        "none" => crate::i18n::pick("aucun chargeur", "no mod loader"),
+        _ => crate::i18n::pick("un chargeur inconnu", "an unknown mod loader"),
     }
 }
 

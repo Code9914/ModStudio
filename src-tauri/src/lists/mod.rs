@@ -255,7 +255,7 @@ impl Net {
             .expect("client HTTP");
         let policy = redirect::Policy::custom(|attempt| {
             if attempt.previous().len() > 5 {
-                attempt.error("trop de redirections")
+                attempt.error(crate::i18n::pick("trop de redirections", "too many redirects"))
             } else if download_allowed(attempt.url()) {
                 attempt.follow()
             } else {
@@ -315,13 +315,13 @@ impl Net {
             .await
             .map_err(|e| unavailable(e.without_url().to_string()))?;
         if !response.status().is_success() {
-            return Err(unavailable(format!("erreur {}", response.status().as_u16())));
+            return Err(unavailable(crate::tr!("erreur {}", "error {}", response.status().as_u16())));
         }
         let mut out = Vec::new();
         while let Some(chunk) = response.chunk().await.map_err(|e| unavailable(e.without_url().to_string()))? {
             out.extend_from_slice(&chunk);
             if out.len() > LIST_LIMIT {
-                return Err(unavailable("réponse démesurée".into()));
+                return Err(unavailable(crate::i18n::pick("réponse démesurée", "response too large").into()));
             }
         }
         Ok(out)
@@ -364,7 +364,14 @@ impl ListsState {
     pub async fn catalog(&self, game: &GameDef, refresh: bool) -> AppResult<Arc<Catalog>> {
         let folder = self.config(game).map(|c| c.folder);
         // Beat Saber : la liste dépend de la version du jeu installée (relue après une mise à jour).
-        let key = format!("{}|{}|{}", game.id, game.variant(folder.as_deref()), folder.as_deref().map(|f| game.cache_hint(f)).unwrap_or_default());
+        // Les textes (catégories, remarques) suivent la langue de l'interface.
+        let key = format!(
+            "{}|{}|{}|{}",
+            game.id,
+            game.variant(folder.as_deref()),
+            folder.as_deref().map(|f| game.cache_hint(f)).unwrap_or_default(),
+            crate::i18n::english()
+        );
         let mut slot = self.catalogs.lock().await;
         if !refresh && let Some((at, c)) = slot.get(&key) && now() - at < CACHE_AGE.as_secs() as i64 {
             return Ok(c.clone());
@@ -398,18 +405,18 @@ fn view(g: &GameDef) -> ListGameView {
         id: g.id,
         game_id: game_id(g.id),
         name: g.name,
-        list_name: g.list_name,
+        list_name: g.list_name(),
         list_url: g.list_url,
         loader: g.loader_name,
         steam_app_id: g.steam_app_id,
         cover: format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{}/library_600x900.jpg", g.steam_app_id),
         hero: format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{}/library_hero.jpg", g.steam_app_id),
-        about: g.about,
+        about: g.about(),
     }
 }
 
 fn def(game: &str) -> AppResult<&'static GameDef> {
-    games::game(game).ok_or_else(|| AppError::InvalidArgument(format!("jeu inconnu : {game}")))
+    games::game(game).ok_or_else(|| AppError::InvalidArgument(crate::tr!("jeu inconnu : {game}", "unknown game: {game}")))
 }
 
 fn others(state: &AppState) -> Vec<Library> {

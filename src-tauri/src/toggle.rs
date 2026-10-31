@@ -318,6 +318,16 @@ pub fn forget_mod(game: &mut GameInstall, mod_id: i64) {
     }
 }
 
+/// Nom du premier profil, qui garde l'état d'avant (« Main » en anglais).
+fn main_name() -> &'static str {
+    crate::i18n::pick("Principal", "Main")
+}
+
+/// Ce nom est celui du premier profil (dans l'une ou l'autre langue).
+fn is_main(name: &str) -> bool {
+    name.eq_ignore_ascii_case("Principal") || name.eq_ignore_ascii_case("Main")
+}
+
 /// Nouveau profil avec les mods activés en ce moment ; il devient le profil
 /// actif. Le premier profil créé garde aussi l'état actuel sous « Principal ».
 pub fn create_profile(game: &mut GameInstall, name: &str) -> AppResult<()> {
@@ -326,8 +336,8 @@ pub fn create_profile(game: &mut GameInstall, name: &str) -> AppResult<()> {
         return Err(AppError::InvalidArgument(crate::tr!("le profil « {name} » existe déjà.", "the profile \"{name}\" already exists.")));
     }
     let enabled = enabled_mods(game);
-    if game.profiles.is_empty() && !name.eq_ignore_ascii_case("Principal") {
-        game.profiles.push(Profile { name: "Principal".into(), mods: enabled.clone() });
+    if game.profiles.is_empty() && !is_main(&name) {
+        game.profiles.push(Profile { name: main_name().into(), mods: enabled.clone() });
     }
     game.profiles.push(Profile { name: name.clone(), mods: enabled });
     game.active_profile = Some(name);
@@ -340,17 +350,21 @@ pub fn create_profile(game: &mut GameInstall, name: &str) -> AppResult<()> {
 /// l'import » si « Principal » existe déjà) qui devient le profil actif.
 pub fn create_profile_with(game: &mut GameInstall, name: &str, mods: &[i64]) -> AppResult<()> {
     let name = check_name(name)?;
-    if name.eq_ignore_ascii_case("Principal") {
+    if is_main(&name) {
         return Err(AppError::InvalidArgument(crate::tr!(
-            "« Principal » garde tes mods d'avant l'import : choisis un autre nom.",
-            "your \"Principal\" profile keeps your mods from before the import: choose another name."
+            "« {name} » garde tes mods d'avant l'import : choisis un autre nom.",
+            "\"{name}\" keeps your mods from before the import: choose another name."
         )));
     }
     let wanted: Vec<i64> = mods.iter().copied().filter(|id| game.mods.contains_key(id)).collect();
     if game.active_profile.is_some() {
         sync_active(game);
     } else {
-        let backup = if game.profiles.iter().any(|p| p.name.eq_ignore_ascii_case("Principal")) { "Avant l'import" } else { "Principal" };
+        let backup = if game.profiles.iter().any(|p| is_main(&p.name)) {
+            crate::i18n::pick("Avant l'import", "Before import")
+        } else {
+            main_name()
+        };
         let enabled = enabled_mods(game);
         match game.profiles.iter_mut().find(|p| p.name == backup) {
             Some(p) => p.mods = enabled,

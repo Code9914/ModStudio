@@ -209,20 +209,20 @@ struct Readme {
 /// Identifiant d'un jeu (`lethal-company`).
 pub fn check_community(c: &str) -> AppResult<()> {
     let ok = !c.is_empty() && c.len() <= 64 && c.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-');
-    if ok { Ok(()) } else { Err(AppError::InvalidArgument(format!("jeu « {c} »"))) }
+    if ok { Ok(()) } else { Err(AppError::InvalidArgument(crate::tr!("jeu « {c} »", "game \"{c}\""))) }
 }
 
 /// Équipe ou nom d'un mod (`notnotnotswipez`, `MoreCompany`).
 pub fn check_part(s: &str) -> AppResult<()> {
     let ok = !s.is_empty() && s.len() <= 128 && s.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_');
-    if ok { Ok(()) } else { Err(AppError::InvalidArgument(format!("nom « {s} »"))) }
+    if ok { Ok(()) } else { Err(AppError::InvalidArgument(crate::tr!("nom « {s} »", "name \"{s}\""))) }
 }
 
 /// Numéro de version (`1.14.0`).
 pub fn check_version(v: &str) -> AppResult<()> {
     let parts: Vec<&str> = v.split('.').collect();
     let ok = (1..=4).contains(&parts.len()) && parts.iter().all(|p| !p.is_empty() && p.len() <= 9 && p.chars().all(|c| c.is_ascii_digit()));
-    if ok { Ok(()) } else { Err(AppError::InvalidArgument(format!("version « {v} »"))) }
+    if ok { Ok(()) } else { Err(AppError::InvalidArgument(crate::tr!("version « {v} »", "version \"{v}\""))) }
 }
 
 /// `Namespace-Nom-1.2.3` → (équipe, nom, version).
@@ -268,7 +268,7 @@ impl TsClient {
         let policy_base = base.clone();
         let policy = redirect::Policy::custom(move |attempt| {
             if attempt.previous().len() > 5 {
-                attempt.error("trop de redirections")
+                attempt.error(crate::i18n::pick("trop de redirections", "too many redirects"))
             } else if download_host_allowed(attempt.url(), &policy_base) {
                 attempt.follow()
             } else {
@@ -320,11 +320,12 @@ impl TsClient {
         if !status.is_success() {
             return Err(AppError::ThunderstoreApi {
                 status: status.as_u16(),
-                message: status.canonical_reason().unwrap_or("erreur").to_string(),
+                message: status.canonical_reason().unwrap_or(crate::i18n::pick("erreur", "error")).to_string(),
             });
         }
         let bytes = response.bytes().await.map_err(|e| AppError::ThunderstoreNetwork(e.without_url().to_string()))?;
-        serde_json::from_slice(&bytes).map_err(|e| AppError::ThunderstoreApi { status: 200, message: format!("réponse inattendue ({e})") })
+        serde_json::from_slice(&bytes)
+            .map_err(|e| AppError::ThunderstoreApi { status: 200, message: crate::tr!("réponse inattendue ({e})", "unexpected response ({e})") })
     }
 
     /// Ce que chaque jeu demande pour charger ses mods (schéma de l'écosystème).
@@ -337,7 +338,7 @@ impl TsClient {
             .await
             .map_err(|e| AppError::ThunderstoreNetwork(e.without_url().to_string()))?;
         if !response.status().is_success() {
-            return Err(AppError::ThunderstoreApi { status: response.status().as_u16(), message: "schéma de l'écosystème".into() });
+            return Err(AppError::ThunderstoreApi { status: response.status().as_u16(), message: crate::i18n::pick("schéma de l'écosystème", "ecosystem schema").into() });
         }
         let bytes = response.bytes().await.map_err(|e| AppError::ThunderstoreNetwork(e.without_url().to_string()))?;
         Ok(bytes.to_vec())
@@ -363,7 +364,7 @@ impl TsClient {
         check_community(community)?;
         let ordering = match ordering {
             "most-downloaded" | "top-rated" | "newest" | "last-updated" => ordering,
-            other => return Err(AppError::InvalidArgument(format!("tri « {other} »"))),
+            other => return Err(AppError::InvalidArgument(crate::tr!("tri « {other} »", "sort order \"{other}\""))),
         };
         let mut params = vec![
             ("page", page.max(1).to_string()),
@@ -496,17 +497,18 @@ impl TsClient {
             return Err(AppError::ThunderstoreRateLimited(30));
         }
         if !status.is_success() {
-            return Err(AppError::ThunderstoreApi { status: status.as_u16(), message: status.canonical_reason().unwrap_or("erreur").to_string() });
+            return Err(AppError::ThunderstoreApi { status: status.as_u16(), message: status.canonical_reason().unwrap_or(crate::i18n::pick("erreur", "error")).to_string() });
         }
         let limit = crate::share::r2modman::MAX_ZIP / 3 * 4 + 1024;
         let mut out = Vec::new();
         while let Some(chunk) = response.chunk().await.map_err(network)? {
             out.extend_from_slice(&chunk);
             if out.len() > limit {
-                return Err(AppError::ShareInvalid("Ce profil r2modman est trop gros.".into()));
+                return Err(AppError::ShareInvalid(crate::i18n::pick("Ce profil r2modman est trop gros.", "This r2modman profile is too big.").into()));
             }
         }
-        String::from_utf8(out).map_err(|_| AppError::ShareInvalid("Ce profil r2modman est illisible.".into()))
+        String::from_utf8(out)
+            .map_err(|_| AppError::ShareInvalid(crate::i18n::pick("Ce profil r2modman est illisible.", "This r2modman profile can't be read.").into()))
     }
 
     /// Publie un profil r2modman (`#r2modman` + base64) : renvoie son code.
@@ -529,14 +531,17 @@ impl TsClient {
             return Err(AppError::ThunderstoreRateLimited(60));
         }
         if !status.is_success() {
-            return Err(AppError::ThunderstoreApi { status: status.as_u16(), message: status.canonical_reason().unwrap_or("erreur").to_string() });
+            return Err(AppError::ThunderstoreApi { status: status.as_u16(), message: status.canonical_reason().unwrap_or(crate::i18n::pick("erreur", "error")).to_string() });
         }
         let created: Created = response
             .json()
             .await
-            .map_err(|e| AppError::ThunderstoreApi { status: 200, message: format!("réponse inattendue ({})", e.without_url()) })?;
+            .map_err(|e| AppError::ThunderstoreApi {
+                status: 200,
+                message: crate::tr!("réponse inattendue ({})", "unexpected response ({})", e.without_url()),
+            })?;
         if !crate::share::r2modman::is_code(&created.key) {
-            return Err(AppError::ThunderstoreApi { status: 200, message: "code de profil inattendu".into() });
+            return Err(AppError::ThunderstoreApi { status: 200, message: crate::i18n::pick("code de profil inattendu", "unexpected profile code").into() });
         }
         Ok(created.key)
     }

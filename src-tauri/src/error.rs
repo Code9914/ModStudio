@@ -6,190 +6,323 @@
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
-#[derive(Debug, thiserror::Error)]
+/// Les messages (dans la langue de l'interface) sont dans `impl Display` plus bas.
+#[derive(Debug)]
 pub enum AppError {
-    #[error("Aucune clé API n'est configurée. Ajoute ta clé dans les réglages.")]
     MissingApiKey,
-
-    #[error("mod.io a refusé la clé API : {message}")]
     Unauthorized { message: String, error_ref: Option<i64> },
-
-    #[error("mod.io a refusé l'accès : {message}")]
     Forbidden { message: String, error_ref: Option<i64> },
-
-    #[error("Élément introuvable sur mod.io.")]
     NotFound,
-
-    #[error("Trop de requêtes envoyées à mod.io. Nouvel essai possible dans {0} s.")]
     RateLimited(u64),
-
-    #[error("mod.io a renvoyé une erreur {status} : {message}")]
     Api { status: u16, message: String, error_ref: Option<i64> },
-
-    #[error("Impossible de joindre mod.io. Vérifie ta connexion internet. ({0})")]
     Network(String),
-
-    #[error("Réponse inattendue de mod.io : {0}")]
     Decode(String),
-
-    #[error("Chemin d'API invalide : {0}")]
     InvalidApiPath(String),
-
-    #[error("Impossible d'enregistrer les réglages : {0}")]
     Storage(String),
-
-    #[error("Paramètre invalide : {0}")]
     InvalidArgument(String),
 
     // ------------------------------------------------------------ Compte
-
-    #[error("Connecte-toi à ton compte mod.io pour faire ça.")]
     NotLoggedIn,
-
-    #[error("Ta session mod.io a expiré ou a été révoquée. Reconnecte-toi.")]
     SessionExpired,
-
-    #[error("mod.io n'autorise pas la connexion par e-mail avec cette clé API ({0}). Utilise plutôt un jeton d'accès.")]
     EmailLoginUnavailable(String),
-
-    #[error("{0}")]
     InvalidCode(String),
-
-    #[error("mod.io a refusé ce jeton d'accès. Vérifie que tu l'as copié en entier et qu'il a les droits de lecture et d'écriture.")]
     InvalidToken,
 
     // ------------------------------------------------------------ Installation
-
-    #[error("Choisis d'abord le dossier où installer les mods de ce jeu.")]
     NoGameFolder,
-
-    #[error("Ce mod est déjà en cours d'installation.")]
     InstallInProgress,
-
-    #[error("Ce mod n'a aucun fichier publié pour PC (Windows).")]
     NoModfile,
-
-    #[error("Installation bloquée : l'antivirus de mod.io a signalé ce fichier.")]
     VirusFlagged,
-
-    #[error("Le fichier téléchargé est abîmé (somme de contrôle différente). Réessaie.")]
     Corrupted,
-
-    #[error("Installation annulée.")]
     Cancelled,
-
-    #[error("Des fichiers existent déjà à cet endroit et ModStudio ne les écrase pas : {0}")]
     Conflict(String),
-
-    #[error("Erreur de fichier : {0}")]
     Io(String),
-
-    #[error("Archive illisible : {0}")]
     BadArchive(String),
-
-    #[error("Le téléchargement de ce fichier a été refusé : {0}")]
     DownloadRefused(String),
-
-    #[error("Ce jeu demande d'être connecté à mod.io pour télécharger ses mods.")]
     LoginRequiredForDownload,
-
-    #[error("L'éditeur de ce jeu n'autorise pas les applications tierces comme ModStudio à accéder à ses mods. Tu peux les parcourir et t'y abonner sur mod.io.")]
     GameClosed,
-
-    #[error("ModStudio ne peut pas installer cette archive ({0}). Installe ce fichier à la main en suivant la page du mod.")]
     UnsupportedArchive(String),
-
-    #[error("{0}")]
     UnknownLayout(String),
-
-    #[error("{0}")]
     WrongPlatform(String),
-
-    #[error("Ce mod s'installe dans le dossier du jeu. Indique où {0} est installé.")]
     NeedGameDir(String),
 
     // ------------------------------------------------------------ Outils de mods
-
-    #[error("Impossible de récupérer {0}. Vérifie ta connexion internet puis réessaie.")]
     ToolUnavailable(String),
-
-    #[error("{0}")]
     ToolMismatch(String),
-
-    #[error("{0} est déjà installé dans le dossier de ce jeu.")]
     ToolPresent(String),
 
     // ------------------------------------------------------------ Nexus Mods
-
-    #[error("Ajoute ta clé API Nexus Mods (dans « Compte Nexus ») pour télécharger des mods.")]
     NexusKeyMissing,
-
-    #[error("Nexus Mods a refusé ta clé API. Vérifie que tu l'as copiée en entier, ou crée-en une nouvelle.")]
     NexusKeyInvalid,
-
-    #[error("Sans compte Premium, Nexus Mods demande de passer par son site pour chaque téléchargement.")]
     NexusPremiumRequired,
-
-    #[error("Le lien de téléchargement de Nexus Mods a expiré ou ne correspond pas à ton compte. Recommence depuis la page du fichier.")]
     NexusLinkExpired,
-
-    #[error("Élément introuvable sur Nexus Mods.")]
     NexusNotFound,
-
-    #[error("Trop de requêtes envoyées à Nexus Mods. Nouvel essai possible dans {0} s.")]
     NexusRateLimited(u64),
-
-    #[error("Nexus Mods a renvoyé une erreur {status} : {message}")]
     NexusApi { status: u16, message: String },
-
-    #[error("Impossible de joindre Nexus Mods. Vérifie ta connexion internet. ({0})")]
     NexusNetwork(String),
-
-    #[error("Réponse inattendue de Nexus Mods : {0}")]
     NexusDecode(String),
-
     /// Refus expliqué de Nexus (recommandation impossible…).
-    #[error("{0}")]
     NexusRefused(String),
 
     // ------------------------------------------------------------ Thunderstore
-    #[error("Élément introuvable sur Thunderstore.")]
     ThunderstoreNotFound,
-
-    #[error("Trop de requêtes envoyées à Thunderstore. Nouvel essai possible dans {0} s.")]
     ThunderstoreRateLimited(u64),
-
-    #[error("Thunderstore a renvoyé une erreur {status} : {message}")]
     ThunderstoreApi { status: u16, message: String },
-
-    #[error("Impossible de joindre Thunderstore. Vérifie ta connexion internet. ({0})")]
     ThunderstoreNetwork(String),
-
     /// Jeu dont le chargeur de mods n'est pas encore pris en charge.
-    #[error("Ce jeu charge ses mods avec {0} : ModStudio ne sait pas encore les installer. Utilise r2modman ou Gale pour ce jeu.")]
     ThunderstoreUnsupported(String),
 
     // ------------------------------------------------------------ ResoniteModLoader
-    #[error("Impossible de récupérer la liste des mods de ResoniteModLoader. Vérifie ta connexion internet. ({0})")]
     RmlUnavailable(String),
-
-    #[error("Impossible de télécharger « {name} » depuis {host} ({detail}). Réessaie plus tard.")]
     RmlDownload { name: String, host: String, detail: String },
 
     // ------------------------------------------------------------ Listes des communautés
-    #[error("Impossible de récupérer la liste « {list} ». Vérifie ta connexion internet. ({detail})")]
     ListUnavailable { list: String, detail: String },
-
-    #[error("Impossible de télécharger « {name} » depuis {host} ({detail}). Réessaie plus tard.")]
     ListDownload { name: String, host: String, detail: String },
 
     // ---------------------------------------------------------------- Profils partagés
-    #[error("{0}")]
     ShareInvalid(String),
-
-    #[error("Ce code r2modman est introuvable : il a peut-être expiré, ou il manque des caractères.")]
     ShareCodeUnknown,
 }
+
+impl std::fmt::Display for AppError {
+    /// Le message, dans la langue de l'interface (français par défaut).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use crate::i18n::pick;
+        let text: String = match self {
+            // Messages déjà rédigés par l'appelant.
+            AppError::InvalidCode(m)
+            | AppError::UnknownLayout(m)
+            | AppError::WrongPlatform(m)
+            | AppError::ToolMismatch(m)
+            | AppError::NexusRefused(m)
+            | AppError::ShareInvalid(m) => return f.write_str(m),
+            AppError::MissingApiKey => pick(
+                "Aucune clé API n'est configurée. Ajoute ta clé dans les réglages.",
+                "No API key is set. Add your key in Settings.",
+            )
+            .into(),
+            AppError::Unauthorized { message, .. } => crate::tr!(
+                "mod.io a refusé la clé API : {message}",
+                "mod.io rejected the API key: {message}"
+            ),
+            AppError::Forbidden { message, .. } => crate::tr!(
+                "mod.io a refusé l'accès : {message}",
+                "mod.io denied access: {message}"
+            ),
+            AppError::NotFound => pick(
+                "Élément introuvable sur mod.io.",
+                "Item not found on mod.io.",
+            )
+            .into(),
+            AppError::RateLimited(secs) => crate::tr!(
+                "Trop de requêtes envoyées à mod.io. Nouvel essai possible dans {secs} s.",
+                "Too many requests sent to mod.io. You can try again in {secs} s."
+            ),
+            AppError::Api { status, message, .. } => crate::tr!(
+                "mod.io a renvoyé une erreur {status} : {message}",
+                "mod.io returned error {status}: {message}"
+            ),
+            AppError::Network(d) => crate::tr!(
+                "Impossible de joindre mod.io. Vérifie ta connexion internet. ({d})",
+                "Can't reach mod.io. Check your internet connection. ({d})"
+            ),
+            AppError::Decode(d) => crate::tr!(
+                "Réponse inattendue de mod.io : {d}",
+                "Unexpected response from mod.io: {d}"
+            ),
+            AppError::InvalidApiPath(d) => crate::tr!(
+                "Chemin d'API invalide : {d}",
+                "Invalid API path: {d}"
+            ),
+            AppError::Storage(d) => crate::tr!(
+                "Impossible d'enregistrer les réglages : {d}",
+                "Couldn't save the settings: {d}"
+            ),
+            AppError::InvalidArgument(d) => crate::tr!(
+                "Paramètre invalide : {d}",
+                "Invalid parameter: {d}"
+            ),
+            AppError::NotLoggedIn => pick(
+                "Connecte-toi à ton compte mod.io pour faire ça.",
+                "Sign in to your mod.io account to do that.",
+            )
+            .into(),
+            AppError::SessionExpired => pick(
+                "Ta session mod.io a expiré ou a été révoquée. Reconnecte-toi.",
+                "Your mod.io session has expired or was revoked. Sign in again.",
+            )
+            .into(),
+            AppError::EmailLoginUnavailable(d) => crate::tr!(
+                "mod.io n'autorise pas la connexion par e-mail avec cette clé API ({d}). Utilise plutôt un jeton d'accès.",
+                "mod.io doesn't allow email sign-in with this API key ({d}). Use an access token instead."
+            ),
+            AppError::InvalidToken => pick(
+                "mod.io a refusé ce jeton d'accès. Vérifie que tu l'as copié en entier et qu'il a les droits de lecture et d'écriture.",
+                "mod.io rejected this access token. Check that you copied all of it and that it has read and write permissions.",
+            )
+            .into(),
+            AppError::NoGameFolder => pick(
+                "Choisis d'abord le dossier où installer les mods de ce jeu.",
+                "First choose the folder where this game's mods should be installed.",
+            )
+            .into(),
+            AppError::InstallInProgress => pick(
+                "Ce mod est déjà en cours d'installation.",
+                "This mod is already being installed.",
+            )
+            .into(),
+            AppError::NoModfile => pick(
+                "Ce mod n'a aucun fichier publié pour PC (Windows).",
+                "This mod has no file published for PC (Windows).",
+            )
+            .into(),
+            AppError::VirusFlagged => pick(
+                "Installation bloquée : l'antivirus de mod.io a signalé ce fichier.",
+                "Installation blocked: mod.io's antivirus flagged this file.",
+            )
+            .into(),
+            AppError::Corrupted => pick(
+                "Le fichier téléchargé est abîmé (somme de contrôle différente). Réessaie.",
+                "The downloaded file is damaged (checksum mismatch). Try again.",
+            )
+            .into(),
+            AppError::Cancelled => pick(
+                "Installation annulée.",
+                "Installation cancelled.",
+            )
+            .into(),
+            AppError::Conflict(d) => crate::tr!(
+                "Des fichiers existent déjà à cet endroit et ModStudio ne les écrase pas : {d}",
+                "Files already exist at this location and ModStudio won't overwrite them: {d}"
+            ),
+            AppError::Io(d) => crate::tr!(
+                "Erreur de fichier : {d}",
+                "File error: {d}"
+            ),
+            AppError::BadArchive(d) => crate::tr!(
+                "Archive illisible : {d}",
+                "Unreadable archive: {d}"
+            ),
+            AppError::DownloadRefused(d) => crate::tr!(
+                "Le téléchargement de ce fichier a été refusé : {d}",
+                "The download of this file was refused: {d}"
+            ),
+            AppError::LoginRequiredForDownload => pick(
+                "Ce jeu demande d'être connecté à mod.io pour télécharger ses mods.",
+                "This game requires you to be signed in to mod.io to download its mods.",
+            )
+            .into(),
+            AppError::GameClosed => pick(
+                "L'éditeur de ce jeu n'autorise pas les applications tierces comme ModStudio à accéder à ses mods. Tu peux les parcourir et t'y abonner sur mod.io.",
+                "This game's publisher doesn't allow third-party apps like ModStudio to access its mods. You can browse them and subscribe to them on mod.io.",
+            )
+            .into(),
+            AppError::UnsupportedArchive(d) => crate::tr!(
+                "ModStudio ne peut pas installer cette archive ({d}). Installe ce fichier à la main en suivant la page du mod.",
+                "ModStudio can't install this archive ({d}). Install this file manually by following the mod's page."
+            ),
+            AppError::NeedGameDir(d) => crate::tr!(
+                "Ce mod s'installe dans le dossier du jeu. Indique où {d} est installé.",
+                "This mod installs into the game folder. Specify where {d} is installed."
+            ),
+            AppError::ToolUnavailable(d) => crate::tr!(
+                "Impossible de récupérer {d}. Vérifie ta connexion internet puis réessaie.",
+                "Couldn't get {d}. Check your internet connection, then try again."
+            ),
+            AppError::ToolPresent(d) => crate::tr!(
+                "{d} est déjà installé dans le dossier de ce jeu.",
+                "{d} is already installed in this game's folder."
+            ),
+            AppError::NexusKeyMissing => pick(
+                "Ajoute ta clé API Nexus Mods (dans « Compte Nexus ») pour télécharger des mods.",
+                "Add your Nexus Mods API key (in \"Nexus account\") to download mods.",
+            )
+            .into(),
+            AppError::NexusKeyInvalid => pick(
+                "Nexus Mods a refusé ta clé API. Vérifie que tu l'as copiée en entier, ou crée-en une nouvelle.",
+                "Nexus Mods rejected your API key. Check that you copied all of it, or create a new one.",
+            )
+            .into(),
+            AppError::NexusPremiumRequired => pick(
+                "Sans compte Premium, Nexus Mods demande de passer par son site pour chaque téléchargement.",
+                "Without a Premium account, Nexus Mods requires you to go through its website for each download.",
+            )
+            .into(),
+            AppError::NexusLinkExpired => pick(
+                "Le lien de téléchargement de Nexus Mods a expiré ou ne correspond pas à ton compte. Recommence depuis la page du fichier.",
+                "The Nexus Mods download link has expired or doesn't match your account. Start again from the file's page.",
+            )
+            .into(),
+            AppError::NexusNotFound => pick(
+                "Élément introuvable sur Nexus Mods.",
+                "Item not found on Nexus Mods.",
+            )
+            .into(),
+            AppError::NexusRateLimited(secs) => crate::tr!(
+                "Trop de requêtes envoyées à Nexus Mods. Nouvel essai possible dans {secs} s.",
+                "Too many requests sent to Nexus Mods. You can try again in {secs} s."
+            ),
+            AppError::NexusApi { status, message } => crate::tr!(
+                "Nexus Mods a renvoyé une erreur {status} : {message}",
+                "Nexus Mods returned error {status}: {message}"
+            ),
+            AppError::NexusNetwork(d) => crate::tr!(
+                "Impossible de joindre Nexus Mods. Vérifie ta connexion internet. ({d})",
+                "Can't reach Nexus Mods. Check your internet connection. ({d})"
+            ),
+            AppError::NexusDecode(d) => crate::tr!(
+                "Réponse inattendue de Nexus Mods : {d}",
+                "Unexpected response from Nexus Mods: {d}"
+            ),
+            AppError::ThunderstoreNotFound => pick(
+                "Élément introuvable sur Thunderstore.",
+                "Item not found on Thunderstore.",
+            )
+            .into(),
+            AppError::ThunderstoreRateLimited(secs) => crate::tr!(
+                "Trop de requêtes envoyées à Thunderstore. Nouvel essai possible dans {secs} s.",
+                "Too many requests sent to Thunderstore. You can try again in {secs} s."
+            ),
+            AppError::ThunderstoreApi { status, message } => crate::tr!(
+                "Thunderstore a renvoyé une erreur {status} : {message}",
+                "Thunderstore returned error {status}: {message}"
+            ),
+            AppError::ThunderstoreNetwork(d) => crate::tr!(
+                "Impossible de joindre Thunderstore. Vérifie ta connexion internet. ({d})",
+                "Can't reach Thunderstore. Check your internet connection. ({d})"
+            ),
+            AppError::ThunderstoreUnsupported(d) => crate::tr!(
+                "Ce jeu charge ses mods avec {d} : ModStudio ne sait pas encore les installer. Utilise r2modman ou Gale pour ce jeu.",
+                "This game loads its mods with {d}: ModStudio can't install them yet. Use r2modman or Gale for this game."
+            ),
+            AppError::RmlUnavailable(d) => crate::tr!(
+                "Impossible de récupérer la liste des mods de ResoniteModLoader. Vérifie ta connexion internet. ({d})",
+                "Couldn't get the ResoniteModLoader mod list. Check your internet connection. ({d})"
+            ),
+            AppError::RmlDownload { name, host, detail } => crate::tr!(
+                "Impossible de télécharger « {name} » depuis {host} ({detail}). Réessaie plus tard.",
+                "Couldn't download \"{name}\" from {host} ({detail}). Try again later."
+            ),
+            AppError::ListUnavailable { list, detail } => crate::tr!(
+                "Impossible de récupérer la liste « {list} ». Vérifie ta connexion internet. ({detail})",
+                "Couldn't get the \"{list}\" list. Check your internet connection. ({detail})"
+            ),
+            AppError::ListDownload { name, host, detail } => crate::tr!(
+                "Impossible de télécharger « {name} » depuis {host} ({detail}). Réessaie plus tard.",
+                "Couldn't download \"{name}\" from {host} ({detail}). Try again later."
+            ),
+            AppError::ShareCodeUnknown => pick(
+                "Ce code r2modman est introuvable : il a peut-être expiré, ou il manque des caractères.",
+                "This r2modman code wasn't found: it may have expired, or some characters are missing.",
+            )
+            .into(),
+        };
+        f.write_str(&text)
+    }
+}
+
+impl std::error::Error for AppError {}
 
 impl AppError {
     fn kind(&self) -> &'static str {

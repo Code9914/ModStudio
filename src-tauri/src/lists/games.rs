@@ -47,13 +47,15 @@ pub struct GameDef {
     pub id: &'static str,
     pub name: &'static str,
     pub steam_app_id: u32,
-    /// Nom de la liste et son site.
-    pub list_name: &'static str,
+    /// Nom de la liste (en français et en anglais) et son site.
+    pub list_name_fr: &'static str,
+    pub list_name_en: &'static str,
     pub list_url: &'static str,
     pub loader_name: &'static str,
     /// Exécutables qui montrent que le dossier est le bon.
     pub exe: &'static [&'static str],
-    pub about: &'static str,
+    pub about_fr: &'static str,
+    pub about_en: &'static str,
 }
 
 pub const GAMES: &[GameDef] = &[
@@ -62,55 +64,65 @@ pub const GAMES: &[GameDef] = &[
         id: "hollow-knight",
         name: "Hollow Knight",
         steam_app_id: 367520,
-        list_name: "ModLinks",
+        list_name_fr: "ModLinks",
+        list_name_en: "ModLinks",
         list_url: "https://github.com/hk-modding/modlinks",
         loader_name: "Modding API",
         exe: &["hollow_knight.exe", "hollow_knight.x86_64", "Hollow Knight.exe"],
-        about: "Les mods de la liste ModLinks (celle de Lumafly et Scarab), chargés par le Modding API.",
+        about_fr: "Les mods de la liste ModLinks (celle de Lumafly et Scarab), chargés par le Modding API.",
+        about_en: "Mods from the ModLinks list (the one Lumafly and Scarab use), loaded by the Modding API.",
     },
     GameDef {
         kind: Kind::OuterWilds,
         id: "outer-wilds",
         name: "Outer Wilds",
         steam_app_id: 753640,
-        list_name: "base de mods d'OWML",
+        list_name_fr: "base de mods d'OWML",
+        list_name_en: "OWML mod database",
         list_url: "https://outerwildsmods.com/mods/",
         loader_name: "OWML",
         exe: &["OuterWilds.exe"],
-        about: "Les mods de la base d'OWML (celle d'Outer Wilds Mod Manager).",
+        about_fr: "Les mods de la base d'OWML (celle d'Outer Wilds Mod Manager).",
+        about_en: "Mods from the OWML database (the one Outer Wilds Mod Manager uses).",
     },
     GameDef {
         kind: Kind::BeatSaber,
         id: "beat-saber",
         name: "Beat Saber",
         steam_app_id: 620980,
-        list_name: "BeatMods",
+        list_name_fr: "BeatMods",
+        list_name_en: "BeatMods",
         list_url: "https://beatmods.com",
         loader_name: "BSIPA",
         exe: &["Beat Saber.exe"],
-        about: "Les mods vérifiés de BeatMods pour ta version du jeu, chargés par BSIPA.",
+        about_fr: "Les mods vérifiés de BeatMods pour ta version du jeu, chargés par BSIPA.",
+        about_en: "Verified BeatMods mods for your version of the game, loaded by BSIPA.",
     },
     GameDef {
         kind: Kind::ChilloutVr,
         id: "chilloutvr",
         name: "ChilloutVR",
         steam_app_id: 661130,
-        list_name: "ChilloutVR Modding Group",
+        list_name_fr: "ChilloutVR Modding Group",
+        list_name_en: "ChilloutVR Modding Group",
         list_url: "https://discord.gg/2WR6rGVzht",
         loader_name: "MelonLoader",
         exe: &["ChilloutVR.exe"],
-        about: "Les mods vérifiés par le ChilloutVR Modding Group, chargés par MelonLoader.",
+        about_fr: "Les mods vérifiés par le ChilloutVR Modding Group, chargés par MelonLoader.",
+        about_en: "Mods verified by the ChilloutVR Modding Group, loaded by MelonLoader.",
     },
     GameDef {
         kind: Kind::Raft,
         id: "raft",
         name: "Raft",
         steam_app_id: 648800,
-        list_name: "RaftModding",
+        list_name_fr: "RaftModding",
+        list_name_en: "RaftModding",
         list_url: "https://www.raftmodding.com/mods",
         loader_name: "Raft Mod Loader",
         exe: &["Raft.exe"],
-        about: "Les mods de RaftModding, chargés par Raft Mod Loader (le jeu se lance avec son lanceur).",
+        about_fr: "Les mods de RaftModding, chargés par Raft Mod Loader (le jeu se lance avec son lanceur).",
+        about_en: "Mods from RaftModding, loaded by Raft Mod Loader (the game starts from its launcher).",
     },
 ];
 
@@ -188,11 +200,26 @@ pub fn version_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     std::cmp::Ordering::Equal
 }
 
+/// Détail d'erreur : la liste téléchargée ne se lit pas.
+fn unreadable() -> &'static str {
+    crate::i18n::pick("liste illisible", "unreadable list")
+}
+
 fn unavailable(source: &str, detail: &str) -> AppError {
     AppError::ListUnavailable { list: source.to_string(), detail: detail.to_string() }
 }
 
 impl GameDef {
+    /// Nom de la liste, dans la langue de l'interface.
+    pub fn list_name(&self) -> &'static str {
+        crate::i18n::pick(self.list_name_fr, self.list_name_en)
+    }
+
+    /// Présentation de la liste, dans la langue de l'interface.
+    pub fn about(&self) -> &'static str {
+        crate::i18n::pick(self.about_fr, self.about_en)
+    }
+
     /// Le dossier contient-il le jeu ?
     pub fn validate(&self, folder: &Path) -> bool {
         self.exe.iter().any(|e| child(folder, e).is_some_and(|p| p.is_file()))
@@ -289,18 +316,33 @@ impl GameDef {
         let folder = config.folder.as_path();
         match self.kind {
             Kind::Raft => Some(
-                "Lance Raft avec le lanceur de Raft Mod Loader (RMLLauncher), pas depuis Steam : c'est lui qui charge les mods.".into(),
+                crate::i18n::pick(
+                    "Lance Raft avec le lanceur de Raft Mod Loader (RMLLauncher), pas depuis Steam : c'est lui qui charge les mods.",
+                    "Start Raft with the Raft Mod Loader launcher (RMLLauncher), not from Steam: it's the one that loads the mods.",
+                )
+                .into(),
             ),
             Kind::HollowKnight => hollow_knight::version_note(folder),
             Kind::BeatSaber => match game_version {
-                None => Some("Version du jeu introuvable dans son dossier : lance Beat Saber une fois, puis reviens ici.".into()),
-                Some(v) if mods == 0 => Some(format!(
-                    "BeatMods n'a pas encore de mods vérifiés pour Beat Saber {v} : ils arrivent souvent quelques semaines après une mise à jour du jeu."
+                None => Some(
+                    crate::i18n::pick(
+                        "Version du jeu introuvable dans son dossier : lance Beat Saber une fois, puis reviens ici.",
+                        "Game version not found in its folder: start Beat Saber once, then come back here.",
+                    )
+                    .into(),
+                ),
+                Some(v) if mods == 0 => Some(crate::tr!(
+                    "BeatMods n'a pas encore de mods vérifiés pour Beat Saber {v} : ils arrivent souvent quelques semaines après une mise à jour du jeu.",
+                    "BeatMods doesn't have verified mods for Beat Saber {v} yet: they often arrive a few weeks after a game update."
                 )),
                 Some(_) => None,
             },
             Kind::OuterWilds if outer_wilds::owml_present(config) && !outer_wilds::game_patched(folder) => Some(
-                "Lance Outer Wilds une première fois avec le bouton « Lancer avec OWML » : OWML prépare le jeu, ensuite le lancement depuis Steam suffit. À refaire après chaque mise à jour du jeu.".into(),
+                crate::i18n::pick(
+                    "Lance Outer Wilds une première fois avec le bouton « Lancer avec OWML » : OWML prépare le jeu, ensuite le lancement depuis Steam suffit. À refaire après chaque mise à jour du jeu.",
+                    "Start Outer Wilds once with the \"Launch with OWML\" button: OWML prepares the game, after that starting it from Steam is enough. Do it again after each game update.",
+                )
+                .into(),
             ),
             _ => None,
         }
@@ -328,7 +370,9 @@ impl GameDef {
     pub fn launch(&self, extra: &std::collections::BTreeMap<String, PathBuf>) -> AppResult<()> {
         match self.kind {
             Kind::OuterWilds => outer_wilds::launch(extra),
-            _ => Err(AppError::InvalidArgument("rien à lancer pour ce jeu : lance-le comme d'habitude.".into())),
+            _ => Err(AppError::InvalidArgument(
+                crate::i18n::pick("rien à lancer pour ce jeu : lance-le comme d'habitude.", "nothing to launch for this game: start it as usual.").into(),
+            )),
         }
     }
 
@@ -453,7 +497,11 @@ pub(crate) mod hollow_knight {
                 id: API_ID.into(),
                 mod_id: mod_id(game.id, API_ID),
                 name: API_ID.into(),
-                description: "Le chargeur de mods de Hollow Knight : il remplace quelques fichiers du jeu (gardés de côté et remis à la désinstallation).".into(),
+                description: crate::i18n::pick(
+                    "Le chargeur de mods de Hollow Knight : il remplace quelques fichiers du jeu (gardés de côté et remis à la désinstallation).",
+                    "Hollow Knight's mod loader: it replaces a few game files (set aside and put back when you uninstall).",
+                )
+                .into(),
                 category: Some("Library".into()),
                 author: "hk-modding".into(),
                 author_url: Some("https://github.com/hk-modding".into()),
@@ -504,7 +552,7 @@ pub(crate) mod hollow_knight {
         let modlinks = net.get(&net.urls.modlinks, refresh, "ModLinks").await?;
         let apilinks = net.get(&net.urls.apilinks, refresh, "ModLinks").await?;
         let mods = parse(game, &String::from_utf8_lossy(&modlinks), &String::from_utf8_lossy(&apilinks), variant)
-            .ok_or_else(|| unavailable("ModLinks", "liste illisible"))?;
+            .ok_or_else(|| unavailable("ModLinks", unreadable()))?;
         Ok(Catalog::new(mods, None))
     }
 
@@ -550,8 +598,9 @@ pub(crate) mod hollow_knight {
         let game = super::game("hollow-knight")?;
         let v = game_version(game, folder)?;
         (v != API_GAME_VERSION).then(|| {
-            format!(
-                "Ton jeu est en version {v} : le Modding API n'existe que pour la version {API_GAME_VERSION}. Choisis-la dans Steam (propriétés du jeu, onglet Bêtas) avant d'installer des mods."
+            crate::tr!(
+                "Ton jeu est en version {v} : le Modding API n'existe que pour la version {API_GAME_VERSION}. Choisis-la dans Steam (propriétés du jeu, onglet Bêtas) avant d'installer des mods.",
+                "Your game is version {v}: the Modding API only exists for version {API_GAME_VERSION}. Pick it in Steam (game properties, Betas tab) before installing mods."
             )
         })
     }
@@ -686,8 +735,8 @@ pub(crate) mod chilloutvr {
                 broken: v.approval_status == 2,
                 compatible: true,
                 note: match v.approval_status {
-                    2 => Some("Signalé comme cassé par le ChilloutVR Modding Group.".into()),
-                    3 => Some("Retiré : il n'est plus maintenu.".into()),
+                    2 => Some(crate::i18n::pick("Signalé comme cassé par le ChilloutVR Modding Group.", "Reported as broken by the ChilloutVR Modding Group.").into()),
+                    3 => Some(crate::i18n::pick("Retiré : il n'est plus maintenu.", "Removed: it's no longer maintained.").into()),
                     _ => None,
                 },
                 loader: false,
@@ -715,7 +764,7 @@ pub(crate) mod chilloutvr {
                 id: LOADER_ID.into(),
                 mod_id: mod_id(game.id, LOADER_ID),
                 name: "MelonLoader".into(),
-                description: "Le chargeur de mods de ChilloutVR.".into(),
+                description: crate::i18n::pick("Le chargeur de mods de ChilloutVR.", "ChilloutVR's mod loader.").into(),
                 category: Some("Core Mods & Libraries".into()),
                 author: "LavaGang".into(),
                 author_url: Some("https://github.com/LavaGang".into()),
@@ -755,7 +804,7 @@ pub(crate) mod chilloutvr {
     pub async fn catalog(game: &GameDef, net: &Net, refresh: bool) -> AppResult<Catalog> {
         let json = net.get(&net.urls.cvrmg, refresh, "ChilloutVR Modding Group").await?;
         let melon = net.get(&format!("{}/repos/LavaGang/MelonLoader/releases/latest", net.urls.github_api), refresh, "GitHub").await.ok();
-        let mods = parse(game, &json, melon.as_deref()).ok_or_else(|| unavailable("ChilloutVR Modding Group", "liste illisible"))?;
+        let mods = parse(game, &json, melon.as_deref()).ok_or_else(|| unavailable("ChilloutVR Modding Group", unreadable()))?;
         Ok(Catalog::new(mods, None))
     }
 }
@@ -799,10 +848,10 @@ pub(crate) mod raft {
 
     fn category(c: &str) -> String {
         match c {
-            "utility" => "Utilitaires",
-            "content" => "Contenu",
-            "fun" => "Pour rire",
-            "optimization" => "Optimisation",
+            "utility" => crate::i18n::pick("Utilitaires", "Utilities"),
+            "content" => crate::i18n::pick("Contenu", "Content"),
+            "fun" => crate::i18n::pick("Pour rire", "Fun"),
+            "optimization" => crate::i18n::pick("Optimisation", "Optimization"),
             other => other,
         }
         .to_string()
@@ -865,7 +914,7 @@ pub(crate) mod raft {
                 deprecated: old,
                 broken: false,
                 compatible: true,
-                note: old.then(|| "Fait pour une ancienne version de Raft.".to_string()),
+                note: old.then(|| crate::i18n::pick("Fait pour une ancienne version de Raft.", "Made for an older version of Raft.").to_string()),
                 loader: false,
                 downloads: Some(downloads),
                 updated: e.versions.first().and_then(|v| v.created_at.clone()),
@@ -880,7 +929,7 @@ pub(crate) mod raft {
     pub async fn catalog(game: &GameDef, net: &Net, refresh: bool) -> AppResult<Catalog> {
         let base = net.urls.raft.clone();
         let json = net.get(&format!("{base}/api/v1/mods"), refresh, "RaftModding").await?;
-        let mods = parse(game, &base, &json).ok_or_else(|| unavailable("RaftModding", "liste illisible"))?;
+        let mods = parse(game, &base, &json).ok_or_else(|| unavailable("RaftModding", unreadable()))?;
         Ok(Catalog::new(mods, None))
     }
 
@@ -956,20 +1005,20 @@ pub(crate) mod beat_saber {
 
     fn category(c: &str) -> String {
         match c {
-            "core" => "Essentiels du jeu",
-            "essential" => "Recommandés",
-            "library" => "Bibliothèques",
-            "cosmetic" => "Apparence",
-            "practice" => "Entraînement",
-            "gameplay" => "Jeu",
-            "streamtools" => "Streaming",
-            "ui" => "Interface",
-            "lighting" => "Lumières",
-            "tweaks" => "Réglages",
-            "multiplayer" => "Multijoueur",
-            "text" => "Texte",
-            "editor" => "Éditeur",
-            "other" => "Divers",
+            "core" => crate::i18n::pick("Essentiels du jeu", "Core"),
+            "essential" => crate::i18n::pick("Recommandés", "Recommended"),
+            "library" => crate::i18n::pick("Bibliothèques", "Libraries"),
+            "cosmetic" => crate::i18n::pick("Apparence", "Cosmetic"),
+            "practice" => crate::i18n::pick("Entraînement", "Practice"),
+            "gameplay" => crate::i18n::pick("Jeu", "Gameplay"),
+            "streamtools" => crate::i18n::pick("Streaming", "Streaming"),
+            "ui" => crate::i18n::pick("Interface", "UI"),
+            "lighting" => crate::i18n::pick("Lumières", "Lighting"),
+            "tweaks" => crate::i18n::pick("Réglages", "Tweaks"),
+            "multiplayer" => crate::i18n::pick("Multijoueur", "Multiplayer"),
+            "text" => crate::i18n::pick("Texte", "Text"),
+            "editor" => crate::i18n::pick("Éditeur", "Editor"),
+            "other" => crate::i18n::pick("Divers", "Other"),
             other => other,
         }
         .to_string()
@@ -1054,12 +1103,12 @@ pub(crate) mod beat_saber {
     pub async fn catalog(game: &GameDef, net: &Net, folder: Option<&Path>, refresh: bool) -> AppResult<Catalog> {
         let base = net.urls.beatmods.clone();
         let versions = net.get(&format!("{base}/api/beatmods/versions"), refresh, "BeatMods").await?;
-        let mut known: Vec<String> = serde_json::from_slice(&versions).map_err(|_| unavailable("BeatMods", "liste des versions illisible"))?;
+        let mut known: Vec<String> = serde_json::from_slice(&versions).map_err(|_| unavailable("BeatMods", crate::i18n::pick("liste des versions illisible", "unreadable version list")))?;
         known.retain(|v| !v.trim().is_empty());
         let Some(version) = folder.and_then(|f| detect_version(f, &known)) else { return Ok(Catalog::new(Vec::new(), None)) };
         let url = format!("{base}/api/mods?status=verified&gameVersion={version}&gameName=BeatSaber&platform=steampc");
         let json = net.get(&url, refresh, "BeatMods").await?;
-        let mods = parse(game, &base, &json).ok_or_else(|| unavailable("BeatMods", "liste illisible"))?;
+        let mods = parse(game, &base, &json).ok_or_else(|| unavailable("BeatMods", unreadable()))?;
         Ok(Catalog::new(mods, Some(version)))
     }
 
@@ -1184,8 +1233,8 @@ pub(crate) mod outer_wilds {
     }
 
     pub async fn catalog(game: &GameDef, net: &Net, refresh: bool) -> AppResult<Catalog> {
-        let json = net.get(&net.urls.owdb, refresh, "base de mods d'OWML").await?;
-        let mods = parse(game, &json).ok_or_else(|| unavailable("base de mods d'OWML", "liste illisible"))?;
+        let json = net.get(&net.urls.owdb, refresh, game.list_name()).await?;
+        let mods = parse(game, &json).ok_or_else(|| unavailable(game.list_name(), unreadable()))?;
         Ok(Catalog::new(mods, None))
     }
 
@@ -1253,7 +1302,13 @@ pub(crate) mod outer_wilds {
     /// Lance OWML : il prépare le jeu (à refaire après une mise à jour), puis le lance.
     pub fn launch(extra: &std::collections::BTreeMap<String, PathBuf>) -> AppResult<()> {
         let dir = extra.get(OWML_KEY).filter(|d| d.join("OWML.Launcher.exe").is_file()).ok_or_else(|| {
-            AppError::InvalidArgument("OWML n'est pas installé : installe d'abord un mod (ou OWML) depuis cette page.".into())
+            AppError::InvalidArgument(
+                crate::i18n::pick(
+                    "OWML n'est pas installé : installe d'abord un mod (ou OWML) depuis cette page.",
+                    "OWML isn't installed: first install a mod (or OWML) from this page.",
+                )
+                .into(),
+            )
         })?;
         let mut cmd = if cfg!(windows) {
             std::process::Command::new(dir.join("OWML.Launcher.exe"))
@@ -1264,9 +1319,12 @@ pub(crate) mod outer_wilds {
         };
         cmd.current_dir(dir).spawn().map(|_| ()).map_err(|e| {
             if cfg!(windows) {
-                AppError::Io(format!("impossible de lancer OWML : {e}"))
+                AppError::Io(crate::tr!("impossible de lancer OWML : {e}", "couldn't start OWML: {e}"))
             } else {
-                AppError::Io(format!("impossible de lancer OWML avec Mono ({e}). Installe Mono (paquet « mono »), puis réessaie."))
+                AppError::Io(crate::tr!(
+                    "impossible de lancer OWML avec Mono ({e}). Installe Mono (paquet « mono »), puis réessaie.",
+                    "couldn't start OWML with Mono ({e}). Install Mono (the \"mono\" package), then try again."
+                ))
             }
         })
     }

@@ -165,7 +165,7 @@ export const layoutLabels: Record<Layout, { title: string; help: string }> = {
     title: tr("Un sous-dossier par mod", "One subfolder per mod"),
     help: tr(
       "Chaque mod est extrait dans son propre dossier. Le plus simple à ranger et à retirer.",
-      "Each mod is extracted into its own folder. The easiest to organise and remove.",
+      "Each mod is extracted into its own folder. The easiest to organize and remove.",
     ),
   },
   flat: {

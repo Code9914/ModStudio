@@ -72,7 +72,7 @@
   </div>
 
   <div class="colors">
-    <span class="label" id="ap-colors">{tr("Couleurs", "Colours")}</span>
+    <span class="label" id="ap-colors">{tr("Couleurs", "Colors")}</span>
     <div class="swatches" role="radiogroup" aria-labelledby="ap-colors">
       {#each palettes as p (p.id)}
         <label class="swatch" class:on={value.palette === p.id}>
@@ -112,7 +112,7 @@
             value={value.colorA}
             oninput={(e) => appearance.setCustom(e.currentTarget.value, value.colorB)}
           />
-          {tr("Première couleur", "First colour")}
+          {tr("Première couleur", "First color")}
         </label>
         <label class="picker">
           <input
@@ -120,9 +120,9 @@
             value={value.colorB}
             oninput={(e) => appearance.setCustom(value.colorA, e.currentTarget.value)}
           />
-          {tr("Deuxième couleur", "Second colour")}
+          {tr("Deuxième couleur", "Second color")}
         </label>
-        <span class="help muted">{tr("Mets deux fois la même couleur pour une couleur unie.", "Pick the same colour twice for a solid colour.")}</span>
+        <span class="help muted">{tr("Mets deux fois la même couleur pour une couleur unie.", "Pick the same color twice for a solid color.")}</span>
       </div>
     {/if}
   </div>
@@ -130,8 +130,8 @@
   <label class="toggle">
     <input type="checkbox" checked={value.tint} onchange={(e) => appearance.set({ tint: e.currentTarget.checked })} />
     <span>
-      {tr("Teinter le fond avec la première couleur", "Tint the background with the first colour")}
-      <span class="help muted">{tr("Sinon, les fonds restent gris.", "Otherwise, backgrounds stay grey.")}</span>
+      {tr("Teinter le fond avec la première couleur", "Tint the background with the first color")}
+      <span class="help muted">{tr("Sinon, les fonds restent gris.", "Otherwise, backgrounds stay gray.")}</span>
     </span>
   </label>
 

@@ -65,7 +65,7 @@
         <p class="muted">
           {tr(
             `${exact(all.length)} jeux ${search ? `pour « ${query.trim()} »` : "sur Thunderstore"}`,
-            `${exact(all.length)} games ${search ? `for "${query.trim()}"` : "on Thunderstore"}`,
+            `${exact(all.length)} ${all.length === 1 ? "game" : "games"} ${search ? `for "${query.trim()}"` : "on Thunderstore"}`,
           )}
         </p>
       {/if}

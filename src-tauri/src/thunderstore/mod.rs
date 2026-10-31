@@ -33,8 +33,9 @@ pub struct ThunderstoreState {
     pub library_path: PathBuf,
     /// Installations en cours : drapeau d'annulation par jeu.
     pub jobs: Mutex<HashMap<i64, Arc<AtomicBool>>>,
-    /// Liste des jeux, gardée le temps de la session.
-    pub communities: Mutex<Option<Vec<Community>>>,
+    /// Liste des jeux, gardée le temps de la session (avec la langue de ses
+    /// noms de chargeurs : `true` en anglais).
+    pub communities: Mutex<Option<(bool, Vec<Community>)>>,
     /// Ce que chaque jeu demande pour charger ses mods (et sa copie sur le disque).
     pub ecosystem: tokio::sync::Mutex<Option<Arc<Ecosystem>>>,
     pub ecosystem_path: PathBuf,
@@ -89,7 +90,8 @@ impl ThunderstoreState {
     }
 
     pub async fn communities(&self, refresh: bool) -> AppResult<Vec<Community>> {
-        if !refresh && let Some(list) = self.communities.lock().expect("communities").clone() {
+        let english = crate::i18n::english();
+        if !refresh && let Some((lang, list)) = self.communities.lock().expect("communities").clone() && lang == english {
             return Ok(list);
         }
         let mut list = self.client.communities().await?;
@@ -100,7 +102,7 @@ impl ThunderstoreState {
             c.loader = game.as_ref().map(|g| loader_label(&g.loader_id).to_string());
             c.supported = game.is_some_and(|g| g.kind.supported());
         }
-        *self.communities.lock().expect("communities") = Some(list.clone());
+        *self.communities.lock().expect("communities") = Some((english, list.clone()));
         Ok(list)
     }
 

@@ -663,7 +663,15 @@ pub fn ts_plan(root: &Path, full: &str, target: &Target, loader: Option<&LoaderP
         // GDWeave : le dossier qui a son propre `manifest.json`, dans `GDWeave/mods/<Équipe-Nom>`.
         LoaderKind::GdWeave => {
             let dir = find_dir_with(root, "manifest.json", true)
-                .ok_or_else(|| AppError::BadArchive("aucun dossier de mod GDWeave (avec son manifest.json) dans l'archive".into()))?;
+                .ok_or_else(|| {
+                    AppError::BadArchive(
+                        crate::i18n::pick(
+                            "aucun dossier de mod GDWeave (avec son manifest.json) dans l'archive",
+                            "no GDWeave mod folder (with its manifest.json) in the archive",
+                        )
+                        .into(),
+                    )
+                })?;
             push_tree(&mut out, "", &dir, &format!("GDWeave/mods/{full}"), &|_: &str| false, target);
         }
         // Rivet : tout le paquet dans `Rivet/Mods/<Équipe-Nom>`, à côté de l'exécutable.
@@ -1094,9 +1102,11 @@ impl ThunderstoreState {
         if wrong.is_empty() {
             let flavor = bepinex_flavor(&game.folder).map(Flavor::label).unwrap_or("BepInEx");
             let kind = if game_is_il2cpp(&game.folder) { "IL2CPP" } else { "Mono" };
-            return Err(AppError::InvalidArgument(format!(
+            return Err(AppError::InvalidArgument(crate::tr!(
                 "{flavor}, installé dans ce jeu sans ModStudio, ne peut pas charger ses mods (le jeu est en {kind}). \
-                 Retire-le (dossier BepInEx\\core, winhttp.dll, doorstop_config.ini), puis réessaie."
+                 Retire-le (dossier BepInEx\\core, winhttp.dll, doorstop_config.ini), puis réessaie.",
+                "{flavor}, installed in this game without ModStudio, can't load its mods (the game uses {kind}). \
+                 Remove it (BepInEx\\core folder, winhttp.dll, doorstop_config.ini), then try again."
             )));
         }
         let (mut auto, mut required_by) = (true, Vec::new());
@@ -1113,7 +1123,10 @@ impl ThunderstoreState {
                     r.files = removal.remaining;
                 }
                 self.save_library(&lib)?;
-                return Err(AppError::Io(format!("{first} n'a pas pu être supprimé. Ferme le jeu puis réessaie.")));
+                return Err(AppError::Io(crate::tr!(
+                    "{first} n'a pas pu être supprimé. Ferme le jeu puis réessaie.",
+                    "{first} couldn't be deleted. Close the game, then try again."
+                )));
             }
             auto &= rec.auto;
             for p in &rec.required_by {
@@ -1137,7 +1150,7 @@ impl ThunderstoreState {
         check_community(community)?;
         let path = PathBuf::from(folder.trim());
         if !path.is_dir() {
-            return Err(AppError::Io(format!("le dossier n'existe pas : {}", path.display())));
+            return Err(AppError::Io(crate::tr!("le dossier n'existe pas : {}", "the folder doesn't exist: {}", path.display())));
         }
         let game_id = stable_id(community);
         let mut lib = self.library.lock().expect("library");
@@ -1145,7 +1158,9 @@ impl ThunderstoreState {
             && !existing.mods.is_empty()
             && existing.folder != path
         {
-            return Err(AppError::InvalidArgument("désinstalle d'abord les mods de ce jeu pour changer de dossier.".into()));
+            return Err(AppError::InvalidArgument(
+                crate::i18n::pick("désinstalle d'abord les mods de ce jeu pour changer de dossier.", "uninstall this game's mods first to change folders.").into(),
+            ));
         }
         let entry = lib.games.entry(game_id).or_insert_with(|| GameInstall {
             game_id,
@@ -1213,7 +1228,9 @@ impl ThunderstoreState {
                 }
                 visited.insert(id);
                 if visited.len() > MAX_PACKAGES {
-                    return Err(AppError::InvalidArgument("ce mod demande beaucoup trop d'autres mods.".into()));
+                    return Err(AppError::InvalidArgument(
+                        crate::i18n::pick("ce mod demande beaucoup trop d'autres mods.", "this mod requires far too many other mods.").into(),
+                    ));
                 }
                 let latest = self.client.latest(&ns, &name).await?;
                 children.push((
@@ -1262,7 +1279,7 @@ impl ThunderstoreState {
         let game_id = stable_id(community);
         let mut config = self.library.lock().expect("library").games.get(&game_id).cloned().ok_or(AppError::NoGameFolder)?;
         if !config.folder.is_dir() {
-            return Err(AppError::Io(format!("le dossier du jeu n'existe plus : {}", config.folder.display())));
+            return Err(AppError::Io(crate::tr!("le dossier du jeu n'existe plus : {}", "the game folder no longer exists: {}", config.folder.display())));
         }
         let eco = self.ecosystem().await;
         let game = eco.game(community).ok_or_else(|| AppError::ThunderstoreUnsupported(loader_label("").into()))?;
@@ -1393,7 +1410,11 @@ impl ThunderstoreState {
             (owned_by_others(&libs, config.game_id, mod_id), old)
         };
         if old.as_ref().is_some_and(|o| o.disabled) {
-            return Err(AppError::InvalidArgument(format!("réactive « {} » avant de le mettre à jour.", display_name(&pkg.name))));
+            return Err(AppError::InvalidArgument(crate::tr!(
+                "réactive « {} » avant de le mettre à jour.",
+                "enable \"{}\" again before updating it.",
+                display_name(&pkg.name)
+            )));
         }
         let (config_b, full_b, cancel_b, emit_b, old_b, zip_b) = (config.clone(), full.clone(), cancel.clone(), emit.clone(), old.clone(), zip.clone());
         let (game_b, loader_b) = (game.clone(), loader.clone());
@@ -1498,7 +1519,15 @@ impl ThunderstoreState {
         let prefix = crate::games::proton::prefix_for_dir(folder);
         let dir = crate::games::proton::expand(&format!("%APPDATA%\\{name}\\Mods"), prefix.as_deref())
             .map(PathBuf::from)
-            .ok_or_else(|| AppError::InvalidArgument("dossier des mods introuvable : lance le jeu une fois (avec Proton sous Linux), puis réessaie.".into()))?;
+            .ok_or_else(|| {
+                AppError::InvalidArgument(
+                    crate::i18n::pick(
+                        "dossier des mods introuvable : lance le jeu une fois (avec Proton sous Linux), puis réessaie.",
+                        "mods folder not found: start the game once (with Proton on Linux), then try again.",
+                    )
+                    .into(),
+                )
+            })?;
         fs::create_dir_all(&dir).map_err(installer::io_err)?;
         Ok(dir)
     }
@@ -1532,9 +1561,17 @@ impl ThunderstoreState {
                 r.files = removal.remaining;
             }
             self.save_library(&lib)?;
-            return Err(AppError::Io(format!(
-                "{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie."
-            )));
+            return Err(AppError::Io(if n == 1 {
+                crate::tr!(
+                    "{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie.",
+                    "{n} file couldn't be deleted: {first}. Close the game, then try again."
+                )
+            } else {
+                crate::tr!(
+                    "{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie.",
+                    "{n} files couldn't be deleted, including {first}. Close the game, then try again."
+                )
+            }));
         }
         // Fichiers du jeu que le chargeur avait remplacés : remis.
         restore_originals(&game.folder, &record.files);
