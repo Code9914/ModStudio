@@ -1,0 +1,37 @@
+# Traduction des descriptions : les modèles épinglés se téléchargent toujours
+# (empreintes SHA-256) et le moteur Bergamot les charge et traduit, dans un
+# vrai navigateur. Lancé quand la liste des modèles ou le moteur changent.
+name: Traduction locale
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "src-tauri/translation-models.json"
+      - "scripts/translation-check.mjs"
+      - "package.json"
+      - ".github/workflows/translation-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Installer les dépendances
+        run: |
+          npm ci
+          npm i --no-save playwright@1.50.1
+          npx playwright install --with-deps chromium
+
+      - name: Télécharger les modèles et traduire
+        run: node scripts/translation-check.mjs enfr fren zhen

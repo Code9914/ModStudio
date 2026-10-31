@@ -1,0 +1,924 @@
+{
+ "_comment": "Modèles de traduction de Firefox (Bergamot), fichiers épinglés par empreinte SHA-256 (archives .gz).",
+ "source": "https://media.githubusercontent.com/media/mozilla/firefox-translations-models/e7957fc407441a5e3e35bbcbf9d60d9b35764618/",
+ "models": {
+  "aren": {
+   "arch": "base-memory",
+   "lex": {
+    "path": "models/base-memory/aren/lex.50.50.aren.s2t.bin.gz",
+    "sha256": "59335a02934f19f5e9bf171de9db8b73b5e95a69dce03a7d2fe6e9e43e3f849e",
+    "size": 2259861
+   },
+   "model": {
+    "path": "models/base-memory/aren/model.aren.intgemm.alphas.bin.gz",
+    "sha256": "31e032a402a8463a1e19c8e355529f73c0732926b22b1eadc8bade39ecc23a80",
+    "size": 23224456
+   },
+   "vocab": {
+    "path": "models/base-memory/aren/vocab.aren.spm.gz",
+    "sha256": "c379c52857c2f0886ae52a255ac770e5992524782ee20bb0966deca079e9595f",
+    "size": 416700
+   }
+  },
+  "azen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/azen/lex.50.50.azen.s2t.bin.gz",
+    "sha256": "fcec2d0efcfc107b308f2ccae5db745a33e26bc74041da9d608ce48dc166633a",
+    "size": 2267101
+   },
+   "model": {
+    "path": "models/tiny/azen/model.azen.intgemm.alphas.bin.gz",
+    "sha256": "c0fc1137ed90669723eb2037492aaf372d2f63f1da69530ee8c89dd0af786913",
+    "size": 12740106
+   },
+   "vocab": {
+    "path": "models/tiny/azen/vocab.azen.spm.gz",
+    "sha256": "c4b9a5e131bffde4d5934ea73b64eb46b3312726c97afeee8d3493d199e7db8c",
+    "size": 418965
+   }
+  },
+  "been": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/been/lex.50.50.been.s2t.bin.gz",
+    "sha256": "a74400771a5baee29c45fb8c787a160853d742493719d6af3a1dc6e301103942",
+    "size": 2197076
+   },
+   "model": {
+    "path": "models/tiny/been/model.been.intgemm.alphas.bin.gz",
+    "sha256": "0bfe94c1f26255adb0efbf93b2306239ee1b9166dfc9377cafb19c38adfa0233",
+    "size": 12413897
+   },
+   "vocab": {
+    "path": "models/tiny/been/vocab.been.spm.gz",
+    "sha256": "7fba301b12de119f573036c140f5818362657c054bd2e06badc253b7c1ecb549",
+    "size": 435364
+   }
+  },
+  "bgen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/bgen/lex.50.50.bgen.s2t.bin.gz",
+    "sha256": "624ade58201b0967aedaaa2370aca1271429052b78a36240ed7a3a1634271991",
+    "size": 3272580
+   },
+   "model": {
+    "path": "models/tiny/bgen/model.bgen.intgemm.alphas.bin.gz",
+    "sha256": "f96db7c5a0872c0e10029d685e5ab99a3b74d4df988883434051fb8eb91ff97a",
+    "size": 13167979
+   },
+   "vocab": {
+    "path": "models/tiny/bgen/vocab.bgen.spm.gz",
+    "sha256": "57f6db15d760372681e0d21ec5e2acfdafee9c0ffe54e250461d8047f4522398",
+    "size": 435213
+   }
+  },
+  "bnen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/bnen/lex.50.50.bnen.s2t.bin.gz",
+    "sha256": "8c4bf16a8a83f6c21a25f39eb1b1f935cb60e21a5afaa83b1e0fcd40e0180a82",
+    "size": 2264284
+   },
+   "model": {
+    "path": "models/tiny/bnen/model.bnen.intgemm.alphas.bin.gz",
+    "sha256": "1a2e5bfd8d75c8cddd6a802f9e2a2a82b626ec88fbcb5575e242a306bc1ebe9b",
+    "size": 12665857
+   },
+   "vocab": {
+    "path": "models/tiny/bnen/vocab.bnen.spm.gz",
+    "sha256": "11660de65a60243f944dc7a099beaeab8f061d8526aed15c476416a6dd906793",
+    "size": 437571
+   }
+  },
+  "bsen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/bsen/lex.50.50.bsen.s2t.bin.gz",
+    "sha256": "2c1fd0f331ee05fcabfe1c4b7b2dd3d365c4d7419d5f83f0a1501e96f512d151",
+    "size": 1426937
+   },
+   "model": {
+    "path": "models/tiny/bsen/model.bsen.intgemm.alphas.bin.gz",
+    "sha256": "cdb0547120258fa07fad3d633e63fd17c961c050f50afa230a17b2d8fbe489f1",
+    "size": 13415215
+   },
+   "vocab": {
+    "path": "models/tiny/bsen/vocab.bsen.spm.gz",
+    "sha256": "9e712da2cd6f6cfedc3e7507711d10a651ff64743621b0635dd4eccffebd03f8",
+    "size": 396913
+   }
+  },
+  "caen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/caen/lex.50.50.caen.s2t.bin.gz",
+    "sha256": "e8f1b9054453a0bced8600d67150b4a468c6607b7ba69600a64d29112b998823",
+    "size": 2735538
+   },
+   "model": {
+    "path": "models/tiny/caen/model.caen.intgemm.alphas.bin.gz",
+    "sha256": "d7a76467335bc45389b695465996eecca6a5613ce8a9f3e4db865b2afad1672b",
+    "size": 12825781
+   },
+   "vocab": {
+    "path": "models/tiny/caen/vocab.caen.spm.gz",
+    "sha256": "a34751849d5cce1430bafb374105252e2b2f6ace8d7e7e70d1a8c5279644702e",
+    "size": 413033
+   }
+  },
+  "csen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/csen/lex.50.50.csen.s2t.bin.gz",
+    "sha256": "aa3a8048e00283e02f7173f775ea92e5d0281d58dd4b014146fc7c7609b3772f",
+    "size": 2134106
+   },
+   "model": {
+    "path": "models/tiny/csen/model.csen.intgemm.alphas.bin.gz",
+    "sha256": "e45843ca6cac24a7dbb46f18c811a912c0b585882f6566d75a4204f086a7c9df",
+    "size": 12593076
+   },
+   "vocab": {
+    "path": "models/tiny/csen/vocab.csen.spm.gz",
+    "sha256": "eac003e770924e8d77d071b65092de29a19a8d04acf157c0b282a2a3b2a91f2e",
+    "size": 402101
+   }
+  },
+  "daen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/daen/lex.50.50.daen.s2t.bin.gz",
+    "sha256": "ab1656c067409541b3bdffd2878f3201ba51de70a42520da870de687ed37c0b8",
+    "size": 2170970
+   },
+   "model": {
+    "path": "models/tiny/daen/model.daen.intgemm.alphas.bin.gz",
+    "sha256": "483abf1ae01a79f3231f22b5c0aa44b8696fa0d5527801c7588a07ae2700836e",
+    "size": 12525769
+   },
+   "vocab": {
+    "path": "models/tiny/daen/vocab.daen.spm.gz",
+    "sha256": "b0055ebdf5291b666c33f15ef41abba6820c09703fff7f6b1fc2726fa10ede73",
+    "size": 399344
+   }
+  },
+  "deen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/deen/lex.50.50.deen.s2t.bin.gz",
+    "sha256": "a6225f83acca69994aace7f4b295b31e98c579bb0ce92e41486dec9881c90647",
+    "size": 2657472
+   },
+   "model": {
+    "path": "models/tiny/deen/model.deen.intgemm.alphas.bin.gz",
+    "sha256": "0c2798a6a42885877b00f3379416e40e7c748975b9e4b8a7765bab9cb6d2b6f6",
+    "size": 12995752
+   },
+   "vocab": {
+    "path": "models/tiny/deen/vocab.deen.spm.gz",
+    "sha256": "ad7d4180eb98cae576875518721254e9fa9887cf1702e385c63f76445a5024fa",
+    "size": 410738
+   }
+  },
+  "elen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/elen/lex.50.50.elen.s2t.bin.gz",
+    "sha256": "eef43a7471758df2a43f505e5670f3509093ab6a0742a3110d873047cc0913af",
+    "size": 1851246
+   },
+   "model": {
+    "path": "models/tiny/elen/model.elen.intgemm.alphas.bin.gz",
+    "sha256": "3a1d8af5cdf9ab4ace92dc988f496eb5d4e5c905834aa254b688c95a0fd5863f",
+    "size": 12696541
+   },
+   "vocab": {
+    "path": "models/tiny/elen/vocab.elen.spm.gz",
+    "sha256": "076f2f01f855b08870083c569bd264d22e5bee3c35d30a1d16f7c42ae0bfc50f",
+    "size": 419174
+   }
+  },
+  "enfr": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/enfr/lex.50.50.enfr.s2t.bin.gz",
+    "sha256": "ed5eaebf198b787b718b81948ddb184780a559e6eefdb7416fdf405ef3e50576",
+    "size": 4177155
+   },
+   "model": {
+    "path": "models/tiny/enfr/model.enfr.intgemm.alphas.bin.gz",
+    "sha256": "f39efbb6ab154967e2762f7c4baa0ff2f2fa08f32bfe5f6d29b787726476e828",
+    "size": 12293754
+   },
+   "vocab": {
+    "path": "models/tiny/enfr/vocab.enfr.spm.gz",
+    "sha256": "254b039b3a79bb6c1a28dc61b1c7b5b192adda3d05650ccd5de99b6076495a65",
+    "size": 419721
+   }
+  },
+  "esen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/esen/lex.50.50.esen.s2t.bin.gz",
+    "sha256": "aa6c3a148854089e9f2b51d8a49fef896fad658dc1b4d8760a0b293254c03fde",
+    "size": 1978538
+   },
+   "model": {
+    "path": "models/tiny/esen/model.esen.intgemm.alphas.bin.gz",
+    "sha256": "03ef9234003b450b0b94f84d683bd2e215bc0a72db2bdac6ebe503356dfe73c6",
+    "size": 13215960
+   },
+   "vocab": {
+    "path": "models/tiny/esen/vocab.esen.spm.gz",
+    "sha256": "0148a29b7145e61871846bfda323a9cf70d1e559f14e161d5410423febdeda74",
+    "size": 414566
+   }
+  },
+  "eten": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/eten/lex.50.50.eten.s2t.bin.gz",
+    "sha256": "042eacd5423466c846df5acdd6471ce36805345907b6a4c61c75734c69ea0863",
+    "size": 1920655
+   },
+   "model": {
+    "path": "models/tiny/eten/model.eten.intgemm.alphas.bin.gz",
+    "sha256": "0af06d9a125d88ce7d2523bcaf166ba8d9789e1cc5eaa6b7cac0518c1f6d2d2b",
+    "size": 12222624
+   },
+   "vocab": {
+    "path": "models/tiny/eten/vocab.eten.spm.gz",
+    "sha256": "591f38488dca1518281b918f3e2ef489fae39f1e59400a27bbe66e35718b5182",
+    "size": 416995
+   }
+  },
+  "faen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/faen/lex.50.50.faen.s2t.bin.gz",
+    "sha256": "3ff28e45fbe6ef1742d65f525fda0c0be2255cb04cffdcfb0f9e1c21635dde90",
+    "size": 1939291
+   },
+   "model": {
+    "path": "models/tiny/faen/model.faen.intgemm.alphas.bin.gz",
+    "sha256": "b72e5c310d36cc5f92f143f44bd3d5ce645c1ba71668ec016f4a947e39880a2b",
+    "size": 13071390
+   },
+   "vocab": {
+    "path": "models/tiny/faen/vocab.faen.spm.gz",
+    "sha256": "23252b82bf5299f6e26925b0e40f0f3bf35d51c954e5d4402cc4072c62db6c24",
+    "size": 416123
+   }
+  },
+  "fien": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/fien/lex.50.50.fien.s2t.bin.gz",
+    "sha256": "d59cdb552065280f6778ecec40bfe317183d411bdf54fb0c7c61d6503391c0fb",
+    "size": 2702886
+   },
+   "model": {
+    "path": "models/tiny/fien/model.fien.intgemm.alphas.bin.gz",
+    "sha256": "c76b72e05993a8a5765784093b36407a41cb40ffac3d4ff08bae9907ca75ae7a",
+    "size": 13240505
+   },
+   "vocab": {
+    "path": "models/tiny/fien/vocab.fien.spm.gz",
+    "sha256": "6099d88edabb47f84560c50b99fb349cf713a652cd86ebeeb71d94e92bd9fce9",
+    "size": 416678
+   }
+  },
+  "fren": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/fren/lex.50.50.fren.s2t.bin.gz",
+    "sha256": "17b933f2b42516ed0d325dd862ee7c50acc74ffc5d2a66059b357b931f788df7",
+    "size": 4761904
+   },
+   "model": {
+    "path": "models/tiny/fren/model.fren.intgemm.alphas.bin.gz",
+    "sha256": "4f5618b93d08bd82bdafc096b5cdfe459e24b263f0a5a23dcf641a070ebb60b5",
+    "size": 12641501
+   },
+   "vocab": {
+    "path": "models/tiny/fren/vocab.fren.spm.gz",
+    "sha256": "e90e0e635234445df4defafdea8aff23f8a0d68c73744462c021b5dbff36e55f",
+    "size": 419721
+   }
+  },
+  "guen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/guen/lex.50.50.guen.s2t.bin.gz",
+    "sha256": "30b6417f113a993a73fb9f6b58db94df23e2a2192fe0f70b3a422019ccf33d31",
+    "size": 2028621
+   },
+   "model": {
+    "path": "models/tiny/guen/model.guen.intgemm.alphas.bin.gz",
+    "sha256": "f78d8f7120b7e3092f83639f4b2600459ea016dabaed037f20e651d015ca070a",
+    "size": 12917932
+   },
+   "vocab": {
+    "path": "models/tiny/guen/vocab.guen.spm.gz",
+    "sha256": "3113b3e5e6d507555858fda228517d407ebabc39d5d7e6e1522f9aa8f083a598",
+    "size": 435011
+   }
+  },
+  "heen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/heen/lex.50.50.heen.s2t.bin.gz",
+    "sha256": "49691f4355a870ad49137100d1559b2e3505b7c4419d47e5261b6e772264c2fc",
+    "size": 2232949
+   },
+   "model": {
+    "path": "models/tiny/heen/model.heen.intgemm.alphas.bin.gz",
+    "sha256": "42b8846343a6bda677c20846622bdb9087a84ab37b0b50d90f3e6135b622505f",
+    "size": 12999905
+   },
+   "vocab": {
+    "path": "models/tiny/heen/vocab.heen.spm.gz",
+    "sha256": "780458822f46ab6471bd531223fa87ebd408140f16f3d6d6e3136c0b410bd316",
+    "size": 411769
+   }
+  },
+  "hien": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/hien/lex.50.50.hien.s2t.bin.gz",
+    "sha256": "9647fd7a38db4bafa549f73bf34cabd5a415cd34f3acd7212fced93f163dbd49",
+    "size": 2319675
+   },
+   "model": {
+    "path": "models/tiny/hien/model.hien.intgemm.alphas.bin.gz",
+    "sha256": "d30d257188bec64fceeb37483a6be8c54f1246583ad4e4f99dda174b630afeb3",
+    "size": 12752013
+   },
+   "vocab": {
+    "path": "models/tiny/hien/vocab.hien.spm.gz",
+    "sha256": "7554161ff543abf09200b4feec83328259b0acb0e58003d834ad43bac47f6124",
+    "size": 430096
+   }
+  },
+  "hren": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/hren/lex.50.50.hren.s2t.bin.gz",
+    "sha256": "2537de8fd6f27e31eda0b25d2fd426d1c69e04097ab9020f58b644af635c28a7",
+    "size": 1888089
+   },
+   "model": {
+    "path": "models/tiny/hren/model.hren.intgemm.alphas.bin.gz",
+    "sha256": "b0c1857d701bca4c42d8daa8debf4fa93bbc1ab0fc5618330c351cb46c3636d5",
+    "size": 13050395
+   },
+   "vocab": {
+    "path": "models/tiny/hren/vocab.hren.spm.gz",
+    "sha256": "a8bd79201f937ac6a9d186d851a377b436781e5ac8b7b380de548a2683164e38",
+    "size": 394548
+   }
+  },
+  "huen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/huen/lex.50.50.huen.s2t.bin.gz",
+    "sha256": "0e062d80c132f8cee111b85adbef9841f502f73be09b1b6596f31385dfcd0add",
+    "size": 2778202
+   },
+   "model": {
+    "path": "models/tiny/huen/model.huen.intgemm.alphas.bin.gz",
+    "sha256": "f66a371ab2ba3316b438ae6430a6616469c5ecea307024a07af1205dfd5d716d",
+    "size": 13181613
+   },
+   "vocab": {
+    "path": "models/tiny/huen/vocab.huen.spm.gz",
+    "sha256": "97fca39ca82670f3dbb0d5e28a5476cd36a3556bbcced590e6e5de7687013dce",
+    "size": 419908
+   }
+  },
+  "iden": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/iden/lex.50.50.iden.s2t.bin.gz",
+    "sha256": "029091e65df311e17c7e5a199505372dc3892937046b918ac18695aede08e344",
+    "size": 1818222
+   },
+   "model": {
+    "path": "models/tiny/iden/model.iden.intgemm.alphas.bin.gz",
+    "sha256": "625c237e7d1cdc12b0d9e2e666c0d3b674e13d50461268467aaa0b78c2cc5d93",
+    "size": 13010657
+   },
+   "vocab": {
+    "path": "models/tiny/iden/vocab.iden.spm.gz",
+    "sha256": "74daf618f0c78d508fda867f30983e9e5679a4e21c4cd42f5dcd5e501448f48e",
+    "size": 379859
+   }
+  },
+  "isen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/isen/lex.50.50.isen.s2t.bin.gz",
+    "sha256": "0870eca2fee1d6c4a382eb8f23c36c944d91dc93b1b1900dc30f4c4d0abd7712",
+    "size": 1502107
+   },
+   "model": {
+    "path": "models/tiny/isen/model.isen.intgemm.alphas.bin.gz",
+    "sha256": "3132a1628f32e2ae7a0fa6adf907eae2d5dbd56206425252971242cfc4f6166c",
+    "size": 13989880
+   },
+   "vocab": {
+    "path": "models/tiny/isen/vocab.isen.spm.gz",
+    "sha256": "dab6ca0f0d862e33f787a8bf37b91008f793171c13ea4174e69894ff2989e3eb",
+    "size": 416849
+   }
+  },
+  "iten": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/iten/lex.50.50.iten.s2t.bin.gz",
+    "sha256": "f9c0e038bd876da57866a2938594568d64f4d0e80e9bc6236bc05b226f883c2a",
+    "size": 2743096
+   },
+   "model": {
+    "path": "models/tiny/iten/model.iten.intgemm.alphas.bin.gz",
+    "sha256": "0640cceb304426175ae142fa2293397020ea1111cf559571aa87b2327fb37a02",
+    "size": 13220889
+   },
+   "vocab": {
+    "path": "models/tiny/iten/vocab.iten.spm.gz",
+    "sha256": "742acd87cb9e7a6e06f934ae2edb71247f265d7563dde51f2e12245376f0b4cc",
+    "size": 408834
+   }
+  },
+  "jaen": {
+   "arch": "base-memory",
+   "lex": {
+    "path": "models/base-memory/jaen/lex.50.50.jaen.s2t.bin.gz",
+    "sha256": "438152f5ccd982edb43e88ef51305e3ae7c7b66ee5c20a8fa425e9f1822f9b9b",
+    "size": 4819610
+   },
+   "model": {
+    "path": "models/base-memory/jaen/model.jaen.intgemm.alphas.bin.gz",
+    "sha256": "ae56ffbb5556d8e4240b2f208a7c7a2449a4b627ac9d673981ed29eaadaab79d",
+    "size": 32577435
+   },
+   "vocab": {
+    "path": "models/base-memory/jaen/vocab.jaen.spm.gz",
+    "sha256": "12d693f5055525d5cc1e133c8c1b8ed787c77b9bb797400d9a14382ac69c1236",
+    "size": 746616
+   }
+  },
+  "knen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/knen/lex.50.50.knen.s2t.bin.gz",
+    "sha256": "307468def521e5d4ede3b8699e10b5328958a57642293df22f5bc357688b474b",
+    "size": 2128860
+   },
+   "model": {
+    "path": "models/tiny/knen/model.knen.intgemm.alphas.bin.gz",
+    "sha256": "1c5aaf6fd69400dd13e519f321aad0577bd0bcdbee0e87097582dc037dc51f05",
+    "size": 13077357
+   },
+   "vocab": {
+    "path": "models/tiny/knen/vocab.knen.spm.gz",
+    "sha256": "739e6f45a056331f869328a2999d20952a33c5204516a5b3dc36d34020603e36",
+    "size": 450324
+   }
+  },
+  "koen": {
+   "arch": "base-memory",
+   "lex": {
+    "path": "models/base-memory/koen/lex.50.50.koen.s2t.bin.gz",
+    "sha256": "92d595d9e7cab334cf4560c4f66d0439bc4b9aeb644852f4eb280ccaf9aed587",
+    "size": 4381854
+   },
+   "model": {
+    "path": "models/base-memory/koen/model.koen.intgemm.alphas.bin.gz",
+    "sha256": "1fa9af76c6a954fce14243d698c02edea38b74b1f3d149ca6a4d7f8f88ba1b92",
+    "size": 32152814
+   },
+   "vocab": {
+    "path": "models/base-memory/koen/vocab.koen.spm.gz",
+    "sha256": "3b17fba7f58bde82f4ebd7ea0f51fa96fc22c8c5c20a4e905e0498f6da0ca46c",
+    "size": 706864
+   }
+  },
+  "lten": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/lten/lex.50.50.lten.s2t.bin.gz",
+    "sha256": "1851b00216bd8f6bac64223757fd547bb79e0b99b3a032078dab12f5f27a195e",
+    "size": 2308876
+   },
+   "model": {
+    "path": "models/tiny/lten/model.lten.intgemm.alphas.bin.gz",
+    "sha256": "88fa4bb09798d0f52d67f4f45a8540fdd4727bc1481cedc153dec4dc70ab892b",
+    "size": 12571257
+   },
+   "vocab": {
+    "path": "models/tiny/lten/vocab.lten.spm.gz",
+    "sha256": "3be489b994ec61caa9ab9a0bd5cd6d5253daacf45f0cf7dcbc2bb56a8c25391c",
+    "size": 403960
+   }
+  },
+  "lven": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/lven/lex.50.50.lven.s2t.bin.gz",
+    "sha256": "720f6d513f64275daf17b7a9bf78835a442819fbf2d24ba199a3a1088349cfc0",
+    "size": 2131786
+   },
+   "model": {
+    "path": "models/tiny/lven/model.lven.intgemm.alphas.bin.gz",
+    "sha256": "81d5f3b41f22c1759ce1398769e7732d8eb59b6056d6c46ad915e6ace05c6e01",
+    "size": 12689153
+   },
+   "vocab": {
+    "path": "models/tiny/lven/vocab.lven.spm.gz",
+    "sha256": "8d4e565e5f39f6e0d5033c4b2fdfc5c1e85a5857f28859765f98ced0366a4a8d",
+    "size": 407237
+   }
+  },
+  "mlen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/mlen/lex.50.50.mlen.s2t.bin.gz",
+    "sha256": "27e7301494d48bed602e409d891a6501557d03c534610eb2c5eba0a9507a829b",
+    "size": 2296381
+   },
+   "model": {
+    "path": "models/tiny/mlen/model.mlen.intgemm.alphas.bin.gz",
+    "sha256": "bb63f0267cb901f23c4fc664f1d50a2b4890900980486bedc9080cc5d19914a7",
+    "size": 12792306
+   },
+   "vocab": {
+    "path": "models/tiny/mlen/vocab.mlen.spm.gz",
+    "sha256": "f5f0084c423c71fdca2a4c54a862b65de35f748f1b189c0a950fc57bf03a37e7",
+    "size": 454911
+   }
+  },
+  "msen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/msen/lex.50.50.msen.s2t.bin.gz",
+    "sha256": "456ad116209370d6ba4b5f90c4143ee008d02610dea582922b1b2d6cff0b0200",
+    "size": 2141259
+   },
+   "model": {
+    "path": "models/tiny/msen/model.msen.intgemm.alphas.bin.gz",
+    "sha256": "de212e0d42428858ee96027329ab1d55a6e77754ecaaa17ab58ad03e71c16fb1",
+    "size": 12538542
+   },
+   "vocab": {
+    "path": "models/tiny/msen/vocab.msen.spm.gz",
+    "sha256": "1755f6619ae37dc8d694ebbec7b095b014ce6dc27ed8aac37bd7c749192e6997",
+    "size": 403877
+   }
+  },
+  "mten": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/mten/lex.50.50.mten.s2t.bin.gz",
+    "sha256": "18622b7fddac2fae4f3ad95ff8bcf31453c285a9496c2a9cc01943fb147514b5",
+    "size": 1559458
+   },
+   "model": {
+    "path": "models/tiny/mten/model.mten.intgemm.alphas.bin.gz",
+    "sha256": "886938832b19b412dac92dba926391e7aa0c33a5eabbf576be0effac6baeab7c",
+    "size": 13575808
+   },
+   "vocab": {
+    "path": "models/tiny/mten/vocab.mten.spm.gz",
+    "sha256": "87c489681e2a9e8d402568bf9024e7bc2a7945de4018471b6a78cce27f591678",
+    "size": 414389
+   }
+  },
+  "nben": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/nben/lex.50.50.nben.s2t.bin.gz",
+    "sha256": "a5082e96461e13d22e51535df14cd668f4697bdefc609206a18c66ac9862165e",
+    "size": 721631
+   },
+   "model": {
+    "path": "models/tiny/nben/model.nben.intgemm.alphas.bin.gz",
+    "sha256": "ccc1633225bc7e8c26f1998b8a436eec55f5262cb1fbf778637d7741390c04dd",
+    "size": 10284054
+   },
+   "vocab": {
+    "path": "models/tiny/nben/vocab.nben.spm.gz",
+    "sha256": "6e6c78acd1369cc3a9d49abffa33f8ef8b62f24188df00a13f8a32954a449e8c",
+    "size": 269244
+   }
+  },
+  "nlen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/nlen/lex.50.50.nlen.s2t.bin.gz",
+    "sha256": "b4ad562e6ec4b97e25140166ce712822920ebc3445bf3b7fc634f2ada8b404ce",
+    "size": 2744604
+   },
+   "model": {
+    "path": "models/tiny/nlen/model.nlen.intgemm.alphas.bin.gz",
+    "sha256": "cc8d4e06246e57fa69714ec40dbee3fdda400a117a864076f55bd49937faf23d",
+    "size": 13117435
+   },
+   "vocab": {
+    "path": "models/tiny/nlen/vocab.nlen.spm.gz",
+    "sha256": "149400e943a1ff65967c0f250f513ae75e253d8a9cc7664754367f53d875911b",
+    "size": 411834
+   }
+  },
+  "nnen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/nnen/lex.50.50.nnen.s2t.bin.gz",
+    "sha256": "da94ec4e1b149c79cfa02f52b3041461a4d5334fbe69ab6adcaa6b56c04f8679",
+    "size": 731899
+   },
+   "model": {
+    "path": "models/tiny/nnen/model.nnen.intgemm.alphas.bin.gz",
+    "sha256": "54ede4b47a2505768667938d2f41f480a30bd99ef5bf7fbcf5298bb8172065a2",
+    "size": 10465158
+   },
+   "vocab": {
+    "path": "models/tiny/nnen/vocab.nnen.spm.gz",
+    "sha256": "d7f93e11e24510aae532480e46b7f88839f401207dc6b22e3814c5d719997c47",
+    "size": 269397
+   }
+  },
+  "plen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/plen/lex.50.50.plen.s2t.bin.gz",
+    "sha256": "9715c1d0d02c6e5cb43c4270a2e19858e87c9140d53aff786f994559d7e1d2e1",
+    "size": 2629586
+   },
+   "model": {
+    "path": "models/tiny/plen/model.plen.intgemm.alphas.bin.gz",
+    "sha256": "8658d84c0670653cf6523011b047eac38f9d0a7164828aed772272a233ae9a70",
+    "size": 13421783
+   },
+   "vocab": {
+    "path": "models/tiny/plen/vocab.plen.spm.gz",
+    "sha256": "71fff1ca0660c28544f5fc856ca8b86f44bd40e7d4de03560f3ae448a12f8ae5",
+    "size": 415308
+   }
+  },
+  "pten": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/pten/lex.50.50.pten.s2t.bin.gz",
+    "sha256": "591c5f0e825bd45b7878320d817c19e07052c8f07447fbed86e0adcd590992f9",
+    "size": 2639080
+   },
+   "model": {
+    "path": "models/tiny/pten/model.pten.intgemm.alphas.bin.gz",
+    "sha256": "9a2154a22b49d74fa62ce09a5dbcf0e5bc2653a83c882334b2e7392e8eb6a402",
+    "size": 13204180
+   },
+   "vocab": {
+    "path": "models/tiny/pten/vocab.pten.spm.gz",
+    "sha256": "41d51de148610731a8508273636f22430e783a955a2c4d0210ef482ae22764a4",
+    "size": 410584
+   }
+  },
+  "roen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/roen/lex.50.50.roen.s2t.bin.gz",
+    "sha256": "3b3fdee9bb65fe9053c4a1a5ae2bdfe6a4c251a329bd49b45ea9af8864baf7ea",
+    "size": 2159556
+   },
+   "model": {
+    "path": "models/tiny/roen/model.roen.intgemm.alphas.bin.gz",
+    "sha256": "217b5a3bf0aed1a2c9c47259159a4ec09fa673bf10049d23fe15902147e66785",
+    "size": 12722200
+   },
+   "vocab": {
+    "path": "models/tiny/roen/vocab.roen.spm.gz",
+    "sha256": "0f7ce73533f0c8549d8498c67e2db7502654a462ed81de687ba666dc4cf64706",
+    "size": 396717
+   }
+  },
+  "ruen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/ruen/lex.50.50.ruen.s2t.bin.gz",
+    "sha256": "6524f5c898f1fef52992bd2565a6d4acfafb6a4e8dcd6aef237bd888239418a0",
+    "size": 1962008
+   },
+   "model": {
+    "path": "models/tiny/ruen/model.ruen.intgemm.alphas.bin.gz",
+    "sha256": "4a8a7b9b07c9e06a167ec5bf2542528817321516db4edf614fda45011fa8e5d1",
+    "size": 12613599
+   },
+   "vocab": {
+    "path": "models/tiny/ruen/vocab.ruen.spm.gz",
+    "sha256": "cd70b828e99e4d0c79d48cd56d8579d656c87c1db20bf88883da3085dcbfef75",
+    "size": 419860
+   }
+  },
+  "sken": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/sken/lex.50.50.sken.s2t.bin.gz",
+    "sha256": "08fceba612fbf6f833ab188e1f7125c091656cdca2c886c84fca29e3960ddb16",
+    "size": 2348184
+   },
+   "model": {
+    "path": "models/tiny/sken/model.sken.intgemm.alphas.bin.gz",
+    "sha256": "5825c97bfc80435071da744ef05444119cac81f6bf80eeecd80098c741a04a4b",
+    "size": 12821519
+   },
+   "vocab": {
+    "path": "models/tiny/sken/vocab.sken.spm.gz",
+    "sha256": "3954450491e4470532267c6af9ae05fc9dfc1a739c7fbea0dc0ea83cc3e1eba4",
+    "size": 405122
+   }
+  },
+  "slen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/slen/lex.50.50.slen.s2t.bin.gz",
+    "sha256": "d04539070fe124d37c81dfe070cfe385b0fa31109b1ddc022a13266c7a5347e4",
+    "size": 2243434
+   },
+   "model": {
+    "path": "models/tiny/slen/model.slen.intgemm.alphas.bin.gz",
+    "sha256": "3ba948590644576d716330e8a3cd9ddfd0bdf30de0b8cd554f79354d460da431",
+    "size": 12894090
+   },
+   "vocab": {
+    "path": "models/tiny/slen/vocab.slen.spm.gz",
+    "sha256": "5e83f5a768da5c2c9354517c5a14b1a05497af4a76a6a8354baa6fca7dc6568b",
+    "size": 398535
+   }
+  },
+  "sqen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/sqen/lex.50.50.sqen.s2t.bin.gz",
+    "sha256": "db1ffea7c7373f4e54074d08e4748f5d539c1e978cb26c3fc8dcdebeb1b5a4bd",
+    "size": 2165940
+   },
+   "model": {
+    "path": "models/tiny/sqen/model.sqen.intgemm.alphas.bin.gz",
+    "sha256": "5cf0ca779d09e2c8af5a4b11c496db6cfcc86b059e762d8925a5d6cc33e2826a",
+    "size": 12593638
+   },
+   "vocab": {
+    "path": "models/tiny/sqen/vocab.sqen.spm.gz",
+    "sha256": "b1d9e45bac3271e919939ca18688ccbf52d0e5d2bf901e4c55a2f17ecf9b00bd",
+    "size": 410423
+   }
+  },
+  "sren": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/sren/lex.50.50.sren.s2t.bin.gz",
+    "sha256": "5bb28dd580aafc4eb6e74f05affbc15406d82a820fccaf41dfe4b0b47136480c",
+    "size": 2117763
+   },
+   "model": {
+    "path": "models/tiny/sren/model.sren.intgemm.alphas.bin.gz",
+    "sha256": "ba4534d2f4ad45bacbdb5f626636471f9861b1c0eaa58b5bff4a4932e2ca8c93",
+    "size": 12729754
+   },
+   "vocab": {
+    "path": "models/tiny/sren/vocab.sren.spm.gz",
+    "sha256": "5c6355d1a70c2074a36a5c48424d04d2362b8ce54f34ff5ac33c30405d0e2489",
+    "size": 403515
+   }
+  },
+  "sven": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/sven/lex.50.50.sven.s2t.bin.gz",
+    "sha256": "aedabe4633446cf85b3e2ecc4139b88efed4c5a39b41d2f0d0bb99494c6b950c",
+    "size": 2165215
+   },
+   "model": {
+    "path": "models/tiny/sven/model.sven.intgemm.alphas.bin.gz",
+    "sha256": "5a5351596bc22c517908628924ac63bec5f81e7225c62bf6e42bb7c66cb41987",
+    "size": 12847259
+   },
+   "vocab": {
+    "path": "models/tiny/sven/vocab.sven.spm.gz",
+    "sha256": "75c1784afa8d4b94d2f6ce064fb2facc2044c3cedfc0fbe25acd85f32b06589e",
+    "size": 397625
+   }
+  },
+  "taen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/taen/lex.50.50.taen.s2t.bin.gz",
+    "sha256": "805180ab02e010b8ae953747293b9467b8ee40c071d25717662f7abe28412397",
+    "size": 2453155
+   },
+   "model": {
+    "path": "models/tiny/taen/model.taen.intgemm.alphas.bin.gz",
+    "sha256": "4d9cd0191dba40c8f747b851b25e96a8f2210d284c50d0e96d31be2b7f85fc15",
+    "size": 12511533
+   },
+   "vocab": {
+    "path": "models/tiny/taen/vocab.taen.spm.gz",
+    "sha256": "a8e724968deaf704ad5716021ef8faf6da8457154f0dfa344c2ac4440a2d1ccf",
+    "size": 446919
+   }
+  },
+  "teen": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/teen/lex.50.50.teen.s2t.bin.gz",
+    "sha256": "4b2e7a95965f9a666a99cf1e913fb752452e5626b51f0dc46392cdd57491c210",
+    "size": 2209444
+   },
+   "model": {
+    "path": "models/tiny/teen/model.teen.intgemm.alphas.bin.gz",
+    "sha256": "78bbbf7d48277a0c8d05f04828a2c1c0b863f24cd743032c9ecd0a663d62f53c",
+    "size": 13202063
+   },
+   "vocab": {
+    "path": "models/tiny/teen/vocab.teen.spm.gz",
+    "sha256": "ec8090b2c966058b1e1efc7dc951dd7c0ccfb66b1efc0dcfb1f4063b7a89e9d0",
+    "size": 448555
+   }
+  },
+  "tren": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/tren/lex.50.50.tren.s2t.bin.gz",
+    "sha256": "e06304247fc4dfd55fcab21bfc9656a28f81fcf8efb2ccb0a5796b296bfeac1b",
+    "size": 2470683
+   },
+   "model": {
+    "path": "models/tiny/tren/model.tren.intgemm.alphas.bin.gz",
+    "sha256": "0939c2d12325a2f80a92d3c3ddaf718510837d03ee59303aa963b179368ec68a",
+    "size": 12362908
+   },
+   "vocab": {
+    "path": "models/tiny/tren/vocab.tren.spm.gz",
+    "sha256": "dfa22c3d15a6bdfb7765edc9e42c77daff8597a9ebe088fe886094ff0baeaef1",
+    "size": 409060
+   }
+  },
+  "uken": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/uken/lex.50.50.uken.s2t.bin.gz",
+    "sha256": "86af22d2c43268f87fc5b5ba32485d25defceba5ed38195b27e6c25c44c07ab9",
+    "size": 1790588
+   },
+   "model": {
+    "path": "models/tiny/uken/model.uken.intgemm.alphas.bin.gz",
+    "sha256": "7cbdd1d664b22e757320ba47f79c7f658d3a581383e1f73868fce83b3fcad3d1",
+    "size": 12677432
+   },
+   "vocab": {
+    "path": "models/tiny/uken/vocab.uken.spm.gz",
+    "sha256": "7dbbba94effd24a118ade251686c0cea991217c29123362b36f56ea5f2de6362",
+    "size": 415266
+   }
+  },
+  "vien": {
+   "arch": "tiny",
+   "lex": {
+    "path": "models/tiny/vien/lex.50.50.vien.s2t.bin.gz",
+    "sha256": "46a1a63af1fc0828e34ee23a2b2bc3daecf8ea30681a1b21dcb2461c61d1076f",
+    "size": 1887658
+   },
+   "model": {
+    "path": "models/tiny/vien/model.vien.intgemm.alphas.bin.gz",
+    "sha256": "30239a051e58cbc0f8e256b46b9234a2a59b714bb09c091897f92786942e9861",
+    "size": 12914609
+   },
+   "vocab": {
+    "path": "models/tiny/vien/vocab.vien.spm.gz",
+    "sha256": "cb532c07aeeb22e22f1319b0cff91659e7e8a8bbfd67b18f1eb513d277368474",
+    "size": 375643
+   }
+  },
+  "zhen": {
+   "arch": "base-memory",
+   "lex": {
+    "path": "models/base-memory/zhen/lex.50.50.zhen.s2t.bin.gz",
+    "sha256": "216b4f87e61c89741114fa36b3cf01fb1e3a32cf0eb97bf1cb2f992951e8691b",
+    "size": 4822158
+   },
+   "model": {
+    "path": "models/base-memory/zhen/model.zhen.intgemm.alphas.bin.gz",
+    "sha256": "c430e24baad44b8e4f725458e2454aec8a760faefbd0a4592c80f114b051f692",
+    "size": 32726806
+   },
+   "vocab": {
+    "path": "models/base-memory/zhen/vocab.zhen.spm.gz",
+    "sha256": "244ac04cd4e2126852fc6f697b2aa1e04acad4492c5ec8b37453974f33f88183",
+    "size": 738862
+   }
+  }
+ }
+}
