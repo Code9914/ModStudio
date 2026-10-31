@@ -1,4 +1,4 @@
-# ModStudio — client de bureau pour mod.io, Nexus Mods, Thunderstore et les listes des communautés (v0.11)
+# ModStudio — client de bureau pour mod.io, Nexus Mods, Thunderstore et les listes des communautés (v0.12)
 
 ModStudio parcourt et installe les mods de [mod.io](https://mod.io), de
 [Nexus Mods](https://www.nexusmods.com) et de
