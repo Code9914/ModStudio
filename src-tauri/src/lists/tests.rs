@@ -154,7 +154,15 @@ async fn hollow_knight_gets_the_api_then_mods_in_their_folders_and_the_game_back
 
     let gid = game_id("hollow-knight");
     let api_id = mod_id("hollow-knight", "Modding API");
+    // Désactivé : le jeu retrouve ses fichiers ; réactivé : le Modding API revient.
+    st.set_enabled(gid, api_id, false, &[]).unwrap();
+    assert!(fs::read(managed.join("Assembly-CSharp.dll")).unwrap().starts_with(b"vanilla"));
+    assert!(!managed.join("Assembly-CSharp.dll.modstudio-orig").exists());
+    st.set_enabled(gid, api_id, true, &[]).unwrap();
+    assert_eq!(fs::read(managed.join("Assembly-CSharp.dll")).unwrap(), modded);
+    assert!(fs::read(managed.join("Assembly-CSharp.dll.modstudio-orig")).unwrap().starts_with(b"vanilla"));
     let rec = &out.game.mods[&api_id];
+    assert_eq!(rec.replaced, ["hollow_knight_Data/Managed/Assembly-CSharp.dll"]);
     assert!(rec.auto && rec.required_by.contains(&mod_id("hollow-knight", "Charm Mod")) && rec.required_by.contains(&mod_id("hollow-knight", "Satchel")));
     let removed = st.remove(gid, mod_id("hollow-knight", "Charm Mod")).unwrap();
     assert_eq!(removed.orphans.iter().map(|o| o.name.as_str()).collect::<Vec<_>>(), ["Satchel"]);
@@ -448,3 +456,40 @@ fn versions_compare_without_semver() {
     assert!(games::safe_file_name("BiofuelCounter v1.3.rmod") && !games::safe_file_name("../x") && !games::safe_file_name("a\\b"));
 }
 
+
+#[tokio::test]
+async fn nothing_is_installed_without_the_loader_when_its_site_does_not_answer() {
+    let folder = tempdir("lists-cvr-noloader");
+    fs::write(folder.join("ChilloutVR.exe"), b"exe").unwrap();
+    let server = fake_server_with(|base| {
+        let base = base.trim_end_matches("/v1");
+        let list = serde_json::json!([{ "_id": 5, "name": "Video Remote", "versions": [{
+            "approvalStatus": 1, "name": "Video Remote", "modVersion": "1.0.0", "downloadLink": format!("{base}/v1/mods/download/5"), "hash": sha_b64(b"v")
+        }]}]);
+        vec![json_response(200, &list.to_string()), json_response(403, r#"{"message":"API rate limit exceeded"}"#)]
+    });
+    let st = state(server.base.trim_end_matches("/v1"), "lists-cvr-noloader-state");
+    let cvr = game("chilloutvr");
+    st.configure(cvr, folder.to_str().unwrap()).unwrap();
+    let err = st.install(cvr, "5", None, &[], quiet()).await.unwrap_err();
+    assert!(matches!(err, AppError::ListUnavailable { ref list, .. } if list == "MelonLoader"), "{err:?}");
+    assert!(!folder.join("Mods").exists());
+}
+
+#[tokio::test]
+async fn beat_saber_refuses_files_beatmods_does_not_list() {
+    let folder = bs_folder("lists-bs-extra");
+    fs::write(folder.join("winhttp.dll"), b"doorstop").unwrap();
+    fs::write(folder.join("Beat Saber_Data/Managed/IPA.Injector.dll"), b"injector").unwrap();
+    let songcore = make_zip(&[("Plugins/SongCore.dll", b"songcore"), ("Plugins/Extra.dll", b"not listed")]);
+    let s = songcore.clone();
+    let server = fake_server_with(move |_| {
+        vec![json_response(200, r#"["1.40.8"]"#), json_response(200, &bs_mods(&[], b"songcore", false).to_string()), file(&s)]
+    });
+    let st = state(server.base.trim_end_matches("/v1"), "lists-bs-extra-state");
+    let bs = game("beat-saber");
+    st.configure(bs, folder.to_str().unwrap()).unwrap();
+    let err = st.install(bs, "2", None, &[], quiet()).await.unwrap_err();
+    assert!(matches!(err, AppError::Corrupted), "{err:?}");
+    assert!(!folder.join("Plugins").exists());
+}

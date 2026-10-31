@@ -498,6 +498,11 @@ pub(crate) mod hollow_knight {
     /// Version du jeu écrite dans `Assembly-CSharp.dll` (`Constants.GAME_VERSION`, en UTF-16).
     pub fn game_version(game: &GameDef, folder: &Path) -> Option<String> {
         let bytes = fs::read(assembly(game, folder)?).ok()?;
+        // La version du Modding API d'abord (d'autres chaînes « 1.x.y.z » peuvent précéder).
+        let wanted: Vec<u8> = API_GAME_VERSION.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+        if bytes.windows(wanted.len()).any(|w| w == wanted.as_slice()) {
+            return Some(API_GAME_VERSION.to_string());
+        }
         // Chaînes « 1.x.y.z » en UTF-16 (à une adresse paire ou impaire) : la version du jeu.
         (0..2).find_map(|start| {
             let units = bytes.get(start..)?.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]]));
@@ -1024,7 +1029,8 @@ pub(crate) mod beat_saber {
     pub async fn catalog(game: &GameDef, net: &Net, folder: Option<&Path>, refresh: bool) -> AppResult<Catalog> {
         let base = net.urls.beatmods.clone();
         let versions = net.get(&format!("{base}/api/beatmods/versions"), refresh, "BeatMods").await?;
-        let known: Vec<String> = serde_json::from_slice(&versions).map_err(|_| unavailable("BeatMods", "liste des versions illisible"))?;
+        let mut known: Vec<String> = serde_json::from_slice(&versions).map_err(|_| unavailable("BeatMods", "liste des versions illisible"))?;
+        known.retain(|v| !v.trim().is_empty());
         let Some(version) = folder.and_then(|f| detect_version(f, &known)) else { return Ok(Catalog::new(Vec::new(), None)) };
         let url = format!("{base}/api/mods?status=verified&gameVersion={version}&gameName=BeatSaber&platform=steampc");
         let json = net.get(&url, refresh, "BeatMods").await?;

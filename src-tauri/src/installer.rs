@@ -84,6 +84,10 @@ pub struct InstalledMod {
     /// Où ils sont gardés : `game` (dossier du jeu) ou `app` (données de ModStudio).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disabled_in: Option<String>,
+    /// Fichiers du jeu remplacés par ce mod (un chargeur), gardés à côté sous
+    /// le nom `<fichier>.modstudio-orig` et remis quand le mod est retiré ou désactivé.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub replaced: Vec<String>,
 }
 
 /// Outil de mods (UE4SS, BepInEx, MelonLoader…) installé par ModStudio.

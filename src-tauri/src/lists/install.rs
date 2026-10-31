@@ -252,6 +252,20 @@ fn keep_originals(root: &Path, files: &[String]) -> Vec<String> {
     kept
 }
 
+/// Après un échec : ce qui a pris la place d'un original (forcément posé par
+/// ModStudio, l'original ayant été renommé) est retiré, puis l'original remis.
+fn undo_originals(root: &Path, files: &[String]) {
+    for rel in files {
+        let (path, orig) = (root.join(rel), root.join(format!("{rel}{ORIGINAL_SUFFIX}")));
+        if orig.is_file() {
+            if path.is_file() {
+                let _ = fs::remove_file(&path);
+            }
+            let _ = fs::rename(&orig, &path);
+        }
+    }
+}
+
 fn restore_originals(root: &Path, files: &[String]) {
     for rel in files {
         let (path, orig) = (root.join(rel), root.join(format!("{rel}{ORIGINAL_SUFFIX}")));
@@ -392,6 +406,9 @@ impl ListsState {
             )));
         }
         let id = game_id(game.id);
+        if self.jobs.lock().expect("jobs").contains_key(&id) {
+            return Err(AppError::InstallInProgress);
+        }
         let mut lib = self.library.lock().expect("library");
         if let Some(existing) = lib.games.get(&id)
             && !existing.mods.is_empty()
@@ -483,6 +500,10 @@ impl ListsState {
                 target.note.clone().unwrap_or_else(|| format!("« {} » ne se charge pas dans le jeu sur ce PC.", target.name)),
             ));
         }
+        // Chargeur absent de la liste (site injoignable) et pas dans le jeu : rien n'est installé sans lui.
+        if game.loader_installable() && catalog.loader().is_none() && !game.loader_present(&config) {
+            return Err(AppError::ListUnavailable { list: game.loader_name.to_string(), detail: "version introuvable, réessaie plus tard".into() });
+        }
         let plan = plan(game, &catalog, &config, target, &version)?;
         check_conflicts(game, &catalog, &config, &plan)?;
         // Hollow Knight : le Modding API n'existe que pour une version du jeu.
@@ -508,6 +529,7 @@ impl ListsState {
         while i < queue.len() {
             if cancel.load(Ordering::Relaxed) {
                 cleanup();
+                self.settle(gid);
                 return Err(AppError::Cancelled);
             }
             let step = queue[i].clone();
@@ -518,6 +540,7 @@ impl ListsState {
                 Ok(found) => found,
                 Err(e) => {
                     cleanup();
+                    self.settle(gid);
                     return Err(e);
                 }
             };
@@ -627,6 +650,12 @@ impl ListsState {
             match place {
                 Place::File { name, .. } => {
                     let n = name.clone().or(given).ok_or_else(|| AppError::BadArchive("nom de fichier inconnu".into()))?;
+                    // ChilloutVR : MelonLoader ne lit que les `.dll`.
+                    let n = if game.kind == Kind::ChilloutVr && !n.to_ascii_lowercase().ends_with(".dll") {
+                        format!("{}.dll", installer::safe_name(&m.name))
+                    } else {
+                        n
+                    };
                     placed.push((tmp, join(&dest_dir, &n)));
                 }
                 Place::Zip { root: zip_root, .. } => {
@@ -638,11 +667,18 @@ impl ListsState {
                     })
                     .await
                     .map_err(|e| AppError::Io(e.to_string()))??;
-                    // Chaque fichier doit avoir l'empreinte publiée (BeatMods).
-                    for (path, md5) in contents {
-                        let file = installer::resolve_rel(&out, path).ok_or(AppError::Corrupted)?;
-                        if !md5_file(&file).is_ok_and(|h| h.eq_ignore_ascii_case(md5)) {
+                    // Chaque fichier doit avoir l'empreinte publiée (BeatMods), et aucun autre n'est accepté.
+                    if !contents.is_empty() {
+                        let listed: HashMap<&str, &str> = contents.iter().map(|(p, h)| (p.as_str(), h.as_str())).collect();
+                        let extracted = files_under(&out);
+                        if extracted.len() != listed.len() {
                             return Err(AppError::Corrupted);
+                        }
+                        for (abs, rel) in &extracted {
+                            let expected = listed.get(rel.as_str()).ok_or(AppError::Corrupted)?;
+                            if !md5_file(abs).is_ok_and(|h| h.eq_ignore_ascii_case(expected)) {
+                                return Err(AppError::Corrupted);
+                            }
                         }
                     }
                     let base = match zip_root {
@@ -677,16 +713,8 @@ impl ListsState {
         emit(InstallEvent::Finishing);
 
         // Fichiers du jeu remplacés (chargeur) : gardés de côté.
-        let mut kept: Vec<(PathBuf, Vec<String>)> = Vec::new();
-        let mut by_key: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for (k, r) in &replaced {
-            by_key.entry(k.clone()).or_default().push(r.clone());
-        }
-        for (k, rels) in by_key {
-            if let Some(root) = config.folder_for(&k) {
-                kept.push((root.to_path_buf(), keep_originals(root, &rels)));
-            }
-        }
+        let replaced: Vec<String> = replaced.into_iter().filter(|(k, _)| k.is_empty()).map(|(_, r)| r).collect();
+        let kept = keep_originals(&config.folder, &replaced);
         let placed = if batches.values().all(Vec::is_empty) {
             Vec::new()
         } else {
@@ -697,16 +725,11 @@ impl ListsState {
             match result {
                 Ok(p) => p,
                 Err(e) => {
-                    for (root, files) in &kept {
-                        restore_originals(root, files);
-                    }
+                    undo_originals(&config.folder, &kept);
                     return Err(e);
                 }
             }
         };
-        if m.loader {
-            game.activate(&config.folder, &config.extra_folders)?;
-        }
 
         let parent = (!is_target).then(|| plan.parents.get(&m.mod_id).and_then(|p| p.first().copied())).flatten();
         let (auto, mut required_by) = match (&old, is_target) {
@@ -742,6 +765,13 @@ impl ListsState {
                 record.parts.push(ModPart { key: batch.key, files: batch.files, dirs: batch.dirs });
             }
         }
+        // Originaux gardés : ceux de cette version et ceux des précédentes (remis au retrait).
+        record.replaced = old.as_ref().map(|o| o.replaced.clone()).unwrap_or_default();
+        for rel in kept {
+            if !record.replaced.contains(&rel) {
+                record.replaced.push(rel);
+            }
+        }
         for (key, rel) in adopted {
             if key.is_empty() {
                 record.files.push(rel);
@@ -751,11 +781,32 @@ impl ListsState {
                 record.parts.push(ModPart { key, files: vec![rel], dirs: Vec::new() });
             }
         }
-        let mut lib = self.library.lock().expect("library");
-        let config = lib.games.get_mut(&gid).ok_or(AppError::NotFound)?;
-        config.mods.insert(m.mod_id, record);
-        self.save_library(&lib)?;
+        {
+            let mut lib = self.library.lock().expect("library");
+            let config = lib.games.get_mut(&gid).ok_or(AppError::NotFound)?;
+            config.mods.insert(m.mod_id, record);
+            self.save_library(&lib)?;
+        }
+        // Après l'enregistrement : un échec ici n'empêche pas de réessayer (mise à jour).
+        if m.loader {
+            game.activate(&config.folder, &config.extra_folders)?;
+        }
         Ok(found)
+    }
+
+    /// Après un échec : les mods nécessaires installés pour un mod qui ne l'a
+    /// pas été ne dépendent plus de lui (et redeviennent des mods ordinaires).
+    fn settle(&self, gid: i64) {
+        let mut lib = self.library.lock().expect("library");
+        let Some(config) = lib.games.get_mut(&gid) else { return };
+        let ids: HashSet<i64> = config.mods.keys().copied().collect();
+        for m in config.mods.values_mut() {
+            m.required_by.retain(|p| ids.contains(p));
+            if m.auto && m.required_by.is_empty() {
+                m.auto = false;
+            }
+        }
+        let _ = self.save_library(&lib);
     }
 
     /// Lance l'outil du chargeur (OWML).
@@ -786,6 +837,8 @@ impl ListsState {
         } else {
             installer::uninstall_all(game, &record)
         };
+        // Fichiers du jeu que le chargeur avait remplacés : remis dès que leur remplaçant est parti.
+        restore_originals(&game.folder, &record.replaced);
         if !removal.complete() {
             let n = removal.remaining_count();
             let first = removal.first_remaining().cloned().unwrap_or_default();
@@ -795,7 +848,6 @@ impl ListsState {
             self.save_library(&lib)?;
             return Err(AppError::Io(format!("{n} fichier(s) n'ont pas pu être supprimés, dont {first}. Ferme le jeu puis réessaie.")));
         }
-        // Fichiers du jeu que le chargeur avait remplacés : remis.
         restore_originals(&game.folder, &record.files);
         for part in &record.parts {
             if let Some(root) = game.extra_folders.get(&part.key) {
@@ -826,15 +878,27 @@ impl ListsState {
         let ctx = toggle::Ctx { store_root: &root, source: "lists" };
         let mut lib = self.library.lock().expect("library");
         let mut game = lib.games.remove(&game_id).ok_or(AppError::NotFound)?;
+        let replaced = game.mods.get(&mod_id).map(|m| m.replaced.clone()).unwrap_or_default();
         let result = if !game.mods.contains_key(&mod_id) {
             Err(AppError::NotFound)
         } else if enabled {
             let mut libs: Vec<&Library> = other_libraries.iter().collect();
             libs.insert(0, &*lib);
             let others = toggle::others_map(&game, mod_id, &libs);
-            toggle::enable(&mut game, mod_id, &ctx, &others)
+            // Le chargeur revient : les fichiers du jeu repartent de côté.
+            let kept = keep_originals(&game.folder, &replaced);
+            let r = toggle::enable(&mut game, mod_id, &ctx, &others);
+            if r.is_err() {
+                restore_originals(&game.folder, &kept);
+            }
+            r
         } else {
-            toggle::disable(&mut game, mod_id, &ctx)
+            let r = toggle::disable(&mut game, mod_id, &ctx);
+            // Chargeur désactivé : le jeu retrouve ses fichiers (sinon il ne démarre plus).
+            if r.is_ok() {
+                restore_originals(&game.folder, &replaced);
+            }
+            r
         };
         let out = game.clone();
         lib.games.insert(game_id, game);
