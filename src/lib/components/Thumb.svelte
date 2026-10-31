@@ -2,21 +2,28 @@
   // Image 16:9 chargée paresseusement, avec repli sur l'initiale si absente ou cassée.
   export type Badge = { text: string; tone: "warn" | "ok" | "accent" | "neutral" };
 
-  let { src, label, badges = [] }: { src: string | null | undefined; label: string; badges?: Badge[] } =
-    $props();
+  let {
+    src,
+    label,
+    badges = [],
+    fallback = null,
+  }: { src: string | null | undefined; label: string; badges?: Badge[]; fallback?: string | null } = $props();
 
-  let failed = $state(false);
+  /** 0 : `src`, 1 : `fallback` (si `src` ne s'affiche pas), 2 : l'initiale. */
+  let stage = $state(0);
   $effect(() => {
     src;
-    failed = false;
+    fallback;
+    stage = 0;
   });
+  const current = $derived(stage === 0 ? src : stage === 1 ? fallback : null);
 
   const initial = $derived((label.trim()[0] ?? "?").toUpperCase());
 </script>
 
 <div class="thumb">
-  {#if src && !failed}
-    <img {src} alt="" loading="lazy" decoding="async" onerror={() => (failed = true)} />
+  {#if current}
+    <img src={current} alt="" loading="lazy" decoding="async" onerror={() => (stage = stage === 0 && fallback ? 1 : 2)} />
   {:else}
     <span class="fallback" aria-hidden="true">{initial}</span>
   {/if}

@@ -991,7 +991,10 @@ export interface RmlMod {
   category: string;
   author: string;
   authorUrl: string | null;
+  /** Portrait de l'auteur (celui de la liste, sinon de son compte GitHub ou Codeberg). */
   authorIcon: string | null;
+  /** Portrait de son compte, si celui de la liste ne s'affiche pas. */
+  authorAvatar: string | null;
   source: string | null;
   website: string | null;
   tags: string[];

@@ -119,6 +119,7 @@
           <button class="card" onclick={() => nav.openRmlMod(m.id)}>
             <Thumb
               src={m.authorIcon}
+              fallback={m.authorAvatar}
               label={m.name}
               badges={[
                 ...(record

@@ -148,7 +148,10 @@ pub struct RmlMod {
     pub category: String,
     pub author: String,
     pub author_url: Option<String>,
+    /// Portrait de l'auteur : celui de la liste, sinon celui de son compte GitHub ou Codeberg.
     pub author_icon: Option<String>,
+    /// Portrait de son compte, si celui de la liste ne s'affiche pas.
+    pub author_avatar: Option<String>,
     pub source: Option<String>,
     pub website: Option<String>,
     pub tags: Vec<String>,
@@ -287,6 +290,8 @@ fn entry(id: String, e: RawEntry, author: &str, info: &RawAuthor) -> Option<RmlM
     }
     versions.sort_by(|a, b| b.0.cmp(&a.0));
     let versions: Vec<RmlVersion> = versions.into_iter().map(|(_, v)| v).collect();
+    let icon = info.icon.clone().filter(|u| web_url(u));
+    let avatar = forge_avatar(info.url.as_deref()).or_else(|| forge_avatar(e.source_location.as_deref()));
     Some(RmlMod {
         mod_id: mod_id(&id),
         id,
@@ -295,7 +300,8 @@ fn entry(id: String, e: RawEntry, author: &str, info: &RawAuthor) -> Option<RmlM
         category: if e.category.is_empty() { "Misc".into() } else { e.category },
         author: author.to_string(),
         author_url: info.url.clone().filter(|u| web_url(u)),
-        author_icon: info.icon.clone().filter(|u| web_url(u)),
+        author_icon: icon.clone().or_else(|| avatar.clone()),
+        author_avatar: avatar.filter(|_| icon.is_some()),
         source: e.source_location.filter(|u| web_url(u)),
         website: e.website.filter(|u| web_url(u)),
         tags: e.tags,
@@ -306,6 +312,19 @@ fn entry(id: String, e: RawEntry, author: &str, info: &RawAuthor) -> Option<RmlM
         latest: versions[0].version.clone(),
         versions,
     })
+}
+
+/// Portrait d'un compte GitHub ou Codeberg (`https://github.com/<nom>.png`),
+/// d'après l'adresse de l'auteur ou de son dépôt.
+fn forge_avatar(url: Option<&str>) -> Option<String> {
+    let u = Url::parse(url?).ok()?;
+    let host = u.host_str()?;
+    if u.scheme() != "https" || !matches!(host, "github.com" | "codeberg.org") {
+        return None;
+    }
+    let user = u.path_segments()?.find(|s| !s.is_empty())?;
+    let valid = user.len() <= 64 && user.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+    valid.then(|| format!("https://{host}/{user}.png"))
 }
 
 /// Lien affichable (pages web seulement).
@@ -1060,6 +1079,11 @@ mod tests {
         assert_eq!(ik.latest, "2.8.3");
         assert_eq!(ik.versions.iter().map(|v| v.version.as_str()).collect::<Vec<_>>(), ["2.8.3", "2.8.1"]);
         assert_eq!(ik.author, "Raidriar");
+        assert_eq!(ik.author_icon.as_deref(), Some("https://codeberg.org/avatars/x"));
+        // Sans portrait dans la liste : celui du compte GitHub de l'auteur.
+        assert_eq!(rml.author_icon.as_deref(), Some("https://github.com/resonite-modding-group.png"));
+        assert_eq!(forge_avatar(Some("https://codeberg.org/Raidriar/IkCulling")).as_deref(), Some("https://codeberg.org/Raidriar.png"));
+        assert_eq!(forge_avatar(Some("https://git.example.org/someone")), None);
         assert!(!catalog.get("net.raidriar796.HeadlessUserCulling").unwrap().compatible);
         assert!(satisfies(Some("2.4.3"), "^2.4.3") && !satisfies(Some("2.4.2"), "^2.4.3") && satisfies(Some("1.0.0"), "*"));
         assert!(!satisfies(None, "*"));

@@ -64,7 +64,7 @@
     </div>
   {:else}
     <header class="head">
-      <div class="icon"><Thumb src={mod.authorIcon} label={mod.name} /></div>
+      <div class="icon"><Thumb src={mod.authorIcon} fallback={mod.authorAvatar} label={mod.name} /></div>
       <div class="head-text">
         <h1>{mod.name}</h1>
         <p class="byline">
