@@ -49,8 +49,14 @@ class ListsStore {
 
   /** Jeu installé sur ce PC (Steam…) qui correspond. */
   detectedFor(game: ClGame): DetectedGame | null {
+    const detected = nexusStore.detected ?? [];
+    const steamId = String(game.steamAppId);
     const target = normalizeName(game.name);
-    return (nexusStore.detected ?? []).find((g) => normalizeName(g.name) === target) ?? null;
+    return (
+      detected.find((g) => g.launcher === "steam" && g.appId === steamId) ??
+      detected.find((g) => normalizeName(g.name) === target) ??
+      null
+    );
   }
 
   installed(gameId: number, modId: number) {

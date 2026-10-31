@@ -5,10 +5,33 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer};
 
 use super::{mod_id, web_url, Artifact, Catalog, Hash, ListDep, ListMod, ListVersion, Net, Place, ZipRoot};
 use crate::error::{AppError, AppResult};
+
+// Ces listes sont tenues à la main par leur communauté : un champ à `null`
+// ou une entrée mal formée ne doit pas rendre toute la liste illisible.
+
+/// Champ absent ou `null` : sa valeur par défaut.
+fn or_default<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default>(d: D) -> Result<T, D::Error> {
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
+}
+
+/// Les éléments lisibles d'un tableau (absent ou `null` : vide).
+fn lenient<'de, D: Deserializer<'de>, T: DeserializeOwned>(d: D) -> Result<Vec<T>, D::Error> {
+    let items = Option::<Vec<serde_json::Value>>::deserialize(d)?.unwrap_or_default();
+    Ok(items.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect())
+}
+
+/// Les entrées lisibles d'une liste JSON ; aucune sur une liste non vide :
+/// le format a changé, la liste est illisible.
+fn entries<T: DeserializeOwned>(items: Vec<serde_json::Value>) -> Option<Vec<T>> {
+    let total = items.len();
+    let out: Vec<T> = items.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect();
+    (!out.is_empty() || total == 0).then_some(out)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -545,10 +568,10 @@ pub(crate) mod chilloutvr {
     struct Entry {
         #[serde(rename = "_id")]
         id: i64,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "lenient")]
         aliases: Vec<String>,
         category: Option<String>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "lenient")]
         versions: Vec<Version>,
         name: Option<String>,
     }
@@ -556,7 +579,7 @@ pub(crate) mod chilloutvr {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct Version {
-        #[serde(default)]
+        #[serde(default, deserialize_with = "or_default")]
         approval_status: i64,
         name: Option<String>,
         mod_version: Option<String>,
@@ -565,9 +588,9 @@ pub(crate) mod chilloutvr {
         mod_type: Option<String>,
         author: Option<String>,
         description: Option<String>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "lenient")]
         search_tags: Vec<String>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "lenient")]
         requirements: Vec<String>,
         download_link: Option<String>,
         source_link: Option<String>,
@@ -579,7 +602,7 @@ pub(crate) mod chilloutvr {
     #[derive(Deserialize)]
     struct Release {
         tag_name: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "lenient")]
         assets: Vec<Asset>,
     }
 
@@ -613,7 +636,7 @@ pub(crate) mod chilloutvr {
     }
 
     pub fn parse(game: &GameDef, json: &[u8], melon: Option<&[u8]>) -> Option<Vec<ListMod>> {
-        let entries: Vec<Entry> = serde_json::from_slice(json).ok()?;
+        let entries: Vec<Entry> = entries(serde_json::from_slice(json).ok()?)?;
         // Noms et alias → identifiant, pour les mods demandés par leur nom.
         let mut by_name: HashMap<String, String> = HashMap::new();
         for e in &entries {
@@ -747,14 +770,14 @@ pub(crate) mod raft {
     struct Entry {
         id: String,
         title: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "or_default")]
         description: String,
         category: Option<String>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "or_default")]
         author: String,
         banner_image_url: Option<String>,
         icon_image_url: Option<String>,
-        #[serde(rename = "mod-versions", default)]
+        #[serde(rename = "mod-versions", default, deserialize_with = "lenient")]
         versions: Vec<Version>,
     }
 
@@ -765,11 +788,11 @@ pub(crate) mod raft {
         version: String,
         changelog: Option<String>,
         download_url: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "or_default")]
         download_count: u64,
-        #[serde(default)]
-        max_raft_version_id: i64,
-        #[serde(default)]
+        /// `null` pour les vieux mods (d'avant les `.rmod`).
+        max_raft_version_id: Option<i64>,
+        #[serde(default, deserialize_with = "or_default")]
         definite_max_raft_version: bool,
         created_at: Option<String>,
     }
@@ -786,9 +809,9 @@ pub(crate) mod raft {
     }
 
     pub fn parse(game: &GameDef, base: &str, json: &[u8]) -> Option<Vec<ListMod>> {
-        let entries: Vec<Entry> = serde_json::from_slice(json).ok()?;
+        let entries: Vec<Entry> = entries(serde_json::from_slice(json).ok()?)?;
         // La version de Raft la plus récente visée par un mod : celle du jeu.
-        let current = entries.iter().flat_map(|e| e.versions.iter().map(|v| v.max_raft_version_id)).max().unwrap_or(0);
+        let current = entries.iter().flat_map(|e| e.versions.iter().filter_map(|v| v.max_raft_version_id)).max().unwrap_or(0);
         let mut mods = Vec::new();
         for mut e in entries {
             if e.id.is_empty() || e.id.len() > 100 || !e.id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')) {
@@ -796,7 +819,7 @@ pub(crate) mod raft {
             }
             e.versions.sort_by_key(|v| std::cmp::Reverse(v.id));
             let downloads = e.versions.iter().map(|v| v.download_count).sum();
-            let old = e.versions.first().is_some_and(|v| v.definite_max_raft_version && v.max_raft_version_id < current);
+            let old = e.versions.first().is_some_and(|v| v.definite_max_raft_version && v.max_raft_version_id.is_some_and(|m| m < current));
             let versions: Vec<ListVersion> = e
                 .versions
                 .iter()
@@ -875,8 +898,8 @@ pub(crate) mod beat_saber {
 
     #[derive(Deserialize)]
     struct Mods {
-        #[serde(default)]
-        mods: Vec<Item>,
+        #[serde(default, deserialize_with = "or_default")]
+        mods: Vec<serde_json::Value>,
     }
 
     #[derive(Deserialize)]
@@ -891,12 +914,12 @@ pub(crate) mod beat_saber {
     struct Info {
         id: i64,
         name: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "or_default")]
         summary: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "or_default")]
         description: String,
         category: Option<String>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "lenient")]
         authors: Vec<Author>,
         git_url: Option<String>,
     }
@@ -914,11 +937,13 @@ pub(crate) mod beat_saber {
         id: i64,
         mod_version: String,
         zip_hash: String,
-        #[serde(default)]
+        // Pas d'élément ignoré pour les empreintes : une entrée illisible
+        // laisse tout le mod de côté.
+        #[serde(default, deserialize_with = "or_default")]
         content_hashes: Vec<ContentHash>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "or_default")]
         dependencies: Vec<i64>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "or_default")]
         download_count: u64,
         updated_at: Option<String>,
     }
@@ -963,7 +988,7 @@ pub(crate) mod beat_saber {
     }
 
     pub fn parse(game: &GameDef, base: &str, json: &[u8]) -> Option<Vec<ListMod>> {
-        let items: Vec<Item> = serde_json::from_slice::<Mods>(json).ok()?.mods;
+        let items: Vec<Item> = entries(serde_json::from_slice::<Mods>(json).ok()?.mods)?;
         // Les mods demandés sont désignés par l'identifiant de leur version.
         let by_version: HashMap<i64, String> = items.iter().filter_map(|i| i.latest.as_ref().map(|v| (v.id, i.info.id.to_string()))).collect();
         let mut mods = Vec::new();
@@ -1071,8 +1096,8 @@ pub(crate) mod outer_wilds {
 
     #[derive(Deserialize)]
     struct Db {
-        #[serde(default)]
-        releases: Vec<Release>,
+        #[serde(default, deserialize_with = "or_default")]
+        releases: Vec<serde_json::Value>,
     }
 
     #[derive(Deserialize)]
@@ -1080,17 +1105,17 @@ pub(crate) mod outer_wilds {
     struct Release {
         name: String,
         unique_name: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "or_default")]
         description: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "or_default")]
         author: String,
         author_display: Option<String>,
         repo: Option<String>,
         version: String,
         download_url: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "or_default")]
         download_count: u64,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "lenient")]
         tags: Vec<String>,
         thumbnail: Option<Thumbnail>,
         latest_release_date: Option<String>,
@@ -1103,9 +1128,9 @@ pub(crate) mod outer_wilds {
     }
 
     pub fn parse(game: &GameDef, json: &[u8]) -> Option<Vec<ListMod>> {
-        let db: Db = serde_json::from_slice(json).ok()?;
+        let releases: Vec<Release> = entries(serde_json::from_slice::<Db>(json).ok()?.releases)?;
         let mut mods = Vec::new();
-        for r in db.releases {
+        for r in releases {
             let id = r.unique_name.trim().to_string();
             if !safe_file_name(&id) || !web_url(&r.download_url) && !cfg!(test) {
                 continue;

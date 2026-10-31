@@ -260,7 +260,14 @@ fn raft_list() -> serde_json::Value {
         ]},
         { "id": "nofog", "title": "NoFog", "description": "", "category": "fun", "author": "x", "mod-versions": [
             { "id": 86, "modId": "nofog", "version": "1.0", "downloadUrl": "/mods/nofog/1.0/NoFog.rmod", "maxRaftVersionId": 25, "definiteMaxRaftVersion": true }
-        ]}
+        ]},
+        // Comme sur le vrai site : des `null` dans les vieux mods, et une entrée mal formée.
+        { "id": "itemspawner", "title": "ItemSpawner", "description": null, "category": "utility", "author": null, "iconImageUrl": null, "mod-versions": [
+            { "id": 90, "modId": "itemspawner", "version": "3.1", "downloadUrl": "/mods/itemspawner/3.1/ItemSpawner.dll", "downloadCount": null, "minRaftVersionId": null, "maxRaftVersionId": null, "definiteMaxRaftVersion": false },
+            { "id": 91, "modId": "itemspawner", "version": "4.0", "downloadUrl": "/mods/itemspawner/4.0/ItemSpawner.rmod", "downloadCount": 3, "maxRaftVersionId": 31, "definiteMaxRaftVersion": false },
+            { "id": 92, "version": 5 }
+        ]},
+        { "id": 7, "title": null }
     ])
 }
 
@@ -286,6 +293,9 @@ async fn raft_mods_go_to_the_mods_folder_and_a_warning_page_is_refused() {
     assert_eq!(bio.versions[0].files, ["mods/BiofuelCounter v1.3.rmod"]);
     let nofog = catalog.get("nofog").unwrap();
     assert!(nofog.deprecated && nofog.note.as_deref().is_some_and(|n| n.contains("ancienne version")));
+    let spawner = catalog.get("itemspawner").unwrap();
+    assert_eq!((spawner.latest.as_str(), spawner.versions.len(), spawner.deprecated), ("4.0", 1, false));
+    assert_eq!(catalog.mods.len(), 3);
     let state_ = st.loader_state(raft).await.unwrap();
     assert!(!state_.installable && state_.note.is_some_and(|n| n.contains("RMLLauncher")));
 
