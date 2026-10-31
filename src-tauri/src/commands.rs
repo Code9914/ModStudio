@@ -33,6 +33,8 @@ pub struct AppState {
     pub nexus: NexusState,
     /// Source Thunderstore (bibliothèque et installations à part).
     pub thunderstore: crate::thunderstore::ThunderstoreState,
+    /// Listes de mods des communautés (Hollow Knight, Beat Saber…).
+    pub lists: crate::lists::ListsState,
 }
 
 impl AppState {
@@ -52,9 +54,11 @@ impl AppState {
             crate::thunderstore::api::API_BASE,
             settings_path.with_file_name("installed-thunderstore.json"),
         );
+        let lists = crate::lists::ListsState::new(settings_path.with_file_name("installed-lists.json"));
         Self {
             nexus,
             thunderstore,
+            lists,
             client: ModioClient::new(),
             settings: RwLock::new(settings),
             library: Mutex::new(Library::load(&library_path)),

@@ -1034,6 +1034,108 @@ export function rmlIdOf(fileName: string | null | undefined): string | null {
   return fileName?.startsWith("rml:") ? fileName.slice(4) : null;
 }
 
+// ---------------------------------------------------------------- Listes des communautés
+
+/** Jeu dont la communauté tient sa propre liste de mods (Hollow Knight, Beat Saber…). */
+export interface ClGame {
+  id: string;
+  gameId: number;
+  name: string;
+  listName: string;
+  listUrl: string;
+  /** Chargeur de mods du jeu. */
+  loader: string;
+  steamAppId: number;
+  cover: string;
+  hero: string;
+  about: string;
+}
+
+export interface ClDep {
+  id: string;
+  name: string;
+  version: string;
+  optional: boolean;
+}
+
+export interface ClVersion {
+  version: string;
+  changelog: string | null;
+  releaseUrl: string | null;
+  dependencies: ClDep[];
+  conflicts: ClDep[];
+  gameVersions: string[];
+  files: string[];
+}
+
+export interface ClMod {
+  id: string;
+  modId: number;
+  name: string;
+  description: string;
+  category: string | null;
+  author: string;
+  authorUrl: string | null;
+  icon: string | null;
+  iconFallback: string | null;
+  page: string | null;
+  tags: string[];
+  deprecated: boolean;
+  broken: boolean;
+  compatible: boolean;
+  note: string | null;
+  /** C'est le chargeur de mods du jeu. */
+  loader: boolean;
+  downloads: number | null;
+  updated: string | null;
+  latest: string;
+  versions: ClVersion[];
+}
+
+export interface ClLoader {
+  name: string;
+  present: boolean;
+  managed: boolean;
+  version: string | null;
+  installable: boolean;
+  id: string | null;
+  latest: string | null;
+  note: string | null;
+  launchOption: string | null;
+  gameVersion: string | null;
+}
+
+export interface ClInstalled {
+  game: GameInstall;
+  installed: string[];
+}
+
+export const cl = {
+  games: () => call<ClGame[]>("cl_games"),
+  overview: () => call<GameInstall[]>("cl_overview"),
+  mods: (game: string, refresh = false) => call<ClMod[]>("cl_mods", { game, refresh }),
+  configure: (game: string, folder: string) => call<GameInstall>("cl_configure", { game, folder }),
+  loader: (game: string) => call<ClLoader>("cl_loader", { game }),
+  install: (game: string, id: string, version: string | null, onProgress: (e: InstallEvent) => void) => {
+    const onEvent = new Channel<InstallEvent>();
+    onEvent.onmessage = onProgress;
+    return call<ClInstalled>("cl_install", { game, id, version, onEvent });
+  },
+  cancel: (game: string) => call<null>("cl_cancel", { game }),
+  uninstall: (gameId: number, modId: number) => call<UninstallResult>("cl_uninstall", { gameId, modId }),
+  setEnabled: (gameId: number, modId: number, enabled: boolean) =>
+    call<GameInstall>("cl_set_enabled", { gameId, modId, enabled }),
+  updates: (gameId: number) => call<TsUpdate[]>("cl_updates", { gameId }),
+  launch: (game: string) => call<null>("cl_launch", { game }),
+  reveal: (gameId: number, modId: number | null = null) => call<null>("cl_reveal", { gameId, modId }),
+};
+
+/** `<jeu>:<identifiant>` : mod d'une liste de communauté. */
+export function clIdOf(fileName: string | null | undefined): string | null {
+  const i = fileName?.indexOf(":") ?? -1;
+  return fileName && i > 0 ? fileName.slice(i + 1) : null;
+}
+
 /** Page d'un mod sur le site de Thunderstore. */
 export function tsPackageUrl(community: string, namespace: string, name: string) {
   return `https://thunderstore.io/c/${community}/p/${namespace}/${name}/`;

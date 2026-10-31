@@ -22,6 +22,10 @@
   import TsModsView from "$lib/components/TsModsView.svelte";
   import TsModView from "$lib/components/TsModView.svelte";
   import RmlModView from "$lib/components/RmlModView.svelte";
+  import ClGamesView from "$lib/components/ClGamesView.svelte";
+  import ClModsView from "$lib/components/ClModsView.svelte";
+  import ClModView from "$lib/components/ClModView.svelte";
+  import { listsStore } from "$lib/lists.svelte";
   import { tsStore } from "$lib/thunderstore.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import { updates as appUpdates } from "$lib/updates.svelte";
@@ -39,6 +43,7 @@
     nexusStore.listenNxm();
     checkNexus();
     checkThunderstore();
+    checkLists();
     try {
       const [settings] = await Promise.all([api.getSettings(), nexusStore.refreshAuth()]);
       nav.settings = settings;
@@ -77,6 +82,15 @@
     }
   }
 
+  async function checkLists() {
+    try {
+      await listsStore.load();
+      await Promise.all(Object.keys(listsStore.installs).map((id) => listsStore.checkUpdates(Number(id))));
+    } catch {
+      /* la page Installés affichera l'erreur */
+    }
+  }
+
   /** Charge les mods installés et cherche leurs mises à jour, sans bloquer. */
   async function checkInstalled() {
     try {
@@ -98,6 +112,10 @@
       ) +
       Object.values(tsStore.games).reduce(
         (n, g) => n + Object.values(g.mods).filter((m) => !m.disabled && tsStore.outdated(g.gameId, m.modId)).length,
+        0,
+      ) +
+      Object.values(listsStore.installs).reduce(
+        (n, g) => n + Object.values(g.mods).filter((m) => !m.disabled && listsStore.outdated(g.gameId, m.modId)).length,
         0,
       ),
   );
@@ -125,9 +143,9 @@
     if (typing) return;
     if ((event.key === "Escape" || (event.altKey && event.key === "ArrowLeft")) && nav.view.name !== "games") {
       const v = nav.view.name;
-      if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods" || v === "tsMod" || v === "tsMods" || v === "rmlMod") nav.back();
+      if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods" || v === "tsMod" || v === "tsMods" || v === "rmlMod" || v === "clMod" || v === "clMods") nav.back();
       else if (v === "nexusAccount" || v === "nexusTracked") nav.openNexusGames();
-      else if (v !== "nexusGames" && v !== "tsGames") nav.openGames();
+      else if (v !== "nexusGames" && v !== "tsGames" && v !== "clGames") nav.openGames();
     }
   }
 
@@ -156,6 +174,18 @@
       .filter((g) => g.domain && tsStore.count(g) > 0)
       .map((g) => tsStore.communityOf(g))
       .sort(byName),
+  );
+
+  const clRail = $derived(
+    Object.values(listsStore.installs)
+      .filter((g) => listsStore.count(g) > 0)
+      .map((g) => listsStore.gameOf(g))
+      .filter((g): g is NonNullable<typeof g> => !!g)
+      .sort(byName),
+  );
+  const onClGame = $derived(nav.view.name === "clMods" || (nav.view.name === "clMod" && nav.clOrigin === "clMods"));
+  const clGamesCurrent = $derived(
+    nav.view.name === "clGames" || (onClGame && (!appearance.value.railGames || !clRail.some((g) => g.id === nav.clGame?.id))),
   );
 
   // Page d'un jeu (ou d'un de ses mods) ouverte depuis sa liste.
@@ -335,6 +365,41 @@
       {/if}
     </ul>
 
+    <p class="section">Communautés</p>
+    <ul class="nav">
+      <li>
+        <button
+          class="nav-item"
+          aria-label="Jeux des communautés"
+          aria-current={clGamesCurrent ? "page" : undefined}
+          onclick={() => nav.openClGames()}
+        >
+          <Icon name="grid" size={18} />Jeux
+        </button>
+      </li>
+      {#if appearance.value.railGames}
+        {#each clRail as g (g.id)}
+          <li>
+            <button
+              class="nav-item sub"
+              aria-current={onClGame && nav.clGame?.id === g.id ? "page" : undefined}
+              onclick={() => nav.openClGame(g)}
+            >
+              <img
+                class="cover"
+                src={`https://cdn.cloudflare.steamstatic.com/steam/apps/${g.steamAppId}/capsule_231x87.jpg`}
+                alt=""
+                width="18"
+                height="18"
+                onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = "hidden")}
+              />
+              <span class="ellipsis">{g.name}</span>
+            </button>
+          </li>
+        {/each}
+      {/if}
+    </ul>
+
     <ul class="nav">
       <li>
         <button
@@ -343,7 +408,8 @@
           (nav.view.name === "mod" && nav.modOrigin === "installed") ||
           (nav.view.name === "nexusMod" && nav.nexusOrigin === "installed") ||
           (nav.view.name === "tsMod" && nav.tsOrigin === "installed") ||
-          (nav.view.name === "rmlMod" && nav.rmlOrigin === "installed")
+          (nav.view.name === "rmlMod" && nav.rmlOrigin === "installed") ||
+          (nav.view.name === "clMod" && nav.clOrigin === "installed")
             ? "page"
             : undefined}
           onclick={() => nav.openInstalled()}
@@ -461,6 +527,17 @@
       {#if nav.view.name === "rmlMod" && nav.tsGame}
         {#key nav.view.id}
           <div class="pane"><RmlModView game={nav.tsGame} id={nav.view.id} /></div>
+        {/key}
+      {/if}
+      <div class="pane" hidden={nav.view.name !== "clGames"}><ClGamesView /></div>
+      {#if nav.clGame}
+        {#key nav.clGame.id}
+          <div class="pane" hidden={nav.view.name !== "clMods"}><ClModsView game={nav.clGame} /></div>
+        {/key}
+      {/if}
+      {#if nav.view.name === "clMod" && nav.clGame}
+        {#key `${nav.clGame.id}:${nav.view.id}`}
+          <div class="pane"><ClModView game={nav.clGame} id={nav.view.id} /></div>
         {/key}
       {/if}
       {#if nav.view.name === "nexusTracked"}

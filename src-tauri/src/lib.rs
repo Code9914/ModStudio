@@ -7,6 +7,7 @@ mod error;
 mod games;
 mod install_commands;
 mod installer;
+mod lists;
 mod modio_sdk;
 mod nexus;
 mod settings;
@@ -120,6 +121,18 @@ pub fn run() {
             thunderstore::rml_mods,
             thunderstore::rml_status,
             thunderstore::rml_install,
+            lists::cl_games,
+            lists::cl_overview,
+            lists::cl_mods,
+            lists::cl_configure,
+            lists::cl_loader,
+            lists::cl_install,
+            lists::cl_cancel,
+            lists::cl_uninstall,
+            lists::cl_set_enabled,
+            lists::cl_updates,
+            lists::cl_launch,
+            lists::cl_reveal,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de ModStudio");

@@ -1,6 +1,6 @@
 // Navigation de l'appli (pas de routeur : un seul écran avec des vues).
 import { SvelteSet } from "svelte/reactivity";
-import { api, type AuthView, type Game, type NexusGame, type SettingsView, type TsCommunity } from "./api";
+import { api, type AuthView, type ClGame, type Game, type NexusGame, type SettingsView, type TsCommunity } from "./api";
 
 export type View =
   | { name: "games" }
@@ -18,7 +18,10 @@ export type View =
   | { name: "tsGames" }
   | { name: "tsMods" }
   | { name: "tsMod"; namespace: string; modName: string }
-  | { name: "rmlMod"; id: string };
+  | { name: "rmlMod"; id: string }
+  | { name: "clGames" }
+  | { name: "clMods" }
+  | { name: "clMod"; id: string };
 
 export type ModOrigin = "mods" | "library" | "installed";
 export type NexusOrigin = "nexusMods" | "installed" | "nexusTracked";
@@ -58,6 +61,11 @@ class Nav {
   /** Mods de ResoniteModLoader ouverts (puis via leurs dépendances). */
   rmlStack = $state<string[]>([]);
   rmlOrigin = $state<TsOrigin>("tsMods");
+
+  /** Jeu des listes des communautés ouvert, et mods ouverts (puis via leurs dépendances). */
+  clGame = $state<ClGame | null>(null);
+  clStack = $state<string[]>([]);
+  clOrigin = $state<"clMods" | "installed">("clMods");
 
   /** Mods suivis dans le jeu ouvert. */
   subs = new SvelteSet<number>();
@@ -177,6 +185,32 @@ class Nav {
     this.view = { name: "rmlMod", id };
   }
 
+  // ------------------------------------------------------------ Listes des communautés
+
+  openClGames() {
+    this.view = { name: "clGames" };
+  }
+
+  openClGame(game: ClGame) {
+    if (this.clGame?.id !== game.id) this.clGame = game;
+    this.clStack = [];
+    this.view = { name: "clMods" };
+  }
+
+  openClMod(id: string) {
+    if (this.view.name !== "clMod") this.clOrigin = "clMods";
+    this.clStack = [...this.clStack, id];
+    this.view = { name: "clMod", id };
+  }
+
+  /** Fiche d'un mod ouverte depuis « Installés ». */
+  openClModFromInstalled(game: ClGame, id: string) {
+    if (this.clGame?.id !== game.id) this.clGame = game;
+    this.clOrigin = "installed";
+    this.clStack = [id];
+    this.view = { name: "clMod", id };
+  }
+
   openNexusAccount(returnTo: View | null = null) {
     this.afterNexusKey = returnTo;
     this.nexusWelcome = false;
@@ -191,6 +225,20 @@ class Nav {
   }
 
   back() {
+    if (this.view.name === "clMod" && this.clStack.length > 1) {
+      this.clStack = this.clStack.slice(0, -1);
+      this.view = { name: "clMod", id: this.clStack[this.clStack.length - 1] };
+      return;
+    }
+    if (this.view.name === "clMod") {
+      this.clStack = [];
+      this.view = { name: this.clOrigin };
+      return;
+    }
+    if (this.view.name === "clMods") {
+      this.view = { name: "clGames" };
+      return;
+    }
     if (this.view.name === "rmlMod" && this.rmlStack.length > 1) {
       this.rmlStack = this.rmlStack.slice(0, -1);
       this.view = { name: "rmlMod", id: this.rmlStack[this.rmlStack.length - 1] };

@@ -381,6 +381,28 @@ La page de Resonite a un deuxième onglet pour les mods de **ResoniteModLoader**
 - Mises à jour, activer / désactiver et désinstaller comme les autres mods, dans
   « Installés » avec ceux de Thunderstore.
 
+## Communautés (v0.11)
+
+Section « Communautés » du menu : des jeux dont la communauté tient sa propre
+liste de mods, hors de mod.io, Nexus Mods et Thunderstore. ModStudio installe
+le chargeur du jeu s'il manque, puis chaque mod avec ceux dont il a besoin, là
+où le chargeur le lit. Mises à jour, activer / désactiver et désinstaller comme
+les autres mods, dans « Installés ».
+
+| Jeu | Liste | Chargeur | Où vont les mods | Vérification |
+| --- | --- | --- | --- | --- |
+| Hollow Knight | [ModLinks](https://github.com/hk-modding/modlinks) (celle de Lumafly) | Modding API : remplace quelques fichiers de `hollow_knight_Data/Managed` (les originaux gardés de côté et remis à la désinstallation) ; refusé si le jeu n'est pas en version 1.5.78.11833 | `Managed/Mods/<Nom>/` | SHA-256 |
+| Outer Wilds | [base d'OWML](https://github.com/ow-mods/ow-mod-db) | OWML, dans le dossier d'Outer Wilds Mod Manager ; bouton « Lancer avec OWML » (il prépare le jeu, ensuite Steam suffit) | `OWML/Mods/<uniqueName>/` (mods demandés par leur `manifest.json` installés ensuite, `config.json` laissé à l'utilisateur) | HTTPS (GitHub) |
+| Beat Saber | [BeatMods](https://beatmods.com), mods vérifiés pour la version du jeu lue dans `globalgamemanagers` | BSIPA, placé comme le ferait `IPA.exe` (`IPA/Data` → `Beat Saber_Data`, `IPA/Libs` → `Libs`, `winhttp.dll`) | dossier du jeu (`Plugins`, `Libs`…) | MD5 de chaque fichier |
+| ChilloutVR | [ChilloutVR Modding Group](https://api.cvrmg.com/v1/mods) | MelonLoader (dernière version GitHub) | `Mods/` ou `Plugins/`, sous le nom donné par le serveur | SHA-256 |
+| Raft | [RaftModding](https://www.raftmodding.com/mods) | Raft Mod Loader, installé par son propre lanceur (lien sur la page du jeu) | `mods/*.rmod` | HTTPS (la liste ne publie pas d'empreinte) |
+
+Les mods marqués cassés, retirés, ou faits pour une ancienne version du jeu
+sont cachés par défaut. Resonite (ResoniteModLoader) reste dans sa page
+Thunderstore, avec un raccourci depuis cette section. Sous Linux, l'option de
+lancement Proton (`winhttp` ou `version`) est affichée quand le chargeur passe
+par une DLL.
+
 ## Obtenir ta clé API
 
 1. Ouvre <https://mod.io/me/access> et connecte-toi.
@@ -418,6 +440,10 @@ src-tauri/src/
     ecosystem.rs  chargeur et règles d'installation de chaque jeu (+ copie embarquée)
     install.rs    dépendances, chargeur, rangement selon les règles, mises à jour
     rml.rs        mods de ResoniteModLoader (liste vérifiée, empreintes, RML chargé par BepisLoader)
+  lists/          listes des communautés :
+    mod.rs        jeux, listes en cache, commandes
+    games.rs      lecture de chaque liste (ModLinks, OWML, BeatMods, CVRMG, RaftModding) et chargeurs
+    install.rs    plan (chargeur, dépendances), téléchargement vérifié, rangement, mises à jour
   games/          jeux installés sur ce PC :
     steam.rs      bibliothèques et jeux Steam
     epic.rs       jeux Epic Games
@@ -475,6 +501,13 @@ différents), moteur reconnu (en-tête PE, version de l'exécutable), rangement
 Unreal / Unity / Bethesda, `plugins.txt` activé puis restauré, et installation
 d'UE4SS contre un faux GitHub (empreinte, fichiers du jeu jamais touchés).
 
+Pour les listes des communautés : chaque jeu contre un faux serveur (Hollow
+Knight : Modding API puis mods, fichiers du jeu remis à la désinstallation,
+version du jeu refusée ; ChilloutVR : MelonLoader, mods nommés par le serveur,
+empreinte en base64 ; Raft : page d'avertissement refusée ; Beat Saber :
+version lue dans le jeu, BSIPA placé comme `IPA.exe`, fichier modifié refusé ;
+Outer Wilds : OWML et sa configuration, mods demandés par le `manifest.json`).
+
 Pour ResoniteModLoader : liste lue sans les fichiers douteux (adresse non
 HTTPS, empreinte mal formée, chemin qui sortirait du dossier du jeu), RML et
 Harmony installés avant le mod, RML installé à la main gardé, fichier abîmé
@@ -505,6 +538,10 @@ qui garde les réglages, conflits refusés sans rien toucher.
 - Se déconnecter révoque le jeton obtenu par e-mail. Un jeton créé à la main
   sur mod.io est seulement oublié : supprime-le sur mod.io/me/access pour le
   révoquer.
+- Les mods des listes des communautés ne viennent que de ces listes, en HTTPS ;
+  quand la liste publie une empreinte (SHA-256 ou MD5 par fichier), le fichier
+  qui ne correspond pas est refusé. Aucun programme n'est lancé sans un clic
+  (« Lancer avec OWML »).
 - Les mods de ResoniteModLoader ne sont installés que depuis la liste vérifiée
   par la communauté, en HTTPS, et chaque fichier doit avoir l'empreinte SHA-256
   publiée dans la liste.

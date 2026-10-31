@@ -175,6 +175,13 @@ pub enum AppError {
 
     #[error("Impossible de télécharger « {name} » depuis {host} ({detail}). Réessaie plus tard.")]
     RmlDownload { name: String, host: String, detail: String },
+
+    // ------------------------------------------------------------ Listes des communautés
+    #[error("Impossible de récupérer la liste « {list} ». Vérifie ta connexion internet. ({detail})")]
+    ListUnavailable { list: String, detail: String },
+
+    #[error("Impossible de télécharger « {name} » depuis {host} ({detail}). Réessaie plus tard.")]
+    ListDownload { name: String, host: String, detail: String },
 }
 
 impl AppError {
@@ -231,6 +238,7 @@ impl AppError {
             AppError::ThunderstoreNetwork(_) => "network",
             AppError::ThunderstoreUnsupported(_) => "thunderstore_unsupported",
             AppError::RmlUnavailable(_) | AppError::RmlDownload { .. } => "network",
+            AppError::ListUnavailable { .. } | AppError::ListDownload { .. } => "network",
         }
     }
 

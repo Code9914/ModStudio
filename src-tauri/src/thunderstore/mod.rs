@@ -141,6 +141,7 @@ fn others(state: &AppState) -> Vec<Library> {
     vec![
         state.library.lock().expect("library").clone(),
         state.nexus.library.lock().expect("library").clone(),
+        state.lists.library.lock().expect("library").clone(),
     ]
 }
 

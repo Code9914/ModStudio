@@ -5,6 +5,8 @@
     api,
     asAppError,
     nexus,
+    cl,
+    clIdOf,
     rmlIdOf,
     ts,
     type AppError,
@@ -14,6 +16,7 @@
   } from "$lib/api";
   import { engineNames, nexusGameOf, nexusStore } from "$lib/nexus.svelte";
   import { splitFullName, tsStore } from "$lib/thunderstore.svelte";
+  import { listsStore } from "$lib/lists.svelte";
   import NexusFolderSetup from "./NexusFolderSetup.svelte";
   import ModToggle from "./ModToggle.svelte";
   import ProfileBar from "./ProfileBar.svelte";
@@ -39,11 +42,12 @@
   async function refresh() {
     error = null;
     try {
-      await Promise.all([installs.load(), nexusStore.load(), tsStore.load()]);
+      await Promise.all([installs.load(), nexusStore.load(), tsStore.load(), listsStore.load()]);
       await Promise.all([
         ...Object.keys(installs.games).map((id) => installs.checkUpdates(Number(id))),
         ...Object.keys(nexusStore.games).map((id) => nexusStore.checkUpdates(Number(id))),
         ...Object.keys(tsStore.games).map((id) => tsStore.checkUpdates(Number(id))),
+        ...Object.keys(listsStore.installs).map((id) => listsStore.checkUpdates(Number(id))),
       ]);
       // Nouvelles versions des chargeurs de mods installés par ModStudio.
       for (const g of Object.values(nexusStore.games)) {
@@ -92,13 +96,20 @@
       .sort((a, b) => a.gameName.localeCompare(b.gameName, "fr")),
   );
 
+  const clGames = $derived(
+    Object.values(listsStore.installs)
+      .filter((g) => listsStore.count(g) > 0)
+      .sort((a, b) => a.gameName.localeCompare(b.gameName, "fr")),
+  );
+
   const total = $derived(
     games.reduce((n, g) => n + Object.keys(g.mods).length, 0) +
       nexusGames.reduce((n, g) => n + nexusStore.count(g), 0) +
-      tsGames.reduce((n, g) => n + tsStore.count(g), 0),
+      tsGames.reduce((n, g) => n + tsStore.count(g), 0) +
+      clGames.reduce((n, g) => n + listsStore.count(g), 0),
   );
-  const withMods = $derived(games.length + nexusGames.length + tsGames.length);
-  const loaded = $derived(installs.loaded && nexusStore.loaded && tsStore.loaded);
+  const withMods = $derived(games.length + nexusGames.length + tsGames.length + clGames.length);
+  const loaded = $derived(installs.loaded && nexusStore.loaded && tsStore.loaded && listsStore.loaded);
 
   async function update(g: GameInstall, m: InstalledMod) {
     rowErrors.delete(m.modId);
@@ -146,20 +157,23 @@
   // ------------------------------------------------------------ Activer / désactiver
   const toggling = new SvelteSet<string>();
 
-  async function toggle(source: "modio" | "nexus" | "ts", g: GameInstall, m: InstalledMod, enabled: boolean) {
+  async function toggle(source: "modio" | "nexus" | "ts" | "cl", g: GameInstall, m: InstalledMod, enabled: boolean) {
     const k = `${source}:${g.gameId}:${m.modId}`;
     toggling.add(k);
     if (source === "modio") rowErrors.delete(m.modId);
     else if (source === "ts") tsErrors.delete(tsKey(g, m));
+    else if (source === "cl") clErrors.delete(tsKey(g, m));
     else nxErrors.delete(nexusStore.key(g.gameId, m.modId));
     try {
       if (source === "modio") await installs.setEnabled(g.gameId, m.modId, enabled);
       else if (source === "ts") await tsStore.setEnabled(g.gameId, m.modId, enabled);
+      else if (source === "cl") await listsStore.setEnabled(g.gameId, m.modId, enabled);
       else await nexusStore.setEnabled(g.gameId, m.modId, enabled);
     } catch (e) {
       const message = asAppError(e).message;
       if (source === "modio") rowErrors.set(m.modId, message);
       else if (source === "ts") tsErrors.set(tsKey(g, m), message);
+      else if (source === "cl") clErrors.set(tsKey(g, m), message);
       else nxErrors.set(nexusStore.key(g.gameId, m.modId), message);
     } finally {
       toggling.delete(k);
@@ -409,6 +423,96 @@
   function tsReveal(gameId: number, modId: number | null) {
     ts.reveal(gameId, modId).catch((e) => (error = asAppError(e)));
   }
+
+  // ------------------------------------------------------------ Listes des communautés
+
+  const clErrors = new SvelteMap<string, string>();
+  const clNotes = new SvelteMap<string, string>();
+  const clConfirming = new SvelteSet<string>();
+  const clRemoving = new SvelteSet<string>();
+  const clGameNotes = new SvelteMap<number, string>();
+  const clOrphans = new SvelteMap<number, { parent: string; mods: { modId: number; name: string }[] }>();
+  const clUpdatingAll = new SvelteSet<number>();
+
+  function clOpen(g: GameInstall, m: InstalledMod) {
+    const game = listsStore.gameOf(g);
+    const id = clIdOf(m.fileName);
+    if (game && id) nav.openClModFromInstalled(game, id);
+  }
+
+  function clOutdatedIn(g: GameInstall) {
+    return Object.values(g.mods).filter((m) => !m.disabled && listsStore.outdated(g.gameId, m.modId));
+  }
+
+  async function clUpdate(g: GameInstall, m: InstalledMod) {
+    const game = listsStore.gameOf(g);
+    const id = clIdOf(m.fileName);
+    if (!game || !id) return;
+    const k = tsKey(g, m);
+    clErrors.delete(k);
+    clNotes.delete(k);
+    try {
+      await listsStore.loadMods(game);
+      const mod = listsStore.mod(game, id);
+      if (!mod) throw listsStore.errors[game.id] ?? { kind: "not_found", message: `Ce mod n'est plus dans la liste ${game.listName}.`, retryAfter: null };
+      await listsStore.install(game, mod);
+      clNotes.set(k, "Mis à jour.");
+    } catch (e) {
+      const err = asAppError(e);
+      if (err.kind !== "cancelled") clErrors.set(k, err.message);
+    }
+  }
+
+  async function clUpdateAll(g: GameInstall) {
+    clUpdatingAll.add(g.gameId);
+    for (const m of clOutdatedIn(g)) await clUpdate(g, m);
+    clUpdatingAll.delete(g.gameId);
+  }
+
+  async function clUninstall(g: GameInstall, m: InstalledMod) {
+    const k = tsKey(g, m);
+    if (!clConfirming.has(k)) {
+      clConfirming.add(k);
+      setTimeout(() => clConfirming.delete(k), 4000);
+      return;
+    }
+    clConfirming.delete(k);
+    clRemoving.add(k);
+    clErrors.delete(k);
+    try {
+      const r = await listsStore.uninstall(g.gameId, m.modId);
+      if (r.leftFolder) {
+        clGameNotes.set(g.gameId, `« ${m.name} » désinstallé. Son dossier contient des fichiers ajoutés depuis, il a été laissé en place.`);
+      }
+      if (r.orphans.length) clOrphans.set(g.gameId, { parent: m.name, mods: r.orphans });
+    } catch (e) {
+      clErrors.set(k, asAppError(e).message);
+    } finally {
+      clRemoving.delete(k);
+    }
+  }
+
+  async function removeClOrphans(g: GameInstall) {
+    const entry = clOrphans.get(g.gameId);
+    clOrphans.delete(g.gameId);
+    if (!entry) return;
+    let queue = entry.mods;
+    while (queue.length) {
+      const next: { modId: number; name: string }[] = [];
+      for (const o of queue) {
+        const k = tsKey(g, o);
+        clRemoving.add(k);
+        try {
+          next.push(...(await listsStore.uninstall(g.gameId, o.modId)).orphans);
+        } catch (e) {
+          clErrors.set(k, asAppError(e).message);
+        } finally {
+          clRemoving.delete(k);
+        }
+      }
+      queue = next;
+    }
+  }
 </script>
 
 <div class="view">
@@ -449,6 +553,7 @@
         {/if}
         <button class="btn" onclick={() => nav.openNexusGames()}>Parcourir Nexus Mods</button>
         <button class="btn" onclick={() => nav.openTsGames()}>Parcourir Thunderstore</button>
+        <button class="btn" onclick={() => nav.openClGames()}>Jeux des communautés</button>
       </div>
     </div>
   {/if}
@@ -854,9 +959,119 @@
       </ul>
     </section>
   {/each}
+
+  {#each clGames as g (g.gameId)}
+    {@const list = mods(g)}
+    {@const outdated = clOutdatedIn(g)}
+    {@const job = listsStore.progress[g.gameId]}
+    {@const game = listsStore.gameOf(g)}
+    <section class="group">
+      <div class="group-head">
+        {#if g.icon}<img class="game-icon wide" src={g.icon} alt="" height="28" />{/if}
+        <h2>{g.gameName}</h2>
+        <span class="chip">{game?.listName ?? "Communauté"}</span>
+        <span class="muted count">{listsStore.count(g)}</span>
+        <div class="group-actions">
+          {#if outdated.length > 0}
+            <button class="btn btn-primary" onclick={() => clUpdateAll(g)} disabled={clUpdatingAll.has(g.gameId) || !!job}>
+              <Icon name="download" size={15} />{clUpdatingAll.has(g.gameId)
+                ? "Mise à jour…"
+                : outdated.length > 1
+                  ? `Tout mettre à jour (${outdated.length})`
+                  : "Mettre à jour (1)"}
+            </button>
+          {/if}
+          <button class="btn btn-ghost" onclick={() => cl.reveal(g.gameId).catch((e) => (error = asAppError(e)))}>Ouvrir le dossier</button>
+          {#if game}<button class="btn btn-ghost" onclick={() => nav.openClGame(game)}>Page du jeu</button>{/if}
+        </div>
+      </div>
+      <p class="folder muted">{g.folder}{game ? `, avec ${game.loader}` : ""}</p>
+
+      {#if job && game}
+        <div class="row-progress wide"><ProgressBar progress={job} oncancel={() => listsStore.cancel(game)} /></div>
+      {/if}
+
+      {#if clGameNotes.get(g.gameId)}<p class="note">{clGameNotes.get(g.gameId)}</p>{/if}
+
+      {#if clOrphans.get(g.gameId)}
+        {@const o = clOrphans.get(g.gameId)!}
+        <div class="orphans">
+          <p class="small">
+            {o.mods.map((x) => `« ${x.name} »`).join(", ")}
+            {o.mods.length > 1 ? "avaient été installés" : "avait été installé"} avec « {o.parent} » et ne
+            {o.mods.length > 1 ? "servent" : "sert"} plus à aucun autre mod.
+          </p>
+          <button class="btn btn-primary" onclick={() => removeClOrphans(g)}>
+            {o.mods.length > 1 ? "Les désinstaller aussi" : "Le désinstaller aussi"}
+          </button>
+          <button class="btn btn-ghost" onclick={() => clOrphans.delete(g.gameId)}>Garder</button>
+        </div>
+      {/if}
+
+      {#if list.length === 0}
+        <p class="muted small">Aucun mod installé ne correspond à « {query.trim()} ».</p>
+      {/if}
+
+      <ul class="rows">
+        {#each list as m (m.modId)}
+          {@const k = tsKey(g, m)}
+          {@const latest = listsStore.latest(g.gameId, m.modId)}
+          <li class="row" class:off={m.disabled}>
+            <button class="row-main" onclick={() => clOpen(g, m)}>
+              <span class="row-thumb square"><Thumb src={m.logo} label={m.name} /></span>
+              <span class="row-text">
+                <span class="row-name">{m.name}</span>
+                <span class="row-meta">
+                  <span>{m.version ? `version ${m.version}` : "version sans numéro"}</span>
+                  {#if m.size > 0}<span>{bytes(m.size)}</span>{/if}
+                  <span>installé {ago(m.installedAt)}</span>
+                  {#if m.disabled}<span class="chip">Désactivé</span>{/if}
+                  {#if m.auto && m.requiredBy.length}
+                    <span>nécessaire à « {m.requiredBy.map((id) => g.mods[id]?.name ?? `mod ${id}`).join(" », « ")} »</span>
+                  {/if}
+                </span>
+                {#if clErrors.get(k)}
+                  <span class="row-error">{clErrors.get(k)}</span>
+                {:else if clNotes.get(k)}
+                  <span class="row-note">{clNotes.get(k)}</span>
+                {/if}
+              </span>
+            </button>
+            <div class="row-action">
+              <ModToggle
+                enabled={!m.disabled}
+                name={m.name}
+                busy={toggling.has(`cl:${g.gameId}:${m.modId}`) || !!job}
+                ontoggle={(on) => toggle("cl", g, m, on)}
+              />
+              {#if latest && !m.disabled}
+                <span class="chip chip-accent">Version {latest}</span>
+                <button class="btn btn-primary" onclick={() => clUpdate(g, m)} disabled={!!job}>Mettre à jour</button>
+              {/if}
+              <button class="btn btn-ghost" onclick={() => cl.reveal(g.gameId, m.modId).catch((e) => (error = asAppError(e)))} disabled={m.disabled}>Ouvrir</button>
+              <button
+                class="btn"
+                class:btn-ghost={!clConfirming.has(k)}
+                class:danger={clConfirming.has(k)}
+                onclick={() => clUninstall(g, m)}
+                disabled={clRemoving.has(k) || !!job}
+              >
+                {clRemoving.has(k) ? "…" : clConfirming.has(k) ? "Confirmer" : "Désinstaller"}
+              </button>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/each}
 </div>
 
 <style>
+  .game-icon.wide {
+    width: auto;
+    border-radius: 4px;
+  }
+
   .row.off .row-thumb,
   .row.off .row-name {
     opacity: 0.5;
