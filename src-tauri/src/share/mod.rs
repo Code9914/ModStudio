@@ -567,7 +567,7 @@ async fn read_r2modman_code(state: &AppState, code: &str) -> AppResult<ShareImpo
 // ---------------------------------------------------------------- Commandes
 
 /// Profil d'un jeu installé, avec son code.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn share_export(state: State<'_, AppState>, source: Source, game_id: i64) -> AppResult<ShareExport> {
     let game = game_of(&state, source, game_id)?;
     let (profile, left_out) = export(source, &game);
@@ -619,7 +619,7 @@ pub async fn share_open_file(state: State<'_, AppState>, path: PathBuf) -> AppRe
 }
 
 /// Enregistre un profil dans le fichier choisi par l'utilisateur.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn share_save_file(path: PathBuf, profile: SharedProfile) -> AppResult<()> {
     let profile = validate(profile)?;
     let bytes = to_file(&profile)?;
@@ -651,7 +651,7 @@ pub async fn share_r2modman_create(state: State<'_, AppState>, game_id: i64, nam
 }
 
 /// Applique les réglages d'un profil r2modman lu plus tôt au jeu Thunderstore choisi.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn share_apply_configs(state: State<'_, AppState>, token: String, game_id: i64) -> AppResult<ConfigsApplied> {
     let game = game_of(&state, Source::Ts, game_id)?;
     if config_dir(&game).is_none() {

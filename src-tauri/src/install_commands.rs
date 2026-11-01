@@ -509,7 +509,7 @@ pub fn install_overview(state: State<'_, AppState>) -> Vec<GameInstall> {
     overview(&state)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_game_folder(
     state: State<'_, AppState>,
     game_id: i64,
@@ -522,12 +522,12 @@ pub fn set_game_folder(
     set_folder(&state, game_id, game_name, icon, folder, layout, create.unwrap_or(false))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn folder_suggestion(game_id: i64) -> Option<FolderSuggestion> {
     suggestion(game_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn inspect_folder(folder: String) -> FolderInfo {
     inspect(&folder)
 }
@@ -551,22 +551,22 @@ pub fn cancel_install(state: State<'_, AppState>, mod_id: i64) {
     cancel(&state, mod_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn uninstall_mod(state: State<'_, AppState>, game_id: i64, mod_id: i64) -> AppResult<UninstallResult> {
     remove(&state, game_id, mod_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_mod_enabled(state: State<'_, AppState>, game_id: i64, mod_id: i64, enabled: bool) -> AppResult<GameInstall> {
     set_enabled(&state, game_id, mod_id, enabled)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn apply_mod_profile(state: State<'_, AppState>, game_id: i64, name: String) -> AppResult<crate::toggle::ProfileApplied> {
     apply_profile(&state, game_id, &name)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn edit_mod_profiles(state: State<'_, AppState>, game_id: i64, edit: crate::toggle::ProfileEdit) -> AppResult<GameInstall> {
     let mut lib = state.library.lock().expect("library");
     let game = lib.games.get_mut(&game_id).ok_or(AppError::NotFound)?;
@@ -581,7 +581,7 @@ pub async fn latest_installed_files(state: State<'_, AppState>, game_id: i64) ->
     latest(&state, game_id).await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn reveal_install(
     app: AppHandle,
     state: State<'_, AppState>,

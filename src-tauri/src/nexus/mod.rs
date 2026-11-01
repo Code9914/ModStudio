@@ -108,7 +108,11 @@ impl NexusState {
 // ---------------------------------------------------------------- Compte
 
 #[tauri::command]
-pub async fn nexus_status(state: State<'_, AppState>) -> AppResult<NexusAuthView> {
+pub async fn nexus_status(state: State<'_, AppState>, validate: Option<bool>) -> AppResult<NexusAuthView> {
+    if validate == Some(false) {
+        // Au lancement : la clé est-elle là ? (sans attendre Nexus Mods)
+        return Ok(state.nexus.local_status());
+    }
     state.nexus.status().await
 }
 
@@ -117,7 +121,7 @@ pub async fn nexus_set_key(state: State<'_, AppState>, key: String) -> AppResult
     state.nexus.set_key(&key).await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn nexus_forget_key(state: State<'_, AppState>) -> AppResult<NexusAuthView> {
     state.nexus.forget_key()
 }
@@ -283,7 +287,7 @@ pub fn nexus_cancel_tool(state: State<'_, AppState>, game_id: i64) {
 }
 
 /// Retire un outil installé par ModStudio ; renvoie le dossier laissé en place s'il en reste un.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn nexus_uninstall_tool(state: State<'_, AppState>, game_id: i64, tool: String) -> AppResult<Option<String>> {
     state.nexus.remove_tool(game_id, &tool)
 }
@@ -374,7 +378,7 @@ pub fn nexus_cancel_install(state: State<'_, AppState>, mod_id: i64) {
 
 /// Désinstalle ; renvoie le dossier laissé en place s'il contient des fichiers
 /// ajoutés depuis, et les mods nécessaires devenus inutiles.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn nexus_uninstall(
     state: State<'_, AppState>,
     game_id: i64,
@@ -384,21 +388,21 @@ pub fn nexus_uninstall(
 }
 
 /// Active ou désactive un mod sans le désinstaller.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn nexus_set_enabled(state: State<'_, AppState>, game_id: i64, mod_id: i64, enabled: bool) -> AppResult<GameInstall> {
     let modio = crate::thunderstore::merged(&[&state.library, &state.thunderstore.library, &state.lists.library]);
     state.nexus.set_enabled(game_id, mod_id, enabled, &modio)
 }
 
 /// Passe à un profil de mods.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn nexus_apply_profile(state: State<'_, AppState>, game_id: i64, name: String) -> AppResult<crate::toggle::ProfileApplied> {
     let modio = crate::thunderstore::merged(&[&state.library, &state.thunderstore.library, &state.lists.library]);
     state.nexus.apply_profile(game_id, &name, &modio)
 }
 
 /// Crée, renomme ou supprime un profil.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn nexus_edit_profiles(state: State<'_, AppState>, game_id: i64, edit: crate::toggle::ProfileEdit) -> AppResult<GameInstall> {
     state.nexus.edit_profiles(game_id, &edit)
 }
@@ -408,7 +412,7 @@ pub async fn nexus_updates(state: State<'_, AppState>, game_id: i64) -> AppResul
     state.nexus.updates(game_id).await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn nexus_reveal(app: AppHandle, state: State<'_, AppState>, game_id: i64, mod_id: Option<i64>) -> AppResult<()> {
     let path = state.nexus.reveal_path(game_id, mod_id)?;
     app.opener()

@@ -121,6 +121,12 @@ impl NexusState {
         Ok(info.into())
     }
 
+    /// État du compte connu sur ce PC, sans vérifier la clé auprès de Nexus Mods.
+    pub fn local_status(&self) -> NexusAuthView {
+        self.ensure_loaded();
+        self.auth.read().expect("compte nexus").view()
+    }
+
     /// État du compte ; vérifie la clé enregistrée au premier appel.
     pub async fn status(&self) -> AppResult<NexusAuthView> {
         self.ensure_loaded();
@@ -216,6 +222,16 @@ mod tests {
         let view = s.forget_key().unwrap();
         assert!(!view.logged_in);
         assert!(matches!(s.key(), Err(AppError::NexusKeyMissing)));
+    }
+
+    #[test]
+    fn local_status_does_not_wait_for_nexus() {
+        // Aucun serveur ne répond : seule la clé enregistrée compte.
+        let s = state("http://127.0.0.1:9/v1", MemoryStore::with(Some("ma-cle".into())));
+        let view = s.local_status();
+        assert!(view.logged_in && view.persisted && view.user.is_none());
+        let none = state("http://127.0.0.1:9/v1", MemoryStore::default());
+        assert!(!none.local_status().logged_in);
     }
 
     #[tokio::test]

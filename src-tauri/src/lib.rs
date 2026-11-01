@@ -31,6 +31,13 @@ pub fn run() {
         // Notifications : nouvelles mises à jour de mods trouvées en arrière-plan.
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            // Fond de la fenêtre en attendant la page (thème du système) : pas
+            // d'éclair blanc au lancement. Mêmes couleurs que `--ink` (app.css).
+            if let Some(window) = app.get_webview_window("main") {
+                let light = matches!(window.theme(), Ok(tauri::Theme::Light));
+                let ink = if light { tauri::window::Color(242, 238, 249, 255) } else { tauri::window::Color(28, 22, 38, 255) };
+                let _ = window.set_background_color(Some(ink));
+            }
             // Mises à jour de ModStudio : signées, publiées dans les releases GitHub.
             #[cfg(desktop)]
             {

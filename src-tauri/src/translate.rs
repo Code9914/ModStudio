@@ -312,7 +312,7 @@ pub fn translation_detect(text: String) -> Option<String> {
     detect(&sample)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn translation_plan(state: State<'_, AppState>, from: String, to: String) -> AppResult<TranslationPlan> {
     state.translate.plan(table(), &from, &to)
 }
@@ -326,17 +326,17 @@ pub async fn translation_download(state: State<'_, AppState>, from: String, to: 
 }
 
 /// Un fichier de modèle, en binaire (sans passer par JSON).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn translation_file(state: State<'_, AppState>, from: String, to: String, kind: String) -> AppResult<Response> {
     state.translate.read(table(), &from, &to, &kind).map(Response::new)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn translation_storage(state: State<'_, AppState>) -> u64 {
     state.translate.storage()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn translation_clear(state: State<'_, AppState>) -> AppResult<()> {
     state.translate.clear()
 }

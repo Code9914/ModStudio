@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import { api, asAppError, type AppError } from "$lib/api";
   import { installs } from "$lib/installs.svelte";
   import { nav } from "$lib/nav.svelte";
@@ -47,7 +48,10 @@
     nexusStore.listenNxm();
     const loads = [loadNexus(), quietly(tsStore.load()), quietly(listsStore.load())];
     try {
-      const [settings] = await Promise.all([api.getSettings(), nexusStore.refreshAuth()]);
+      // Rien de réseau ici : l'appli s'affiche sans attendre les sites.
+      const [settings] = await Promise.all([api.getSettings(), nexusStore.refreshAuth(false)]);
+      // Clé Nexus vérifiée en arrière-plan (compte, Premium, clé révoquée).
+      nexusStore.refreshAuth();
       nav.settings = settings;
       if (!nexusStore.ready && !welcomeDone()) {
         // Premier lancement : connexion à Nexus Mods d'abord.
@@ -87,6 +91,35 @@
   }
 
   const updates = $derived(modUpdates.list.length);
+
+  // Vues gardées en mémoire (on y retrouve sa place). Au lancement, seule celle
+  // affichée est construite ; les autres suivent une à une quand l'appli est au
+  // repos, pour que leurs données soient prêtes avant le premier clic.
+  const mounted = new SvelteSet<string>();
+  const WARM_UP = ["games", "nexusGames", "installed", "tsGames", "clGames", "library", "search"];
+  function keep(name: string) {
+    return nav.view.name === name || mounted.has(name);
+  }
+  $effect(() => {
+    const name = nav.view.name;
+    untrack(() => mounted.add(name));
+  });
+  function whenIdle(fn: () => void) {
+    if ("requestIdleCallback" in window) requestIdleCallback(fn, { timeout: 1500 });
+    else setTimeout(fn, 150);
+  }
+  function warmUp() {
+    const next = WARM_UP.find((n) => !mounted.has(n));
+    if (!next) return;
+    mounted.add(next);
+    whenIdle(warmUp);
+  }
+  let warming = false;
+  $effect(() => {
+    if (!nav.settings || warming) return;
+    warming = true;
+    setTimeout(() => whenIdle(warmUp), 700);
+  });
 
   onMount(start);
 
@@ -446,14 +479,14 @@
     {:else if nav.settings}
       {#if ready}
         {#key nav.session}
-          <div class="pane" hidden={nav.view.name !== "games"}><GamesView /></div>
+          {#if keep("games")}<div class="pane" hidden={nav.view.name !== "games"}><GamesView /></div>{/if}
           {#if nav.game}
             {#key nav.game.id}
               <div class="pane" hidden={nav.view.name !== "mods"}><ModsView game={nav.game} /></div>
             {/key}
           {/if}
-          <div class="pane" hidden={nav.view.name !== "library"}><LibraryView /></div>
-          <div class="pane" hidden={nav.view.name !== "installed"}><InstalledView /></div>
+          {#if keep("library")}<div class="pane" hidden={nav.view.name !== "library"}><LibraryView /></div>{/if}
+          {#if keep("installed")}<div class="pane" hidden={nav.view.name !== "installed"}><InstalledView /></div>{/if}
         {/key}
         {#if nav.view.name === "mod" && nav.game}
           <div class="pane"><ModView game={nav.game} modId={nav.view.modId} /></div>
@@ -463,21 +496,21 @@
         {/if}
       {/if}
       {#key nav.session}
-        <div class="pane" hidden={nav.view.name !== "nexusGames"}><NexusGamesView /></div>
+        {#if keep("nexusGames")}<div class="pane" hidden={nav.view.name !== "nexusGames"}><NexusGamesView /></div>{/if}
         {#if nav.nexusGame}
           {#key nav.nexusGame.id}
             <div class="pane" hidden={nav.view.name !== "nexusMods"}><NexusModsView game={nav.nexusGame} /></div>
           {/key}
         {/if}
-        {#if !ready}
+        {#if !ready && keep("installed")}
           <div class="pane" hidden={nav.view.name !== "installed"}><InstalledView /></div>
         {/if}
       {/key}
       {#if nav.view.name === "nexusMod" && nav.nexusGame}
         <div class="pane"><NexusModView game={nav.nexusGame} modId={nav.view.modId} /></div>
       {/if}
-      <div class="pane" hidden={nav.view.name !== "search"}><SearchView /></div>
-      <div class="pane" hidden={nav.view.name !== "tsGames"}><TsGamesView /></div>
+      {#if keep("search")}<div class="pane" hidden={nav.view.name !== "search"}><SearchView /></div>{/if}
+      {#if keep("tsGames")}<div class="pane" hidden={nav.view.name !== "tsGames"}><TsGamesView /></div>{/if}
       {#if nav.tsGame}
         {#key nav.tsGame.id}
           <div class="pane" hidden={nav.view.name !== "tsMods"}><TsModsView game={nav.tsGame} /></div>
@@ -493,7 +526,7 @@
           <div class="pane"><RmlModView game={nav.tsGame} id={nav.view.id} /></div>
         {/key}
       {/if}
-      <div class="pane" hidden={nav.view.name !== "clGames"}><ClGamesView /></div>
+      {#if keep("clGames")}<div class="pane" hidden={nav.view.name !== "clGames"}><ClGamesView /></div>{/if}
       {#if nav.clGame}
         {#key nav.clGame.id}
           <div class="pane" hidden={nav.view.name !== "clMods"}><ClModsView game={nav.clGame} /></div>

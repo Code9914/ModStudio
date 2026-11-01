@@ -466,7 +466,7 @@ pub async fn cl_declared(state: State<'_, AppState>, game: String) -> AppResult<
         .collect())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cl_configure(state: State<'_, AppState>, game: String, folder: String) -> AppResult<GameInstall> {
     state.lists.configure(def(&game)?, &folder)
 }
@@ -498,26 +498,26 @@ pub fn cl_cancel(state: State<'_, AppState>, game: String) {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cl_uninstall(state: State<'_, AppState>, game_id: i64, mod_id: i64) -> AppResult<UninstallResult> {
     state.lists.remove(game_id, mod_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cl_set_enabled(state: State<'_, AppState>, game_id: i64, mod_id: i64, enabled: bool) -> AppResult<GameInstall> {
     let others = others(&state);
     state.lists.set_enabled(game_id, mod_id, enabled, &others)
 }
 
 /// Passe à un profil de mods.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cl_apply_profile(state: State<'_, AppState>, game_id: i64, name: String) -> AppResult<crate::toggle::ProfileApplied> {
     let others = others(&state);
     state.lists.apply_profile(game_id, &name, &others)
 }
 
 /// Crée, renomme ou supprime un profil.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cl_edit_profiles(state: State<'_, AppState>, game_id: i64, edit: crate::toggle::ProfileEdit) -> AppResult<GameInstall> {
     state.lists.edit_profiles(game_id, &edit)
 }
@@ -528,12 +528,12 @@ pub async fn cl_updates(state: State<'_, AppState>, game_id: i64) -> AppResult<V
 }
 
 /// Lance l'outil du chargeur (OWML d'Outer Wilds prépare le jeu, puis le lance).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cl_launch(state: State<'_, AppState>, game: String) -> AppResult<()> {
     state.lists.launch(def(&game)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cl_reveal(app: AppHandle, state: State<'_, AppState>, game_id: i64, mod_id: Option<i64>) -> AppResult<()> {
     let path = state.lists.reveal_path(game_id, mod_id)?;
     app.opener()

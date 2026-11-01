@@ -10,6 +10,15 @@
       // Même logique que apply() dans src/lib/appearance.svelte.ts.
       try {
         var a = JSON.parse(localStorage.getItem("modstudio.appearance") || "null");
+        // Fond de l'appli dès le premier affichage, avant ses styles (même
+        // calcul que --ink dans app.css). Par le script et pas une balise
+        // <style> : Tauri lui ajouterait un nonce qui annulerait 'unsafe-inline'.
+        var light = a && a.theme === "light" ? true : a && a.theme === "dark" ? false : matchMedia("(prefers-color-scheme: light)").matches;
+        var accent = a && /^#[0-9a-f]{6}$/i.test(a.colorA) ? a.colorA : "#c39bff";
+        var tint = a && a.tint === false ? 0 : 0.22;
+        document.documentElement.style.background = light
+          ? "oklch(from " + accent + " 0.955 calc(c * " + tint * 0.5 + ") h)"
+          : "oklch(from " + accent + " 0.215 calc(c * " + tint + ") h)";
         if (a) {
           var r = document.documentElement;
           if (a.theme === "dark" || a.theme === "light") r.dataset.theme = a.theme;

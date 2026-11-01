@@ -18,6 +18,8 @@
   const list = new PagedList<NexusGame>(
     (offset, limit) => nexus.listGames({ query: search, sort, offset, limit }),
     48,
+    // Liste par défaut gardée sur ce PC : affichée dès le lancement.
+    () => (search === "" && sort === "downloads" ? "nexus.games" : null),
   );
 
   $effect(() => {

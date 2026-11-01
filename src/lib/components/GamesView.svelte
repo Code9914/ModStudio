@@ -16,6 +16,8 @@
   const list = new PagedList<Game>(
     (offset, limit) => api.listGames({ query: search, sort, offset, limit }),
     48,
+    // Liste par défaut gardée sur ce PC : affichée dès le lancement.
+    () => (search === "" && sort === "name" ? `modio.games${nav.settings?.hideMature ? ".sfw" : ""}` : null),
   );
 
   // Recherche : on attend une courte pause dans la frappe.

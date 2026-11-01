@@ -91,14 +91,25 @@ class NexusStore {
     return keyOf(gameId, modId);
   }
 
-  async refreshAuth() {
-    try {
-      this.auth = await api.status();
-    } catch {
-      /* hors ligne : on garde l'état connu */
-    } finally {
-      this.authLoaded = true;
-    }
+  #validating: Promise<void> | null = null;
+
+  /** `validate: false` : la clé enregistrée seulement, sans attendre Nexus Mods. */
+  async refreshAuth(validate = true) {
+    const run = async () => {
+      try {
+        this.auth = await api.status(validate);
+      } catch {
+        /* hors ligne : on garde l'état connu */
+      } finally {
+        this.authLoaded = true;
+      }
+    };
+    if (!validate) return run();
+    const p = run().finally(() => {
+      if (this.#validating === p) this.#validating = null;
+    });
+    this.#validating = p;
+    return p;
   }
 
   async setKey(key: string) {
@@ -221,6 +232,8 @@ class NexusStore {
     fileName: string | null = null,
     requiredBy?: number,
   ): Promise<NexusInstallOutcome> {
+    // Compte Premium ou non : la vérification du lancement peut être encore en cours.
+    if (this.#validating) await this.#validating;
     if (this.premium) {
       try {
         return await this.#install(gameId, domain, modId, fileId, undefined, requiredBy);

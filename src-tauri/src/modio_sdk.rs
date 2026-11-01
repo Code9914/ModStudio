@@ -90,7 +90,7 @@ pub fn detect(game_id: i64) -> Option<ManagedByGame> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn detect_modio_install(game_id: i64) -> Option<ManagedByGame> {
     detect(game_id)
 }

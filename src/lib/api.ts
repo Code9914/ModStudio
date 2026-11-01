@@ -712,7 +712,8 @@ function withId<T extends { modId: number }>(m: T): T & { id: number } {
 }
 
 export const nexus = {
-  status: () => call<NexusAuthView>("nexus_status"),
+  /** `validate: false` : sans vérifier la clé auprès de Nexus Mods (lancement). */
+  status: (validate = true) => call<NexusAuthView>("nexus_status", { validate }),
   setKey: (key: string) => call<NexusAuthView>("nexus_set_key", { key }),
   forgetKey: () => call<NexusAuthView>("nexus_forget_key"),
 

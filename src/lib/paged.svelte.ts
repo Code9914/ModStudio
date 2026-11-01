@@ -14,10 +14,17 @@ export class PagedList<T extends { id: number }> {
   #seq = 0;
   #fetch: (offset: number, limit: number) => Promise<Page<T>>;
   #limit: number;
+  #cacheKey: (() => string | null) | null;
 
-  constructor(fetch: (offset: number, limit: number) => Promise<Page<T>>, limit = 30) {
+  /**
+   * `cacheKey` : nom sous lequel garder la première page sur ce PC, pour
+   * l'afficher tout de suite au prochain lancement pendant que la liste se
+   * met à jour (`null` : pas de cache pour cette recherche).
+   */
+  constructor(fetch: (offset: number, limit: number) => Promise<Page<T>>, limit = 30, cacheKey: (() => string | null) | null = null) {
     this.#fetch = fetch;
     this.#limit = limit;
+    this.#cacheKey = cacheKey;
   }
 
   get hasMore() {
@@ -25,10 +32,37 @@ export class PagedList<T extends { id: number }> {
   }
 
   reload() {
-    this.items = [];
-    this.total = 0;
-    this.loaded = false;
+    const cached = this.#readCache();
+    this.items = cached?.data ?? [];
+    this.total = cached?.total ?? 0;
+    this.loaded = !!cached;
     return this.#load(0, true);
+  }
+
+  #storageKey(): string | null {
+    const key = this.#cacheKey?.();
+    return key ? `modstudio.cache.${key}` : null;
+  }
+
+  #readCache(): { data: T[]; total: number } | null {
+    const key = this.#storageKey();
+    if (!key) return null;
+    try {
+      const v = JSON.parse(localStorage.getItem(key) ?? "null");
+      return v && Array.isArray(v.data) && typeof v.total === "number" ? v : null;
+    } catch {
+      return null;
+    }
+  }
+
+  #writeCache(page: Page<T>) {
+    const key = this.#storageKey();
+    if (!key) return;
+    try {
+      localStorage.setItem(key, JSON.stringify({ data: page.data, total: page.result_total }));
+    } catch {
+      /* cache plein ou indisponible : la liste se charge simplement depuis le site */
+    }
   }
 
   more() {
@@ -50,6 +84,7 @@ export class PagedList<T extends { id: number }> {
       if (seq !== this.#seq) return;
       if (replace) {
         this.items = page.data;
+        if (offset === 0) this.#writeCache(page);
       } else {
         // Un mod publié entre deux pages décale les résultats : on dédoublonne.
         const seen = new Set(this.items.map((i) => i.id));

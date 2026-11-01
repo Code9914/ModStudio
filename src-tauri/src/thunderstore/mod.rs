@@ -189,7 +189,7 @@ pub fn ts_overview(state: State<'_, AppState>) -> Vec<GameInstall> {
     state.thunderstore.overview()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ts_configure(
     state: State<'_, AppState>,
     community: String,
@@ -222,26 +222,26 @@ pub fn ts_cancel(state: State<'_, AppState>, community: String) {
     state.thunderstore.cancel(&community)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ts_uninstall(state: State<'_, AppState>, game_id: i64, mod_id: i64) -> AppResult<UninstallResult> {
     state.thunderstore.remove(game_id, mod_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ts_set_enabled(state: State<'_, AppState>, game_id: i64, mod_id: i64, enabled: bool) -> AppResult<GameInstall> {
     let others = others(&state);
     state.thunderstore.set_enabled(game_id, mod_id, enabled, &others)
 }
 
 /// Passe à un profil de mods.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ts_apply_profile(state: State<'_, AppState>, game_id: i64, name: String) -> AppResult<crate::toggle::ProfileApplied> {
     let others = others(&state);
     state.thunderstore.apply_profile(game_id, &name, &others)
 }
 
 /// Crée, renomme ou supprime un profil.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ts_edit_profiles(state: State<'_, AppState>, game_id: i64, edit: crate::toggle::ProfileEdit) -> AppResult<GameInstall> {
     state.thunderstore.edit_profiles(game_id, &edit)
 }
@@ -262,7 +262,7 @@ pub async fn rml_mods(state: State<'_, AppState>, refresh: Option<bool>) -> AppR
     Ok(state.thunderstore.rml.catalog(refresh.unwrap_or(false)).await?.mods.clone())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn rml_status(state: State<'_, AppState>) -> Option<rml::RmlStatus> {
     state.thunderstore.rml_status()
 }
@@ -281,7 +281,7 @@ pub async fn rml_install(
     state.thunderstore.rml_install(&id, version, &others, emit).await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ts_reveal(app: AppHandle, state: State<'_, AppState>, game_id: i64, mod_id: Option<i64>) -> AppResult<()> {
     let path = state.thunderstore.reveal_path(game_id, mod_id)?;
     app.opener()
