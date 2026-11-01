@@ -28,6 +28,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // Notifications : nouvelles mises à jour de mods trouvées en arrière-plan.
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Mises à jour de ModStudio : signées, publiées dans les releases GitHub.
             #[cfg(desktop)]

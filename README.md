@@ -32,6 +32,9 @@ For every game:
   MelonLoader) once you confirm.
 - **"Installed" page**: updates, enable or disable a mod without uninstalling
   it, per-game profiles, clean uninstall.
+- **Update alerts**: ModStudio checks for new mod versions at launch, then
+  every 3 hours while it stays open, and sends a notification when one comes
+  out while it's in the background (can be turned off in Settings).
 - **Play button**: starts the game from ModStudio (Steam, Epic, Heroic on
   Linux). On Windows, Bethesda games start through their script extender
   (SKSE…) when it's installed.
@@ -181,6 +184,10 @@ Et pour tous les jeux :
 - **Page « Installés »** : mises à jour, activer ou désactiver un mod sans le
   désinstaller, profils par jeu (« Principal », « Coop »…), désinstallation
   propre.
+- **Alertes de mises à jour** : ModStudio cherche les nouvelles versions des
+  mods au lancement, puis toutes les 3 heures tant qu'il reste ouvert, et
+  envoie une notification quand l'une sort pendant qu'il est en arrière-plan
+  (désactivable dans les Réglages).
 - **Bouton « Jouer »** : lance le jeu depuis ModStudio (Steam, Epic, Heroic
   sous Linux). Sous Windows, les jeux Bethesda passent par leur script
   extender (SKSE…) quand il est installé.

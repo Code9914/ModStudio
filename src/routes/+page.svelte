@@ -32,6 +32,7 @@
   import { tsStore } from "$lib/thunderstore.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import { updates as appUpdates } from "$lib/updates.svelte";
+  import { modUpdates } from "$lib/modUpdates.svelte";
   import { appearance } from "$lib/appearance.svelte";
   import { nexusGameImage, type GameInstall } from "$lib/api";
   import { nexusGameOf, nexusStore, welcomeDone } from "$lib/nexus.svelte";
@@ -44,9 +45,7 @@
     appUpdates.check();
     // Nexus Mods fonctionne même sans clé mod.io.
     nexusStore.listenNxm();
-    checkNexus();
-    checkThunderstore();
-    checkLists();
+    const loads = [loadNexus(), quietly(tsStore.load()), quietly(listsStore.load())];
     try {
       const [settings] = await Promise.all([api.getSettings(), nexusStore.refreshAuth()]);
       nav.settings = settings;
@@ -59,69 +58,35 @@
       }
       if (settings.hasApiKey) {
         nav.refreshAuth();
-        checkInstalled();
+        loads.push(quietly(installs.load()));
       }
     } catch (e) {
       startError = asAppError(e);
     }
+    // Mods installés chargés : leurs mises à jour, au lancement puis régulièrement.
+    await Promise.all(loads);
+    modUpdates.start();
   }
 
-  async function checkNexus() {
+  /** Sans bloquer : la page Installés affichera l'erreur. */
+  async function quietly(p: Promise<unknown>) {
+    try {
+      await p;
+    } catch {
+      /* affichée par la page Installés */
+    }
+  }
+
+  async function loadNexus() {
     try {
       await nexusStore.load();
       nexusStore.loadSocial();
-      await Promise.all(Object.keys(nexusStore.games).map((id) => nexusStore.checkUpdates(Number(id))));
     } catch {
-      /* la page Installés affichera l'erreur */
+      /* affichée par la page Installés */
     }
   }
 
-  async function checkThunderstore() {
-    try {
-      await tsStore.load();
-      await Promise.all(Object.keys(tsStore.games).map((id) => tsStore.checkUpdates(Number(id))));
-    } catch {
-      /* la page Installés affichera l'erreur */
-    }
-  }
-
-  async function checkLists() {
-    try {
-      await listsStore.load();
-      await Promise.all(Object.keys(listsStore.installs).map((id) => listsStore.checkUpdates(Number(id))));
-    } catch {
-      /* la page Installés affichera l'erreur */
-    }
-  }
-
-  /** Charge les mods installés et cherche leurs mises à jour, sans bloquer. */
-  async function checkInstalled() {
-    try {
-      await installs.load();
-      await Promise.all(Object.keys(installs.games).map((id) => installs.checkUpdates(Number(id))));
-    } catch {
-      /* la page Installés affichera l'erreur */
-    }
-  }
-
-  const updates = $derived(
-    Object.values(installs.games).reduce(
-      (n, g) => n + Object.values(g.mods).filter((m) => installs.outdated(g.gameId, m.modId)).length,
-      0,
-    ) +
-      Object.values(nexusStore.games).reduce(
-        (n, g) => n + Object.values(g.mods).filter((m) => nexusStore.outdated(g.gameId, m.modId)).length,
-        0,
-      ) +
-      Object.values(tsStore.games).reduce(
-        (n, g) => n + Object.values(g.mods).filter((m) => !m.disabled && tsStore.outdated(g.gameId, m.modId)).length,
-        0,
-      ) +
-      Object.values(listsStore.installs).reduce(
-        (n, g) => n + Object.values(g.mods).filter((m) => !m.disabled && listsStore.outdated(g.gameId, m.modId)).length,
-        0,
-      ),
-  );
+  const updates = $derived(modUpdates.list.length);
 
   onMount(start);
 

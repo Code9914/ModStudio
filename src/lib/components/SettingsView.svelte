@@ -5,8 +5,9 @@
   import { nav } from "$lib/nav.svelte";
   import { updates } from "$lib/updates.svelte";
   import { tr } from "$lib/i18n.svelte";
-  import { bytes } from "$lib/format";
+  import { ago, bytes } from "$lib/format";
   import { translator } from "$lib/translate.svelte";
+  import { CHECK_HOURS, modUpdates } from "$lib/modUpdates.svelte";
   import { nexusStore } from "$lib/nexus.svelte";
   import AppearanceSettings from "./AppearanceSettings.svelte";
   import ErrorNotice from "./ErrorNotice.svelte";
@@ -261,6 +262,54 @@
       </section>
 
       <section class="block">
+        <h2>{tr("Mises à jour des mods", "Mod updates")}</h2>
+        <div class="toggles">
+          <label class="toggle">
+            <input type="checkbox" checked={modUpdates.watch} onchange={(e) => modUpdates.setWatch(e.currentTarget.checked)} />
+            <span>
+              {tr(`Vérifier toutes les ${CHECK_HOURS} heures`, `Check every ${CHECK_HOURS} hours`)}
+              <span class="help muted">
+                {tr(
+                  "ModStudio cherche les nouvelles versions de tes mods à chaque lancement, puis régulièrement tant qu'il reste ouvert, même réduit.",
+                  "ModStudio looks for new versions of your mods every time it starts, then regularly while it stays open, even minimized.",
+                )}
+              </span>
+            </span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" checked={modUpdates.notify} onchange={(e) => modUpdates.setNotify(e.currentTarget.checked)} />
+            <span>
+              {tr("Me prévenir par une notification", "Notify me")}
+              <span class="help muted">
+                {tr(
+                  "Quand une nouvelle version sort pendant que ModStudio est en arrière-plan. Une même mise à jour n'est annoncée qu'une fois ; à l'écran, le badge de « Installés » suffit.",
+                  'When a new version comes out while ModStudio is in the background. The same update is only announced once; on screen, the badge on "Installed" is enough.',
+                )}
+              </span>
+            </span>
+          </label>
+        </div>
+        <div class="update-row">
+          <button class="btn" type="button" onclick={() => modUpdates.check()} disabled={modUpdates.checking}>
+            <Icon name="refresh" size={15} />{modUpdates.checking ? tr("Recherche…", "Checking…") : tr("Vérifier maintenant", "Check now")}
+          </button>
+          {#if modUpdates.lastCheck && !modUpdates.checking}
+            <span class="help muted">
+              {modUpdates.list.length === 0
+                ? tr("Tous tes mods sont à jour.", "All your mods are up to date.")
+                : modUpdates.list.length === 1
+                  ? tr("1 mod a une nouvelle version.", "1 mod has a new version.")
+                  : tr(`${modUpdates.list.length} mods ont une nouvelle version.`, `${modUpdates.list.length} mods have a new version.`)}
+              {tr(`Dernière vérification : ${ago(modUpdates.lastCheck / 1000)}.`, `Last checked ${ago(modUpdates.lastCheck / 1000)}.`)}
+            </span>
+          {/if}
+        </div>
+        {#if modUpdates.incomplete && !modUpdates.checking}<p class="help update-error">
+            {tr("Une source n'a pas répondu : ses mods seront vérifiés la prochaine fois.", "A source didn't respond: its mods will be checked next time.")}
+          </p>{/if}
+      </section>
+
+      <section class="block">
         <h2>{tr("Contenu", "Content")}</h2>
         <label class="toggle">
           <input type="checkbox" checked={nav.settings?.hideMature} onchange={toggleMature} />
@@ -407,6 +456,11 @@
     color: var(--ok);
     font-weight: 600;
     font-size: var(--t-sm);
+  }
+
+  .toggles {
+    display: grid;
+    gap: 0.9rem;
   }
 
   .toggle {

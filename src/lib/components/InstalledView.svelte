@@ -16,6 +16,7 @@
   } from "$lib/api";
   import { engineNames, nexusGameOf, nexusStore } from "$lib/nexus.svelte";
   import { splitFullName, tsStore } from "$lib/thunderstore.svelte";
+  import { modUpdates } from "$lib/modUpdates.svelte";
   import { listsStore } from "$lib/lists.svelte";
   import NexusFolderSetup from "./NexusFolderSetup.svelte";
   import ModToggle from "./ModToggle.svelte";
@@ -49,12 +50,7 @@
     error = null;
     try {
       await Promise.all([installs.load(), nexusStore.load(), tsStore.load(), listsStore.load()]);
-      await Promise.all([
-        ...Object.keys(installs.games).map((id) => installs.checkUpdates(Number(id))),
-        ...Object.keys(nexusStore.games).map((id) => nexusStore.checkUpdates(Number(id))),
-        ...Object.keys(tsStore.games).map((id) => tsStore.checkUpdates(Number(id))),
-        ...Object.keys(listsStore.installs).map((id) => listsStore.checkUpdates(Number(id))),
-      ]);
+      await modUpdates.check();
       // Nouvelles versions des chargeurs de mods installés par ModStudio.
       for (const g of Object.values(nexusStore.games)) {
         if (g.tools && Object.keys(g.tools).length > 0) nexusStore.refreshSetup(g.gameId);
