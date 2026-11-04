@@ -5,6 +5,7 @@
 //   node scripts/translation-check.mjs en-fr fr-en zh-Hans-en
 //
 // Demande playwright (npm i --no-save playwright && npx playwright install chromium).
+// PW_CHANNEL=chrome : utilise le Chrome déjà installé (sur GitHub, rien à télécharger).
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -88,7 +89,7 @@ const samples = {
     "<table><tbody><tr><td>Version</td><td>Notes</td></tr></tbody></table>",
 };
 
-const browser = await chromium.launch();
+const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
 const page = await browser.newPage();
 page.on("console", (m) => {
   console.log("[page]", m.text());
