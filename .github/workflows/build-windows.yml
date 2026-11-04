@@ -21,9 +21,9 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: npm
@@ -69,7 +69,7 @@ jobs:
           updaterJsonPreferNsis: true
 
       - name: Garder une copie des installateurs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: modstudio-windows
           path: |
@@ -83,14 +83,14 @@ jobs:
     needs: windows
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Dépendances système
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: npm
@@ -122,7 +122,7 @@ jobs:
           args: --bundles appimage,deb
 
       - name: Garder une copie des paquets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: modstudio-linux
           path: |
@@ -136,11 +136,11 @@ jobs:
   # (AUR_SSH_PRIVATE_KEY) ; sans elle, le PKGBUILD reste dans les artefacts.
   aur:
     needs: linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       HAS_AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Récupérer le paquet AUR actuel
         if: env.HAS_AUR_KEY == 'true'
@@ -205,7 +205,7 @@ jobs:
           fi
 
       - name: Garder le PKGBUILD
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: modstudio-aur
           path: |
