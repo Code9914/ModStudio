@@ -67,6 +67,11 @@ const server = createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/html" });
     return res.end("<!doctype html><title>check</title>");
   }
+  // Demandée d'office par le navigateur : sans elle, un avertissement 404 inutile.
+  if (url.pathname === "/favicon.ico") {
+    res.writeHead(204);
+    return res.end();
+  }
   if (!file || !existsSync(file)) {
     res.writeHead(404);
     return res.end();
