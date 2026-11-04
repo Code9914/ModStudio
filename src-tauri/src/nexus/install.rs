@@ -216,6 +216,15 @@ struct PlanCtx {
     limit: u64,
 }
 
+/// Plugins (en minuscules) des mods activés de `game`, sauf `except`.
+fn plugins_of_others(game: &GameInstall, except: i64, only: Option<&[i64]>) -> BTreeSet<String> {
+    game.mods
+        .values()
+        .filter(|m| m.mod_id != except && only.map_or(!m.disabled, |ids| ids.contains(&m.mod_id)))
+        .flat_map(|m| m.plugins.iter().map(|p| p.to_ascii_lowercase()))
+        .collect()
+}
+
 /// Mods de la même collection dont ce mod recouvre les fichiers, ou qui recouvrent les siens.
 #[derive(Clone)]
 pub(crate) struct LayerPlan {
@@ -245,7 +254,8 @@ impl LayerPlan {
     fn batch(&self, config: &GameInstall, key: &str) -> BatchLayer {
         let ctx = toggle::Ctx { store_root: &self.store_root, source: "nexus" };
         let mut stores = BTreeMap::new();
-        for holder in std::iter::once(self.mod_id).chain(self.loses.iter().copied()) {
+        // Rangements des fichiers cachés : ceux de ce mod, et ceux des mods qu'il passe devant.
+        for holder in std::iter::once(self.mod_id).chain(self.wins.iter().copied()) {
             if let Some(dir) = layers::store(config, key, holder, self.in_game, &ctx) {
                 stores.insert(holder, dir);
             }
@@ -1062,12 +1072,12 @@ impl NexusState {
             collection: req.collection.clone().or_else(|| old.as_ref().and_then(|o| o.collection.clone())),
             ..Default::default()
         };
-        // Collection : fichiers recouverts ou cachés par cette installation.
+        // Collection : fichiers d'autres mods passés dessous, et fichiers de ce mod restés dessous.
         let mut covered: Vec<(String, String, i64)> = Vec::new();
-        let mut buried: Vec<(String, String, i64)> = Vec::new();
+        let mut hidden: Vec<(String, String)> = Vec::new();
         for batch in &placed {
             covered.extend(batch.covered.iter().map(|(rel, owner)| (batch.key.clone(), rel.clone(), *owner)));
-            buried.extend(batch.buried.iter().map(|(rel, holder)| (batch.key.clone(), rel.clone(), *holder)));
+            hidden.extend(batch.hidden.iter().map(|rel| (batch.key.clone(), rel.clone())));
         }
         for batch in placed {
             if batch.key.is_empty() {
@@ -1094,6 +1104,8 @@ impl NexusState {
             .collect();
         let dropped: Vec<String> = old_plugins.iter().filter(|p| !kept.contains(p)).cloned().collect();
         if let Some(path) = engine::bethesda(&domain).and_then(|g| self.plugins_path(g, &config.folder).map(|p| (p, g.star_format))) {
+            let keep = plugins_of_others(&config, mod_id, None);
+            let dropped: Vec<String> = dropped.into_iter().filter(|p| !keep.contains(&p.to_ascii_lowercase())).collect();
             if !dropped.is_empty() {
                 let _ = engine_rules::deactivate_plugins(&path.0, &dropped);
             }
@@ -1114,18 +1126,18 @@ impl NexusState {
         // Outil de mods dont ce mod a besoin, s'il manque.
         let needs_tool = self.missing_tool(&req, &config, engine_info.as_ref(), &record, game_dir.as_deref()).await;
 
-        // Fichiers que l'ancienne version recouvrait : gardés si la nouvelle les
-        // remplace encore, remis à leur propriétaire sinon.
-        let in_place = |key: &str, rel: &str| {
-            if key.is_empty() {
-                record.files.iter().any(|f| f == rel)
-            } else {
-                record.parts.iter().any(|p| p.key == key && p.files.iter().any(|f| f == rel))
-            }
-        };
-        let (still, gone): (Vec<_>, Vec<_>) =
-            old.as_ref().map(|o| o.shadowed.clone()).unwrap_or_default().into_iter().partition(|s| in_place(&s.key, &s.rel));
-        record.shadowed = still;
+        // Ancienne version : chemins qu'elle occupait et que la nouvelle laisse
+        // (les mods cachés dessous reprennent leur place), et ses fichiers
+        // cachés devenus inutiles.
+        let now_in_place = layers::in_place(&record);
+        let vacated: Vec<(String, String)> = old
+            .as_ref()
+            .map(layers::in_place)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| !now_in_place.contains(p))
+            .collect();
+        let old_hidden = old.as_ref().map(|o| o.hidden.clone()).unwrap_or_default();
 
         let store_root = self.disabled_root();
         let ctx = toggle::Ctx { store_root: &store_root, source: "nexus" };
@@ -1134,11 +1146,12 @@ impl NexusState {
             if let Some(dir) = detected_dir {
                 game.extra_folders.entry(GAME_DIR.to_string()).or_insert(dir);
             }
-            let in_game = layers::kept_in_game(game);
+            // Même rangement que celui utilisé pour placer les fichiers.
+            let in_game = layers::kept_in_game(&config);
             game.mods.insert(mod_id, record.clone());
-            layers::release(game, mod_id, gone, &ctx);
-            layers::settle_buried(game, mod_id, &buried, &ctx);
-            layers::record_placement(game, mod_id, &covered, &buried, in_game);
+            layers::drop_stale_hidden(game, mod_id, &old_hidden, &hidden, &ctx);
+            layers::record_placement(game, mod_id, &covered, &hidden, in_game);
+            layers::promote_all(game, &vacated, &ctx);
             toggle::sync_active(game);
             record = game.mods.get(&mod_id).cloned().unwrap_or(record);
         }
@@ -1152,7 +1165,9 @@ impl NexusState {
     }
 
     /// Plugins Bethesda d'un mod qu'on active ou désactive.
-    fn toggle_plugins(&self, domain: &str, game_dir: &Path, record: &InstalledMod, enabled: bool) {
+    /// `keep` : plugins que d'autres mods activés fournissent aussi (même
+    /// fichier dans une collection) : ils restent actifs quand celui-ci part.
+    fn toggle_plugins(&self, domain: &str, game_dir: &Path, record: &InstalledMod, enabled: bool, keep: &BTreeSet<String>) {
         if record.plugins.is_empty() {
             return;
         }
@@ -1161,7 +1176,10 @@ impl NexusState {
         if enabled {
             let _ = engine_rules::activate_plugins(&path, &record.plugins, g.star_format);
         } else {
-            let _ = engine_rules::deactivate_plugins(&path, &record.plugins);
+            let gone: Vec<String> = record.plugins.iter().filter(|p| !keep.contains(&p.to_ascii_lowercase())).cloned().collect();
+            if !gone.is_empty() {
+                let _ = engine_rules::deactivate_plugins(&path, &gone);
+            }
         }
     }
 
@@ -1183,7 +1201,8 @@ impl NexusState {
             } else {
                 toggle::disable(&mut game, mod_id, &ctx)?;
             }
-            self.toggle_plugins(game.domain.as_deref().unwrap_or_default(), &game.folder, &record, enabled);
+            let keep = plugins_of_others(&game, mod_id, None);
+            self.toggle_plugins(game.domain.as_deref().unwrap_or_default(), &game.folder, &record, enabled, &keep);
             Ok(())
         });
         let out = game.clone();
@@ -1206,7 +1225,13 @@ impl NexusState {
             let rest: &Library = &lib;
             let others_for = |g: &GameInstall, id: i64| toggle::others_map(g, id, &[rest, other_library]);
             let folder = game.folder.clone();
-            let mut on_toggle = |m: &InstalledMod, on: bool| self.toggle_plugins(&domain, &folder, m, on);
+            // Mods activés une fois le profil appliqué : leurs plugins restent actifs.
+            let target: Vec<i64> = game.profiles.iter().find(|p| p.name == name).map(|p| p.mods.clone()).unwrap_or_default();
+            let snapshot = game.clone();
+            let mut on_toggle = |m: &InstalledMod, on: bool| {
+                let keep = plugins_of_others(&snapshot, m.mod_id, Some(&target));
+                self.toggle_plugins(&domain, &folder, m, on, &keep)
+            };
             toggle::apply_profile(&mut game, name, &ctx, &others_for, &mut on_toggle)
         };
         let out = game.clone();
@@ -1312,15 +1337,28 @@ impl NexusState {
         } else {
             installer::uninstall_all(game, &record)
         };
+        // Collection : les mods cachés sous ses fichiers retirés reprennent leur
+        // place (même si d'autres fichiers n'ont pas pu partir) ; ses propres
+        // fichiers cachés sont supprimés une fois tout retiré.
+        let stuck: BTreeSet<(String, String)> = removal
+            .remaining
+            .iter()
+            .map(|r| (String::new(), r.clone()))
+            .chain(removal.remaining_parts.iter().flat_map(|p| p.files.iter().map(|f| (p.key.clone(), f.clone()))))
+            .collect();
+        let freed: Vec<(String, String)> = layers::in_place(&record).into_iter().filter(|p| !stuck.contains(p)).collect();
+        layers::promote_all(game, &freed, &ctx);
         if removal.complete() {
-            // Collection : les fichiers qu'il recouvrait reviennent, les siens cachés sont supprimés.
-            layers::release_all(game, mod_id, &ctx);
-            layers::forget_buried(game, mod_id, &ctx);
+            layers::drop_hidden(game, mod_id, &ctx);
         }
         if !record.plugins.is_empty() && !record.disabled {
             let domain = game.domain.clone().unwrap_or_default();
-            if let Some(path) = engine::bethesda(&domain).and_then(|g| self.plugins_path(g, &game.folder)) {
-                let _ = engine_rules::deactivate_plugins(&path, &record.plugins);
+            let keep = plugins_of_others(game, mod_id, None);
+            let gone: Vec<String> = record.plugins.iter().filter(|p| !keep.contains(&p.to_ascii_lowercase())).cloned().collect();
+            if let Some(path) = engine::bethesda(&domain).and_then(|g| self.plugins_path(g, &game.folder))
+                && !gone.is_empty()
+            {
+                let _ = engine_rules::deactivate_plugins(&path, &gone);
             }
         }
         if !removal.complete() {
@@ -1904,7 +1942,8 @@ mod tests {
         let out = s.install(collection_request(2, 22, 2), &Library::default(), quiet()).await.unwrap().done();
         // B vient après A dans la collection : son fichier gagne, celui de A est gardé.
         assert_eq!(fs::read(folder.join("textures/rock.dds")).unwrap(), b"B");
-        assert_eq!(out.record.shadowed.len(), 1);
+        assert!(out.record.hidden.is_empty());
+        assert_eq!(s.library.lock().unwrap().games[&1704].mods[&1].hidden.len(), 1, "le fichier de A est rangé chez A");
         assert!(!mod_files(&s, 1).contains(&"textures/rock.dds".to_string()));
 
         // Désactiver B rend le fichier à A ; le réactiver le recouvre de nouveau.
@@ -1955,6 +1994,181 @@ mod tests {
         // A retiré ensuite : plus rien.
         s.remove(1704, 1).unwrap();
         assert!(!folder.join("textures").exists());
+    }
+
+    fn rock(folder: &Path) -> Option<Vec<u8>> {
+        fs::read(folder.join("textures/rock.dds")).ok()
+    }
+
+    /// Trois mods de la collection sur le même fichier : A (rang 1), B (2), C (3).
+    async fn three_mods(order: &[i64], tag: &str) -> (crate::testutil::FakeServer, NexusState, PathBuf) {
+        let zips: BTreeMap<i64, Vec<u8>> = [1, 2, 3]
+            .into_iter()
+            .map(|id| (id, make_zip(&[("textures/rock.dds", format!("{id}").as_bytes()), (format!("own{id}.esp").as_str(), b"x")])))
+            .collect();
+        let (server, s) = nexus_seq(order.iter().map(|id| (*id, id * 11, zips[id].clone())).collect());
+        s.set_key("cle").await.unwrap();
+        let folder = tempdir(tag);
+        s.configure(1704, "skyrimspecialedition", "Skyrim SE".into(), None, folder.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+        for id in order {
+            s.install(collection_request(*id, id * 11, *id as u32), &Library::default(), quiet()).await.unwrap().done();
+        }
+        (server, s, folder)
+    }
+
+    #[tokio::test]
+    async fn three_mods_on_one_file_in_any_install_order() {
+        for (i, order) in [[1, 2, 3], [1, 3, 2], [3, 2, 1], [2, 1, 3]].iter().enumerate() {
+            let (_server, s, folder) = three_mods(order, &format!("col-3-{i}")).await;
+            assert_eq!(rock(&folder).as_deref(), Some(&b"3"[..]), "{order:?}");
+            s.remove(1704, 3).unwrap();
+            assert_eq!(rock(&folder).as_deref(), Some(&b"2"[..]), "{order:?} : B reprend la place");
+            s.remove(1704, 2).unwrap();
+            assert_eq!(rock(&folder).as_deref(), Some(&b"1"[..]), "{order:?} : puis A");
+            s.remove(1704, 1).unwrap();
+            assert!(rock(&folder).is_none());
+            assert!(!s.disabled_root().join("nexus-hidden").exists(), "{order:?} : plus rien de rangé");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_middle_mod_can_leave_without_losing_the_bottom_file() {
+        let (_server, s, folder) = three_mods(&[1, 2, 3], "col-3-middle").await;
+        // B (dessous de C) désactivé puis retiré : A ne perd rien.
+        s.set_enabled(1704, 2, false, &Library::default()).unwrap();
+        assert_eq!(rock(&folder).as_deref(), Some(&b"3"[..]));
+        s.set_enabled(1704, 3, false, &Library::default()).unwrap();
+        assert_eq!(rock(&folder).as_deref(), Some(&b"1"[..]), "B désactivé : au tour de A");
+        s.set_enabled(1704, 2, true, &Library::default()).unwrap();
+        assert_eq!(rock(&folder).as_deref(), Some(&b"2"[..]));
+        s.set_enabled(1704, 3, true, &Library::default()).unwrap();
+        assert_eq!(rock(&folder).as_deref(), Some(&b"3"[..]));
+        s.remove(1704, 2).unwrap();
+        s.remove(1704, 3).unwrap();
+        assert_eq!(rock(&folder).as_deref(), Some(&b"1"[..]));
+    }
+
+    #[tokio::test]
+    async fn re_enabling_the_bottom_mod_keeps_the_others_safe() {
+        let (_server, s, folder) = three_mods(&[1, 2, 3], "col-3-reenable").await;
+        // Comme un changement de profil : désactivés puis réactivés dans un autre ordre.
+        for id in [1, 2, 3] {
+            s.set_enabled(1704, id, false, &Library::default()).unwrap();
+        }
+        assert!(rock(&folder).is_none());
+        for id in [3, 1, 2] {
+            s.set_enabled(1704, id, true, &Library::default()).unwrap();
+        }
+        assert_eq!(rock(&folder).as_deref(), Some(&b"3"[..]));
+        s.set_enabled(1704, 3, false, &Library::default()).unwrap();
+        assert_eq!(rock(&folder).as_deref(), Some(&b"2"[..]));
+        s.set_enabled(1704, 2, false, &Library::default()).unwrap();
+        assert_eq!(rock(&folder).as_deref(), Some(&b"1"[..]));
+        assert!(folder.join("own1.esp").exists(), "les autres fichiers de A restent en place");
+    }
+
+    #[tokio::test]
+    async fn bethesda_collections_keep_hidden_files_in_the_game_folder() {
+        let zip = |t: &[u8]| make_zip(&[("textures/rock.dds", t)]);
+        let (_server, mut s) = nexus_seq(vec![(2, 22, zip(b"B")), (3, 33, zip(b"C")), (1, 11, zip(b"A"))]);
+        let appdata = tempdir("col-beth-appdata");
+        s.local_appdata = Some(appdata);
+        s.set_key("cle").await.unwrap();
+        let game = tempdir("col-beth-game");
+        fs::write(game.join("SkyrimSE.exe"), b"MZ").unwrap();
+        fs::create_dir_all(game.join("Data")).unwrap();
+        fs::write(game.join("Data/Skyrim.esm"), b"jeu").unwrap();
+        let g = s
+            .configure(1704, "skyrimspecialedition", "Skyrim SE".into(), None, game.to_string_lossy().into_owned(), Layout::Subfolder, false, None)
+            .unwrap();
+        assert_eq!(g.rules.as_deref(), Some("bethesda"));
+        for (id, file) in [(2, 22), (3, 33), (1, 11)] {
+            s.install(collection_request(id, file, id as u32), &Library::default(), quiet()).await.unwrap().done();
+        }
+        let rock = || fs::read(game.join("Data/textures/rock.dds")).ok();
+        assert_eq!(rock().as_deref(), Some(&b"C"[..]));
+        assert!(game.join(toggle::DISABLED_DIR).join("nexus-hidden-1/Data/textures/rock.dds").is_file());
+        assert!(game.join(toggle::DISABLED_DIR).join("nexus-hidden-2/Data/textures/rock.dds").is_file());
+        s.set_enabled(1704, 3, false, &Library::default()).unwrap();
+        assert_eq!(rock().as_deref(), Some(&b"B"[..]));
+        s.remove(1704, 2).unwrap();
+        assert_eq!(rock().as_deref(), Some(&b"A"[..]));
+        s.remove(1704, 3).unwrap();
+        s.remove(1704, 1).unwrap();
+        assert!(rock().is_none());
+        assert!(!game.join(toggle::DISABLED_DIR).exists(), "rangement du dossier du jeu retiré");
+        assert!(game.join("Data/Skyrim.esm").is_file());
+    }
+
+    #[tokio::test]
+    async fn updating_the_middle_mod_keeps_the_bottom_file() {
+        let zip = |t: &[u8]| make_zip(&[("textures/rock.dds", t)]);
+        let (_server, s) = nexus_seq(vec![(1, 11, zip(b"A")), (2, 22, zip(b"B")), (3, 33, zip(b"C")), (2, 23, zip(b"B2"))]);
+        s.set_key("cle").await.unwrap();
+        let folder = tempdir("col-3-update");
+        s.configure(1704, "skyrimspecialedition", "Skyrim SE".into(), None, folder.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+        for (id, file) in [(1, 11), (2, 22), (3, 33), (2, 23)] {
+            s.install(collection_request(id, file, id as u32), &Library::default(), quiet()).await.unwrap().done();
+        }
+        assert_eq!(rock(&folder).as_deref(), Some(&b"C"[..]));
+        s.remove(1704, 3).unwrap();
+        assert_eq!(rock(&folder).as_deref(), Some(&b"B2"[..]), "la nouvelle version de B");
+        s.remove(1704, 2).unwrap();
+        assert_eq!(rock(&folder).as_deref(), Some(&b"A"[..]));
+    }
+
+    #[tokio::test]
+    async fn a_retried_uninstall_still_gives_the_file_back() {
+        let a = make_zip(&[("textures/rock.dds", b"A")]);
+        let b = make_zip(&[("textures/rock.dds", b"B"), ("b.esp", b"b")]);
+        let (_server, s) = nexus_seq(vec![(1, 11, a), (2, 22, b)]);
+        s.set_key("cle").await.unwrap();
+        let folder = tempdir("col-partial");
+        s.configure(1704, "skyrimspecialedition", "Skyrim SE".into(), None, folder.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+        s.install(collection_request(1, 11, 1), &Library::default(), quiet()).await.unwrap().done();
+        s.install(collection_request(2, 22, 2), &Library::default(), quiet()).await.unwrap().done();
+        // b.esp ne peut pas partir (jeu ouvert) : simulé par un dossier non vide.
+        fs::remove_file(folder.join("b.esp")).unwrap();
+        fs::create_dir_all(folder.join("b.esp/x")).unwrap();
+        assert!(s.remove(1704, 2).is_err());
+        assert_eq!(rock(&folder).as_deref(), Some(&b"A"[..]), "le fichier libéré revient tout de suite");
+        fs::remove_dir_all(folder.join("b.esp")).unwrap();
+        s.remove(1704, 2).unwrap();
+        assert_eq!(rock(&folder).as_deref(), Some(&b"A"[..]));
+    }
+
+    #[tokio::test]
+    async fn updating_the_top_mod_without_the_shared_file_brings_the_next_one_back() {
+        let (_server, s) = nexus_seq(vec![
+            (1, 11, make_zip(&[("textures/rock.dds", b"1")])),
+            (2, 22, make_zip(&[("textures/rock.dds", b"2")])),
+            (3, 33, make_zip(&[("textures/rock.dds", b"3")])),
+            (3, 34, make_zip(&[("own3.esp", b"x")])),
+        ]);
+        s.set_key("cle").await.unwrap();
+        let folder = tempdir("col-top-update");
+        s.configure(1704, "skyrimspecialedition", "Skyrim SE".into(), None, folder.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+        for (id, file) in [(1, 11), (2, 22), (3, 33), (3, 34)] {
+            s.install(collection_request(id, file, id as u32), &Library::default(), quiet()).await.unwrap().done();
+        }
+        assert_eq!(rock(&folder).as_deref(), Some(&b"2"[..]));
+        s.set_enabled(1704, 2, false, &Library::default()).unwrap();
+        assert_eq!(rock(&folder).as_deref(), Some(&b"1"[..]));
+    }
+
+    #[test]
+    fn plugins_shared_by_other_mods_stay_active() {
+        let mut game = GameInstall { game_id: 1, ..Default::default() };
+        game.mods.insert(1, InstalledMod { mod_id: 1, plugins: vec!["Shared.esp".into()], ..Default::default() });
+        game.mods.insert(2, InstalledMod { mod_id: 2, plugins: vec!["shared.esp".into(), "Own.esp".into()], ..Default::default() });
+        game.mods.insert(3, InstalledMod { mod_id: 3, plugins: vec!["Off.esp".into()], disabled: true, ..Default::default() });
+        let keep = plugins_of_others(&game, 2, None);
+        assert!(keep.contains("shared.esp") && !keep.contains("own.esp") && !keep.contains("off.esp"));
+        assert!(plugins_of_others(&game, 2, Some(&[3])).contains("off.esp"), "mods du profil visé");
     }
 
     #[tokio::test]

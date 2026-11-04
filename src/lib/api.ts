@@ -374,8 +374,8 @@ export interface InstalledMod {
   plugins?: string[];
   /** Collection Nexus qui l'a installé, et sa place dans son ordre. */
   collection?: CollectionMark;
-  /** Fichiers d'autres mods de la collection recouverts par les siens. */
-  shadowed?: { key?: string; rel: string; owner: number; inGame: boolean }[];
+  /** Ses fichiers cachés sous ceux d'un mod mieux placé de sa collection. */
+  hidden?: { key?: string; rel: string; inGame: boolean }[];
   /** Mod désactivé : ses fichiers sont mis de côté. */
   disabled?: boolean;
 }
@@ -725,7 +725,7 @@ export interface CollectionPlanEntry {
 
 export interface CollectionPlan {
   order: CollectionPlanEntry[];
-  /** À faire à la main : `bundle`, `browse`, `manual`, `direct`, `other_game`. */
+  /** À faire à la main : `bundle`, `browse`, `manual`, `direct`, `other_game`, `second_file`. */
   extras: { name: string; kind: string; url: string | null; instructions: string | null; optional: boolean }[];
   /** Ordre tiré des règles de la collection (sinon, celui de sa liste). */
   fromManifest: boolean;

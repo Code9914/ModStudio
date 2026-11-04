@@ -57,9 +57,14 @@
     return nexusStore.installed(game.id, m.modId);
   }
 
+  /** Second fichier d'un mod déjà dans la liste : ModStudio garde un fichier par mod. */
+  function secondFile(m: NexusCollectionMod) {
+    return (detail?.mods ?? []).find((x) => x.modId === m.modId)?.fileId !== m.fileId;
+  }
+
   /** Mods à installer : requis absents, et optionnels cochés absents. */
   const missing = $derived(
-    (detail?.mods ?? []).filter((m) => !installedFile(m) && (!m.optional || chosen.has(m.fileId))),
+    (detail?.mods ?? []).filter((m) => !secondFile(m) && !installedFile(m) && (!m.optional || chosen.has(m.fileId))),
   );
   const missingSize = $derived(missing.reduce((n, m) => n + m.size, 0));
   const required = $derived((detail?.mods ?? []).filter((m) => !m.optional));
@@ -82,6 +87,7 @@
   };
 
   function status(m: NexusCollectionMod): { text: string; tone: "ok" | "accent" | "warn" | "muted" } {
+    if (secondFile(m)) return { text: tr("Second fichier : à la main", "Second file: by hand"), tone: "muted" };
     const item = active ? collectionInstall.item(m.fileId) : null;
     if (item && item.status !== "skipped") {
       const tone = item.status === "installed" || item.status === "kept" ? "ok" : item.status === "failed" ? "warn" : "accent";
@@ -304,7 +310,7 @@
                 {@const st = status(m)}
                 {@const item = active ? collectionInstall.item(m.fileId) : null}
                 <li class="mod">
-                  {#if !installedFile(m) && !active}
+                  {#if !installedFile(m) && !active && !secondFile(m)}
                     <input
                       type="checkbox"
                       class="pick"
@@ -368,7 +374,9 @@
                       ? tr("(fichiers fournis dans la collection)", "(files included in the collection)")
                       : e.kind === "other_game"
                         ? tr("(mod d'un autre jeu)", "(mod for another game)")
-                        : ""}
+                        : e.kind === "second_file"
+                          ? tr("(second fichier d'un mod : ModStudio n'en installe qu'un par mod)", "(second file of a mod: ModStudio installs one per mod)")
+                          : ""}
                   </span>
                   {#if e.instructions}<p class="muted">{e.instructions}</p>{/if}
                 </li>

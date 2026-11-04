@@ -91,9 +91,10 @@ pub struct InstalledMod {
     /// Collection Nexus qui a installé ce mod, et sa place dans son ordre.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collection: Option<CollectionMark>,
-    /// Fichiers d'autres mods recouverts par ceux de ce mod (voir `layers.rs`).
+    /// Fichiers de ce mod cachés sous ceux d'un mod mieux placé de sa
+    /// collection, gardés dans son rangement (voir `layers.rs`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub shadowed: Vec<Shadow>,
+    pub hidden: Vec<Hidden>,
 }
 
 /// Place d'un mod dans l'ordre d'une collection Nexus : sur un fichier que
@@ -105,17 +106,14 @@ pub struct CollectionMark {
     pub rank: u32,
 }
 
-/// Fichier d'un autre mod caché sous un fichier de ce mod, gardé de côté
-/// pour être remis quand ce mod est retiré ou désactivé.
+/// Fichier d'un mod caché sous celui d'un mod mieux placé de sa collection.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct Shadow {
+pub struct Hidden {
     /// Dossier (`""` : dossier des mods ; sinon clé d'un dossier supplémentaire).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub key: String,
     pub rel: String,
-    /// Mod à qui le fichier appartient.
-    pub owner: i64,
     /// Gardé dans le dossier du jeu (sinon dans les données de ModStudio).
     #[serde(default)]
     pub in_game: bool,
@@ -687,12 +685,12 @@ pub struct Batch {
 /// Fichiers en commun avec d'autres mods de la même collection (voir `layers.rs`).
 #[derive(Debug, Clone, Default)]
 pub struct BatchLayer {
-    /// Mods dont ce mod recouvre les fichiers.
+    /// Mods dont ce mod passe devant les fichiers.
     pub wins: BTreeSet<i64>,
-    /// Mods qui recouvrent les fichiers de ce mod.
+    /// Mods qui passent devant les fichiers de ce mod.
     pub loses: BTreeSet<i64>,
-    /// Dossier qui garde les fichiers recouverts, par mod qui les recouvre
-    /// (ce mod, et ceux de `loses`).
+    /// Rangement des fichiers cachés, par mod à qui ils appartiennent (ce mod,
+    /// et ceux de `wins`).
     pub stores: BTreeMap<i64, PathBuf>,
     /// Ce mod.
     pub mod_id: i64,
@@ -702,10 +700,10 @@ pub struct PlacedBatch {
     pub key: String,
     pub files: Vec<String>,
     pub dirs: Vec<String>,
-    /// Fichiers d'autres mods recouverts : (chemin, propriétaire).
+    /// Fichiers d'autres mods passés dessous : (chemin, propriétaire).
     pub covered: Vec<(String, i64)>,
-    /// Fichiers de ce mod cachés sous ceux d'un autre : (chemin, mod qui les recouvre).
-    pub buried: Vec<(String, i64)>,
+    /// Fichiers de ce mod restés sous ceux d'un mod mieux placé.
+    pub hidden: Vec<String>,
 }
 
 /// Déplace les fichiers de plusieurs lots. Tous les conflits sont vérifiés
@@ -723,27 +721,24 @@ pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
     let mut blocking = false;
     // Par lot : chemins à recouvrir (→ propriétaire) et à cacher (→ mod qui recouvre).
     let mut covers: Vec<BTreeMap<String, i64>> = Vec::with_capacity(batches.len());
-    let mut buries: Vec<BTreeMap<String, i64>> = Vec::with_capacity(batches.len());
+    let mut buries: Vec<BTreeMap<String, ()>> = Vec::with_capacity(batches.len());
     for b in &batches {
         let old: BTreeSet<&str> = b.old_files.iter().map(String::as_str).collect();
         let mut seen = BTreeSet::new();
         let (mut cover, mut bury) = (BTreeMap::new(), BTreeMap::new());
         for (_, rel) in &b.moves {
             let abs = resolve_rel(&b.folder, rel).ok_or_else(|| AppError::BadArchive(crate::tr!("chemin invalide : {rel}", "invalid path: {rel}")))?;
-            let layered = |owner: &Owner, set: fn(&BatchLayer) -> &BTreeSet<i64>| {
-                !owner.elsewhere && b.layer.as_ref().is_some_and(|l| set(l).contains(&owner.mod_id) && l.stores.contains_key(&l.mod_id))
-            };
+            // Ordre de la collection : passe devant le fichier en place (rangé chez
+            // son propriétaire), ou reste dessous (rangé chez ce mod).
+            let covers = |o: &Owner| !o.elsewhere && b.layer.as_ref().is_some_and(|l| l.wins.contains(&o.mod_id) && l.stores.contains_key(&o.mod_id));
+            let under = |o: &Owner| !o.elsewhere && b.layer.as_ref().is_some_and(|l| l.loses.contains(&o.mod_id) && l.stores.contains_key(&l.mod_id));
             if !seen.insert(rel.to_ascii_lowercase()) {
                 conflicts.push(crate::tr!("{rel} (présent deux fois dans l'archive)", "{rel} (appears twice in the archive)"));
                 blocking = true;
-            } else if let Some(owner) = b.others.get(rel).filter(|o| layered(o, |l| &l.wins)) {
+            } else if let Some(owner) = b.others.get(rel).filter(|o| covers(o)) {
                 cover.insert(rel.clone(), owner.mod_id);
-            } else if let Some(owner) = b
-                .others
-                .get(rel)
-                .filter(|o| layered(o, |l| &l.loses) && b.layer.as_ref().is_some_and(|l| l.stores.contains_key(&o.mod_id)))
-            {
-                bury.insert(rel.clone(), owner.mod_id);
+            } else if b.others.get(rel).is_some_and(under) {
+                bury.insert(rel.clone(), ());
             } else if let Some(owner) = b.others.get(rel) {
                 conflicts.push(crate::tr!("{rel} (déjà installé par « {owner} »)", "{rel} (already installed by \"{owner}\")"));
                 owners.push(owner.clone());
@@ -772,35 +767,53 @@ pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
         }
     }
 
-    // 3. Déplace les nouveaux fichiers, en notant les dossiers créés.
+    // 3. Déplace les nouveaux fichiers, en notant les dossiers créés. En cas
+    //    d'échec, les déplacements déjà faits sont défaits.
+    let mut done: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let result = move_batches(batches, covers, buries, &mut done);
+    if result.is_err() {
+        for (from, to) in done.iter().rev() {
+            let _ = move_file_io(to, from);
+        }
+    }
+    result
+}
+
+fn move_batches(
+    batches: Vec<Batch>,
+    covers: Vec<BTreeMap<String, i64>>,
+    buries: Vec<BTreeMap<String, ()>>,
+    done: &mut Vec<(PathBuf, PathBuf)>,
+) -> AppResult<Vec<PlacedBatch>> {
+    let invalid = |rel: &str| AppError::BadArchive(crate::tr!("chemin invalide : {rel}", "invalid path: {rel}"));
+    let mut step = |src: &Path, dest: &Path| -> AppResult<()> {
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(io_err)?;
+        }
+        move_file(src, dest)?;
+        done.push((src.to_path_buf(), dest.to_path_buf()));
+        Ok(())
+    };
     let mut out = Vec::with_capacity(batches.len());
     for ((b, cover), bury) in batches.into_iter().zip(covers).zip(buries) {
         let mut created: BTreeSet<String> = BTreeSet::new();
         let mut files = Vec::with_capacity(b.moves.len());
-        let (mut covered, mut buried) = (Vec::new(), Vec::new());
+        let (mut covered, mut hidden) = (Vec::new(), Vec::new());
         for (src, rel) in b.moves {
-            // Caché sous le fichier d'un mod placé après lui dans la collection.
-            if let Some(&holder) = bury.get(&rel) {
-                let store = b.layer.as_ref().and_then(|l| l.stores.get(&holder)).expect("vérifié plus haut");
-                let dest = resolve_rel(store, &rel).ok_or_else(|| AppError::BadArchive(crate::tr!("chemin invalide : {rel}", "invalid path: {rel}")))?;
-                if let Some(parent) = dest.parent() {
-                    fs::create_dir_all(parent).map_err(io_err)?;
-                }
-                move_file(&src, &dest)?;
-                buried.push((rel, holder));
+            // Reste sous le fichier d'un mod placé après lui dans la collection.
+            if bury.contains_key(&rel) {
+                let layer = b.layer.as_ref().expect("vérifié plus haut");
+                let store = layer.stores.get(&layer.mod_id).expect("vérifié plus haut");
+                step(&src, &resolve_rel(store, &rel).ok_or_else(|| invalid(&rel))?)?;
+                hidden.push(rel);
                 continue;
             }
             let abs = resolve_rel(&b.folder, &rel).expect("vérifié plus haut");
-            // Recouvre le fichier d'un mod placé avant lui : celui-ci est gardé de côté.
+            // Passe devant le fichier d'un mod placé avant lui : celui-ci est rangé chez son propriétaire.
             if let Some(&owner) = cover.get(&rel) {
-                let layer = b.layer.as_ref().expect("vérifié plus haut");
-                let store = layer.stores.get(&layer.mod_id).expect("vérifié plus haut");
-                let kept = resolve_rel(store, &rel).ok_or_else(|| AppError::BadArchive(crate::tr!("chemin invalide : {rel}", "invalid path: {rel}")))?;
+                let store = b.layer.as_ref().and_then(|l| l.stores.get(&owner)).expect("vérifié plus haut");
                 if abs.is_file() {
-                    if let Some(parent) = kept.parent() {
-                        fs::create_dir_all(parent).map_err(io_err)?;
-                    }
-                    move_file(&abs, &kept)?;
+                    step(&abs, &resolve_rel(store, &rel).ok_or_else(|| invalid(&rel))?)?;
                 }
                 covered.push((rel.clone(), owner));
             }
@@ -813,7 +826,7 @@ pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
                     created.insert(dir_rel);
                 }
             }
-            move_file(&src, &abs)?;
+            step(&src, &abs)?;
             files.push(rel);
         }
 
@@ -832,7 +845,7 @@ pub fn place_batches(batches: Vec<Batch>) -> AppResult<Vec<PlacedBatch>> {
             files,
             dirs: dirs.into_iter().collect(),
             covered,
-            buried,
+            hidden,
         });
     }
     Ok(out)

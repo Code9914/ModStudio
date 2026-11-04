@@ -683,8 +683,22 @@ impl NexusState {
                 plan.order.push(PlanEntry { mod_id: m.mod_id, file_id: m.file_id, rank, instructions: None, choices: Vec::new() });
             }
         }
-        // Seuls les fichiers de la liste publiée s'installent.
-        plan.order.retain(|e| mods.iter().any(|m| m.file_id == e.file_id && m.mod_id == e.mod_id));
+        // Seuls les fichiers de la liste publiée s'installent, et un seul par mod
+        // (ModStudio garde un fichier par mod) : le premier de la liste.
+        let mut first: HashMap<i64, i64> = HashMap::new();
+        for m in &mods {
+            first.entry(m.mod_id).or_insert(m.file_id);
+        }
+        plan.order.retain(|e| first.get(&e.mod_id) == Some(&e.file_id));
+        for m in mods.iter().filter(|m| first.get(&m.mod_id) != Some(&m.file_id)) {
+            plan.extras.push(PlanExtra {
+                name: format!("{} — {}", m.name, m.file_name),
+                kind: "second_file".into(),
+                url: Some(format!("https://www.nexusmods.com/{domain}/mods/{}?tab=files&file_id={}", m.mod_id, m.file_id)),
+                instructions: None,
+                optional: m.optional,
+            });
+        }
         Ok(plan)
     }
 
@@ -767,7 +781,8 @@ mod tests {
           "downloadLink":"/v1/collections/abc123/revisions/4/download_link",
           "modFiles":[
             {"fileId":22,"optional":false,"file":{"name":"B Main","version":"2.0","sizeInBytes":"1024","mod":{"modId":2,"name":"Mod B"}}},
-            {"fileId":11,"optional":true,"file":{"name":"A Main","version":"1.0","size":1,"mod":{"modId":1,"name":"Mod A"}}}
+            {"fileId":11,"optional":true,"file":{"name":"A Main","version":"1.0","size":1,"mod":{"modId":1,"name":"Mod A"}}},
+            {"fileId":12,"optional":false,"file":{"name":"A Patch","version":"1.0","size":1,"mod":{"modId":1,"name":"Mod A"}}}
           ],
           "externalResources":[{"name":"SKSE","resourceType":"browse","resourceUrl":"https://skse.silverlock.org","optional":false}]}}}}"#;
 
@@ -795,7 +810,7 @@ mod tests {
         assert_eq!(detail.card.name, "Belle Skyrim");
         assert_eq!(detail.card.endorsements, 12);
         assert_eq!(detail.card.image.as_deref(), Some("https://images.nexusmods.com/c-med.png"));
-        assert_eq!(detail.mods.len(), 2);
+        assert_eq!(detail.mods.len(), 3);
         assert_eq!(detail.mods[1].size, 1024, "taille en Ko convertie");
         assert!(detail.mods[1].optional);
         assert_eq!(detail.external[0].url.as_deref(), Some("https://skse.silverlock.org"));
@@ -804,6 +819,10 @@ mod tests {
         let plan = s.collection_plan("abc123", "skyrimspecialedition", 4).await.unwrap();
         assert!(plan.from_manifest);
         assert_eq!(plan.order.iter().map(|e| e.mod_id).collect::<Vec<_>>(), vec![1, 2]);
+        // Second fichier d'un même mod : à faire à la main.
+        assert_eq!(plan.extras.len(), 1);
+        assert_eq!(plan.extras[0].kind, "second_file");
+        assert!(plan.extras[0].url.as_deref().unwrap().ends_with("/skyrimspecialedition/mods/1?tab=files&file_id=12"));
         let req = server.request(3);
         assert!(req.line.starts_with("GET /v1/collections/abc123/revisions/4/download_link"), "{}", req.line);
         assert_eq!(req.header("apikey").as_deref(), Some("cle"));
