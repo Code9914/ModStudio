@@ -12,6 +12,7 @@
   import PlayButton from "./PlayButton.svelte";
   import LoadMore from "./LoadMore.svelte";
   import NexusGameTools from "./NexusGameTools.svelte";
+  import NexusCollectionsList from "./NexusCollectionsList.svelte";
   import Thumb from "./Thumb.svelte";
 
   let { game }: { game: NexusGame } = $props();
@@ -102,6 +103,16 @@
   <div class="body">
     {#key game.id}<NexusGameTools {game} />{/key}
 
+    <div class="tabs" role="tablist" aria-label={tr("Contenu du jeu", "Game content")}>
+      <button role="tab" class="tab" aria-selected={nav.nexusTab === "mods"} onclick={() => (nav.nexusTab = "mods")}>Mods</button>
+      <button role="tab" class="tab" aria-selected={nav.nexusTab === "collections"} onclick={() => (nav.nexusTab = "collections")}>
+        Collections <span class="muted">{tr("listes de mods prêtes", "ready-made mod lists")}</span>
+      </button>
+    </div>
+
+    {#if nav.nexusTab === "collections"}
+      <NexusCollectionsList {game} />
+    {:else}
     <div class="toolbar">
       <label class="search">
         <span class="visually-hidden">{tr(`Rechercher dans les mods de ${game.name}`, `Search ${game.name} mods`)}</span>
@@ -172,6 +183,7 @@
     {/if}
 
     {#if list.items.length > 0}<LoadMore {list} noun="mods" />{/if}
+    {/if}
   </div>
 </div>
 
@@ -262,6 +274,43 @@
 
   .body {
     padding: 1.5rem 2.5rem 3rem;
+  }
+
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tab {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.6rem 0.9rem;
+    margin-bottom: -1px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  .tab .muted {
+    font-size: var(--t-xs);
+    font-weight: 500;
+  }
+
+  .tab:hover {
+    color: var(--text);
+  }
+
+  .tab[aria-selected="true"] {
+    color: var(--text);
+    border-bottom-color: var(--accent);
   }
 
   .toolbar {

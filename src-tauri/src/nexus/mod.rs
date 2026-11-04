@@ -13,6 +13,7 @@
 pub mod account;
 pub mod browse;
 pub mod client;
+pub mod collections;
 pub mod engine_rules;
 pub mod fomod;
 pub mod install;
@@ -321,6 +322,7 @@ pub async fn nexus_install(
     nxm_key: Option<String>,
     nxm_expires: Option<i64>,
     required_by: Option<i64>,
+    collection: Option<crate::installer::CollectionMark>,
     on_event: Channel<InstallEvent>,
 ) -> AppResult<InstallOutcome> {
     let emit: Arc<dyn Fn(InstallEvent) + Send + Sync> = Arc::new(move |e| {
@@ -342,11 +344,51 @@ pub async fn nexus_install(
                 file_id,
                 nxm,
                 required_by: required_by.filter(|id| *id > 0 && *id != mod_id),
+                collection: collection.filter(|c| collections::check_slug(&c.slug).is_ok()),
             },
             &modio,
             emit,
         )
         .await
+}
+
+// ---------------------------------------------------------------- Collections
+
+/// Collections d'un jeu (publiques et listées).
+#[tauri::command]
+pub async fn nexus_collections(
+    state: State<'_, AppState>,
+    game_domain: String,
+    query: Option<String>,
+    sort: Option<String>,
+    offset: u32,
+    limit: u32,
+) -> AppResult<Page<collections::CollectionCard>> {
+    let hide_adult = state.snapshot().hide_mature;
+    state.nexus.list_collections(&game_domain, query, sort, hide_adult, offset, limit).await
+}
+
+/// Fiche d'une collection et ses mods.
+#[tauri::command]
+pub async fn nexus_collection(state: State<'_, AppState>, slug: String, game_domain: String) -> AppResult<collections::CollectionDetail> {
+    state.nexus.get_collection(&slug, &game_domain).await
+}
+
+/// Ordre d'installation d'une collection (règles de son archive).
+#[tauri::command]
+pub async fn nexus_collection_plan(
+    state: State<'_, AppState>,
+    slug: String,
+    game_domain: String,
+    revision: i64,
+) -> AppResult<collections::CollectionPlan> {
+    state.nexus.collection_plan(&slug, &game_domain, revision).await
+}
+
+/// Range des mods déjà installés dans l'ordre d'une collection.
+#[tauri::command(async)]
+pub fn nexus_collection_mark(state: State<'_, AppState>, game_id: i64, slug: String, marks: Vec<(i64, u32)>) -> AppResult<GameInstall> {
+    state.nexus.mark_collection(game_id, &slug, &marks)
 }
 
 /// Termine une installation FOMOD avec les options choisies

@@ -4,6 +4,7 @@ import {
   asAppError,
   nexus as api,
   type AppError,
+  type CollectionMark,
   type DetectedGame,
   type FoundLoader,
   type GameInstall,
@@ -34,6 +35,7 @@ interface Pending {
   gameId: number;
   fileId: number;
   requiredBy?: number;
+  collection?: CollectionMark;
   resolve: (r: NexusInstallOutcome) => void;
   reject: (e: AppError) => void;
 }
@@ -231,17 +233,18 @@ class NexusStore {
     fileId: number,
     fileName: string | null = null,
     requiredBy?: number,
+    collection?: CollectionMark,
   ): Promise<NexusInstallOutcome> {
     // Compte Premium ou non : la vérification du lancement peut être encore en cours.
     if (this.#validating) await this.#validating;
     if (this.premium) {
       try {
-        return await this.#install(gameId, domain, modId, fileId, undefined, requiredBy);
+        return await this.#install(gameId, domain, modId, fileId, undefined, requiredBy, collection);
       } catch (e) {
         if (asAppError(e).kind !== "nexus_premium_required") throw e;
       }
     }
-    return this.#viaWebsite(gameId, domain, modId, fileId, fileName, requiredBy);
+    return this.#viaWebsite(gameId, domain, modId, fileId, fileName, requiredBy, collection);
   }
 
   #viaWebsite(
@@ -251,11 +254,12 @@ class NexusStore {
     fileId: number,
     fileName: string | null,
     requiredBy?: number,
+    collection?: CollectionMark,
   ): Promise<NexusInstallOutcome> {
     const k = `${domain}:${modId}`;
     this.#pending.get(k)?.reject(cancelled());
     return new Promise((resolve, reject) => {
-      this.#pending.set(k, { gameId, fileId, requiredBy, resolve, reject });
+      this.#pending.set(k, { gameId, fileId, requiredBy, collection, resolve, reject });
       this.waiting[keyOf(gameId, modId)] = { fileId, domain };
       // La page s'ouvre dès que le cadre qui l'accueille est en place.
       this.site = { kind: "download", gameId, domain, modId, fileId, fileName };
@@ -309,15 +313,23 @@ class NexusStore {
     this.#pending.delete(k);
     delete this.waiting[keyOf(p.gameId, link.modId)];
     if (this.site?.kind === "download" && this.site.modId === link.modId) this.site = null;
-    this.#install(p.gameId, link.domain, link.modId, link.fileId, link, p.requiredBy).then(p.resolve, p.reject);
+    this.#install(p.gameId, link.domain, link.modId, link.fileId, link, p.requiredBy, p.collection).then(p.resolve, p.reject);
   }
 
-  async #install(gameId: number, domain: string, modId: number, fileId: number, nxm?: NxmLink, requiredBy?: number) {
+  async #install(
+    gameId: number,
+    domain: string,
+    modId: number,
+    fileId: number,
+    nxm?: NxmLink,
+    requiredBy?: number,
+    collection?: CollectionMark,
+  ) {
     const k = keyOf(gameId, modId);
     this.progress[k] = { label: tr("Préparation…", "Preparing…"), ratio: null };
     try {
       const result = await api.install(
-        { gameId, gameDomain: domain, modId, fileId, nxmKey: nxm?.key, nxmExpires: nxm?.expires, requiredBy },
+        { gameId, gameDomain: domain, modId, fileId, nxmKey: nxm?.key, nxmExpires: nxm?.expires, requiredBy, collection },
         (e) => {
           this.progress[k] = describe(e);
         },

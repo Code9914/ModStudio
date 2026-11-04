@@ -20,7 +20,7 @@ Svelte 5. The interface is available in English and French.
 | Source | What ModStudio does |
 | --- | --- |
 | **mod.io** | Browse every game and its mods, subscribe with your account, install into the game folder. |
-| **Nexus Mods** | Browse without an account; install with your API key (Premium: direct download; free account: the file page opens inside the app and you click "Slow download"). FOMOD installers, zip / 7z / RAR archives, required mods. |
+| **Nexus Mods** | Browse without an account; install with your API key (Premium: direct download; free account: the file page opens inside the app and you click "Slow download"). FOMOD installers, zip / 7z / RAR archives, required mods. **Collections**: browse a game's collections and install one in a click, in the order its creator set. |
 | **Thunderstore** | The site's games, with their mod loader (BepInEx, MelonLoader…) and each mod's dependencies, laid out the way r2modman does it. ResoniteModLoader mods for Resonite. |
 | **Communities** | Hollow Knight (ModLinks), Outer Wilds (OWML), Beat Saber (BeatMods), ChilloutVR (CVRMG), Raft (RaftModding). |
 
@@ -40,7 +40,9 @@ For every game:
   (SKSE…) when it's installed.
 - **Conflicts**: a mod never overwrites another mod's files. When it needs
   them, ModStudio offers to disable the other one (without uninstalling it).
-  Mods declared incompatible (Outer Wilds manifests) are flagged.
+  Mods declared incompatible (Outer Wilds manifests) are flagged. Inside a
+  Nexus collection, the mod the collection places later wins, and the file
+  it replaces is kept aside and put back when that mod is disabled or removed.
 - **Share your mods**: a code you send to a friend, who gets the same mods in
   the same versions (see below).
 - **Global search** (Ctrl + K): one search for mods and games across every
@@ -149,6 +151,7 @@ src-tauri/src/        Rust backend
   games/              installed games (Steam, Epic, Heroic, engine detection, launch)
   installer.rs        checked downloads, extraction, uninstall
   toggle.rs           enable / disable, profiles
+  layers.rs           files shared by mods of a Nexus collection
 src/                  Svelte interface (routes/+page.svelte, lib/components/)
 packaging/aur/        AUR package modstudio-bin
 ```
@@ -171,7 +174,7 @@ et Svelte 5. L'interface existe en français et en anglais.
 | Source | Ce que ModStudio sait faire |
 | --- | --- |
 | **mod.io** | Parcourir tous les jeux et leurs mods, s'abonner avec ton compte, installer dans le dossier du jeu. |
-| **Nexus Mods** | Parcourir sans compte ; installer avec ta clé API (Premium : directement ; compte gratuit : la page du fichier s'ouvre dans l'appli et tu cliques sur « Slow download »). Installateurs FOMOD, archives zip / 7z / RAR, mods nécessaires. |
+| **Nexus Mods** | Parcourir sans compte ; installer avec ta clé API (Premium : directement ; compte gratuit : la page du fichier s'ouvre dans l'appli et tu cliques sur « Slow download »). Installateurs FOMOD, archives zip / 7z / RAR, mods nécessaires. **Collections** : parcourir celles d'un jeu et en installer une d'un clic, dans l'ordre choisi par son créateur. |
 | **Thunderstore** | Les jeux du site, avec leur chargeur (BepInEx, MelonLoader…) et les dépendances de chaque mod, rangés comme le ferait r2modman. Mods de ResoniteModLoader pour Resonite. |
 | **Communautés** | Hollow Knight (ModLinks), Outer Wilds (OWML), Beat Saber (BeatMods), ChilloutVR (CVRMG), Raft (RaftModding). |
 
@@ -193,7 +196,9 @@ Et pour tous les jeux :
   extender (SKSE…) quand il est installé.
 - **Conflits** : un mod n'écrase jamais les fichiers d'un autre. S'il en a
   besoin, ModStudio propose de désactiver l'autre (sans le désinstaller). Les
-  mods déclarés incompatibles (manifestes d'Outer Wilds) sont signalés.
+  mods déclarés incompatibles (manifestes d'Outer Wilds) sont signalés. Dans
+  une collection Nexus, le mod qu'elle place après gagne ; le fichier qu'il
+  remplace est gardé de côté et remis quand ce mod est désactivé ou retiré.
 - **Partager ses mods** : un code à envoyer à un ami, qui installe les mêmes
   mods dans les mêmes versions (voir plus bas).
 - **Recherche globale** (Ctrl + K) : une seule recherche pour les mods et les

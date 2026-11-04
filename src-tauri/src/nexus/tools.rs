@@ -418,6 +418,7 @@ impl NexusState {
                 old_files,
                 old_dirs,
                 others,
+                layer: None,
             };
             Ok(installer::place_batches(vec![batch])?.pop().expect("un lot"))
         })

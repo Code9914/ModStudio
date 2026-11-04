@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::api::models::{lenient, lenient_vec};
 
 /// Nombre envoyé tantôt en nombre, tantôt en texte (`BigInt` GraphQL).
-fn number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
+pub(crate) fn number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
     Ok(match Value::deserialize(deserializer)? {
         Value::Number(n) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)).unwrap_or(0),
         Value::String(s) => s.trim().parse::<i64>().unwrap_or(0),
@@ -19,7 +19,7 @@ fn number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
 }
 
 /// Booléen parfois envoyé en nombre (`primary: 0/1`).
-fn flag<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+pub(crate) fn flag<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
     Ok(match Value::deserialize(deserializer)? {
         Value::Bool(b) => b,
         Value::Number(n) => n.as_i64().unwrap_or(0) != 0,

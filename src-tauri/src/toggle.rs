@@ -165,8 +165,35 @@ pub fn disable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx) -> AppResult<()> 
         m.disabled = true;
         m.disabled_in = Some(if in_game { "game" } else { "app" }.to_string());
     }
+    // Collection : les fichiers qu'il recouvrait reviennent à leur propriétaire,
+    // et les siens cachés sous d'autres mods rejoignent ses fichiers mis de côté.
+    crate::layers::release_all(game, mod_id, ctx);
+    crate::layers::reclaim_buried(game, mod_id, in_game, ctx);
     sync_active(game);
     Ok(())
+}
+
+/// Ce que fait un mod réactivé sur un fichier qu'un autre mod de la même
+/// collection a déjà mis en place.
+enum Layered {
+    /// Il le recouvre (le fichier de l'autre est gardé de côté).
+    Covers(i64),
+    /// Il passe dessous (son fichier est gardé de côté par l'autre).
+    Under(i64),
+}
+
+fn layered(game: &GameInstall, record: &InstalledMod, owner: &installer::Owner) -> Option<Layered> {
+    if owner.elsewhere || owner.mod_id <= 0 || owner.game_id != game.game_id {
+        return None;
+    }
+    let other = game.mods.get(&owner.mod_id)?;
+    if crate::layers::wins(record, other) {
+        Some(Layered::Covers(owner.mod_id))
+    } else if crate::layers::wins(other, record) {
+        Some(Layered::Under(owner.mod_id))
+    } else {
+        None
+    }
 }
 
 /// Réactive un mod. `others` : fichiers des autres mods activés (des deux
@@ -183,6 +210,13 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
     let mut blocking = false;
     let mut stores = Vec::new();
     let mut kept: HashMap<String, Vec<String>> = HashMap::new();
+    // Collection : fichiers d'autres mods à recouvrir, et fichiers de ce mod à
+    // glisser sous ceux d'un mod placé après lui (déplacements, puis entrées).
+    let layer_in_game = crate::layers::kept_in_game(game);
+    let mut cover_moves = Vec::new();
+    let mut under_moves = Vec::new();
+    let mut covered: Vec<(String, String, i64)> = Vec::new();
+    let mut buried: Vec<(String, String, i64)> = Vec::new();
     for (key, files, _) in parts_of(&record) {
         let (Some(folder), Some(store)) = (game.folder_for(&key), store_for(game, &key, mod_id, in_game, ctx)) else { continue };
         let owned = others.get(folder);
@@ -194,7 +228,31 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
             if !src.is_file() {
                 continue;
             }
-            if let Some(owner) = owned.and_then(|o| o.get(&rel)) {
+            let owner = owned.and_then(|o| o.get(&rel));
+            match owner.and_then(|o| layered(game, &record, o)) {
+                Some(Layered::Covers(id)) => {
+                    let kept_at = crate::layers::store(game, &key, mod_id, layer_in_game, ctx).and_then(|d| installer::resolve_rel(&d, &rel));
+                    if let Some(kept_at) = kept_at {
+                        if dst.is_file() {
+                            cover_moves.push((dst.clone(), kept_at, rel.clone()));
+                        }
+                        covered.push((key.clone(), rel.clone(), id));
+                        kept.entry(key.clone()).or_default().push(rel.clone());
+                        moves.push((src, dst, rel));
+                        continue;
+                    }
+                }
+                Some(Layered::Under(id)) => {
+                    let kept_at = crate::layers::store(game, &key, id, layer_in_game, ctx).and_then(|d| installer::resolve_rel(&d, &rel));
+                    if let Some(kept_at) = kept_at {
+                        under_moves.push((src, kept_at, rel.clone()));
+                        buried.push((key.clone(), rel.clone(), id));
+                        continue;
+                    }
+                }
+                None => {}
+            }
+            if let Some(owner) = owner {
                 conflicts.push(crate::tr!("{rel} (installé par « {owner} »)", "{rel} (installed by \"{owner}\")"));
                 owners.push(owner.clone());
             } else if dst.exists() {
@@ -210,7 +268,15 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
     if !conflicts.is_empty() {
         return Err(installer::conflict_error(conflicts, owners, blocking));
     }
-    move_all(&moves)?;
+    move_all(&cover_moves)?;
+    if let Err(e) = move_all(&moves) {
+        // Les fichiers recouverts reprennent leur place.
+        for (src, dst, _) in cover_moves.iter().rev() {
+            let _ = installer::move_file_io(dst, src);
+        }
+        return Err(e);
+    }
+    move_all(&under_moves)?;
     for (store, folder) in stores {
         remove_store(&store, &store_stop(&folder, in_game, ctx));
         if in_game {
@@ -222,6 +288,7 @@ pub fn enable(game: &mut GameInstall, mod_id: i64, ctx: &Ctx, others: &HashMap<P
         m.disabled = false;
         m.disabled_in = None;
     }
+    crate::layers::record_placement(game, mod_id, &covered, &buried, layer_in_game);
     sync_active(game);
     Ok(())
 }

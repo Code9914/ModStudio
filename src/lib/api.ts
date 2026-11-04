@@ -372,6 +372,10 @@ export interface InstalledMod {
   fileUid?: string;
   /** Plugins activés dans `plugins.txt` (jeux Bethesda). */
   plugins?: string[];
+  /** Collection Nexus qui l'a installé, et sa place dans son ordre. */
+  collection?: CollectionMark;
+  /** Fichiers d'autres mods de la collection recouverts par les siens. */
+  shadowed?: { key?: string; rel: string; owner: number; inGame: boolean }[];
   /** Mod désactivé : ses fichiers sont mis de côté. */
   disabled?: boolean;
 }
@@ -665,6 +669,80 @@ export interface FomodInstaller {
 }
 
 /** Installation d'un fichier Nexus : installé, ou options FOMOD à choisir. */
+// ------------------------------------------------------------------ Collections Nexus
+
+export type NexusCollectionSort = "endorsements" | "downloads" | "updated" | "rating";
+
+export interface NexusCollectionCard {
+  /** Numéro tiré de `slug` (pour les listes). */
+  id: number;
+  slug: string;
+  name: string;
+  summary: string | null;
+  endorsements: number;
+  downloads: number;
+  image: string | null;
+  author: string | null;
+  authorAvatar: string | null;
+  category: string | null;
+  adult: boolean;
+  revision: number;
+  modCount: number;
+  /** Taille de tous ses mods, en octets. */
+  size: number;
+}
+
+export interface NexusCollectionMod {
+  modId: number;
+  fileId: number;
+  name: string;
+  fileName: string;
+  version: string | null;
+  size: number;
+  optional: boolean;
+  image: string | null;
+  author: string | null;
+  adult: boolean;
+}
+
+export interface NexusCollectionDetail extends Omit<NexusCollectionCard, "id"> {
+  description: string | null;
+  header: string | null;
+  game: { id: number; domainName: string; name: string | null };
+  installInfo: string | null;
+  mods: NexusCollectionMod[];
+  external: { name: string; url: string | null; kind: string; optional: boolean }[];
+}
+
+export interface CollectionPlanEntry {
+  modId: number;
+  fileId: number;
+  rank: number;
+  instructions: string | null;
+  /** Options FOMOD choisies par le créateur, lisibles. */
+  choices: string[];
+}
+
+export interface CollectionPlan {
+  order: CollectionPlanEntry[];
+  /** À faire à la main : `bundle`, `browse`, `manual`, `direct`, `other_game`. */
+  extras: { name: string; kind: string; url: string | null; instructions: string | null; optional: boolean }[];
+  /** Ordre tiré des règles de la collection (sinon, celui de sa liste). */
+  fromManifest: boolean;
+}
+
+export interface CollectionMark {
+  slug: string;
+  rank: number;
+}
+
+/** Numéro stable d'une collection d'après son identifiant texte. */
+function slugId(slug: string): number {
+  let h = 0;
+  for (const c of slug) h = (h * 31 + c.charCodeAt(0)) % 2147483647;
+  return h || 1;
+}
+
 export type NexusInstallOutcome =
   | ({ status: "installed" } & NexusInstalled)
   | { status: "choices"; token: string; installer: FomodInstaller };
@@ -777,6 +855,8 @@ export const nexus = {
       nxmExpires?: number;
       /** Mod qui a besoin de celui-ci (installation d'un mod nécessaire). */
       requiredBy?: number;
+      /** Installé par une collection : sa place dans son ordre. */
+      collection?: CollectionMark;
     },
     onProgress: (e: InstallEvent) => void,
   ) => {
@@ -784,6 +864,15 @@ export const nexus = {
     onEvent.onmessage = onProgress;
     return call<NexusInstallOutcome>("nexus_install", { ...p, onEvent });
   },
+  collections: async (p: { gameDomain: string; query?: string; sort?: NexusCollectionSort; offset: number; limit: number }) => {
+    const page = await call<Page<Omit<NexusCollectionCard, "id">>>("nexus_collections", p);
+    return { ...page, data: page.data.map((c) => ({ ...c, id: slugId(c.slug) })) };
+  },
+  collection: (slug: string, gameDomain: string) => call<NexusCollectionDetail>("nexus_collection", { slug, gameDomain }),
+  collectionPlan: (slug: string, gameDomain: string, revision: number) =>
+    call<CollectionPlan>("nexus_collection_plan", { slug, gameDomain, revision }),
+  collectionMark: (gameId: number, slug: string, marks: [number, number][]) =>
+    call<GameInstall>("nexus_collection_mark", { gameId, slug, marks }),
   /** Termine une installation FOMOD : `selections[étape][groupe]` = options cochées. */
   fomodFinish: (token: string, selections: number[][][], onProgress: (e: InstallEvent) => void) => {
     const onEvent = new Channel<InstallEvent>();

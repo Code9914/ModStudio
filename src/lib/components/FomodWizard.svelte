@@ -10,11 +10,14 @@
   let {
     installer,
     modName,
+    notes = [],
     onfinish,
     oncancel,
   }: {
     installer: FomodInstaller;
     modName: string;
+    /** Options choisies par le créateur d'une collection, à titre indicatif. */
+    notes?: string[];
     /** Renvoie un message d'erreur, ou `null` si l'installation a démarré. */
     onfinish: (selections: number[][][]) => Promise<string | null>;
     oncancel: () => void;
@@ -194,6 +197,14 @@
         <!-- Recréés à chaque étape : des boutons radio réutilisés d'une étape à l'autre se décocheraient. -->
         {#key current}
         <div class="groups">
+          {#if notes.length > 0}
+            <details class="notes" open>
+              <summary>{tr("Options choisies par le créateur de la collection", "Options chosen by the collection's creator")}</summary>
+              <ul>
+                {#each notes as note, i (i)}<li>{note}</li>{/each}
+              </ul>
+            </details>
+          {/if}
           {#each step.groups as group, gi (gi)}
             <fieldset class="group">
               <legend>
@@ -320,6 +331,25 @@
     display: grid;
     align-content: start;
     gap: 1.1rem;
+  }
+
+  .notes {
+    padding: 0.6rem 0.8rem;
+    border-radius: var(--r-sm);
+    background: var(--raise);
+    font-size: var(--t-sm);
+  }
+
+  .notes summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .notes ul {
+    margin: 0.4rem 0 0;
+    padding-left: 1.1rem;
+    display: grid;
+    gap: 0.15rem;
   }
 
   .group {

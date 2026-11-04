@@ -8,6 +8,7 @@ mod games;
 mod i18n;
 mod install_commands;
 mod installer;
+mod layers;
 mod lists;
 mod modio_sdk;
 mod nexus;
@@ -114,6 +115,10 @@ pub fn run() {
             nexus::nexus_cancel_tool,
             nexus::nexus_uninstall_tool,
             nexus::nexus_configure_game,
+            nexus::nexus_collections,
+            nexus::nexus_collection,
+            nexus::nexus_collection_plan,
+            nexus::nexus_collection_mark,
             nexus::nexus_install,
             nexus::nexus_cancel_install,
             nexus::nexus_fomod_finish,

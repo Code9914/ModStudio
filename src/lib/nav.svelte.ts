@@ -13,6 +13,7 @@ export type View =
   | { name: "nexusGames" }
   | { name: "nexusMods" }
   | { name: "nexusMod"; modId: number }
+  | { name: "nexusCollection" }
   | { name: "nexusAccount" }
   | { name: "nexusTracked" }
   | { name: "tsGames" }
@@ -26,7 +27,7 @@ export type View =
   | { name: "search" };
 
 export type ModOrigin = "mods" | "library" | "installed" | "search";
-export type NexusOrigin = "nexusMods" | "installed" | "nexusTracked" | "search";
+export type NexusOrigin = "nexusMods" | "installed" | "nexusTracked" | "search" | "nexusCollection";
 export type TsOrigin = "tsMods" | "installed" | "search";
 export type ClOrigin = "clMods" | "installed" | "search";
 export type TsRef = { namespace: string; name: string };
@@ -52,6 +53,10 @@ class Nav {
   nexusGame = $state<NexusGame | null>(null);
   nexusModStack = $state<number[]>([]);
   nexusOrigin = $state<NexusOrigin>("nexusMods");
+  /** Collection Nexus ouverte (identifiant texte). */
+  nexusCollection = $state<string | null>(null);
+  /** Onglet de la page d'un jeu Nexus : ses mods ou ses collections. */
+  nexusTab = $state<"mods" | "collections">("mods");
   /** Vue où revenir après avoir ajouté la clé Nexus. */
   afterNexusKey = $state<View | null>(null);
   /** Page du compte Nexus affichée comme accueil du premier lancement. */
@@ -140,13 +145,24 @@ class Nav {
   }
 
   openNexusGame(game: NexusGame) {
-    if (this.nexusGame?.id !== game.id) this.nexusGame = game;
+    if (this.nexusGame?.id !== game.id) {
+      this.nexusGame = game;
+      this.nexusCollection = null;
+      this.nexusTab = "mods";
+    }
     this.nexusModStack = [];
     this.view = { name: "nexusMods" };
   }
 
+  /** Page d'une collection du jeu ouvert. */
+  openNexusCollection(slug: string) {
+    this.nexusCollection = slug;
+    this.nexusModStack = [];
+    this.view = { name: "nexusCollection" };
+  }
+
   openNexusMod(modId: number) {
-    if (this.view.name !== "nexusMod") this.nexusOrigin = "nexusMods";
+    if (this.view.name !== "nexusMod") this.nexusOrigin = this.view.name === "nexusCollection" ? "nexusCollection" : "nexusMods";
     this.nexusModStack = [...this.nexusModStack, modId];
     this.view = { name: "nexusMod", modId };
   }
@@ -328,6 +344,10 @@ class Nav {
     if (this.view.name === "nexusMod") {
       this.nexusModStack = [];
       this.view = { name: this.nexusOrigin };
+      return;
+    }
+    if (this.view.name === "nexusCollection") {
+      this.view = { name: "nexusMods" };
       return;
     }
     if (this.view.name === "nexusMods") {

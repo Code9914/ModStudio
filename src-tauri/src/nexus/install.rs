@@ -23,9 +23,10 @@ use crate::games::engine::{self, Engine, EngineInfo};
 use crate::games::InstalledGame;
 use crate::install_commands::{dependency_state, Orphan, UninstallResult};
 use crate::installer::{
-    self, Batch, DownloadRequest, GameInstall, InstallEvent, InstalledMod, Layout, Library, ModPart, Owners, PlaceInput,
-    STAGING_DIR,
+    self, Batch, BatchLayer, CollectionMark, DownloadRequest, GameInstall, InstallEvent, InstalledMod, Layout, Library, ModPart,
+    Owners, PlaceInput, STAGING_DIR,
 };
+use crate::layers;
 use crate::toggle::{self, ProfileApplied, ProfileEdit};
 
 /// Ce que l'utilisateur a demandé d'installer.
@@ -39,6 +40,8 @@ pub struct InstallRequest {
     pub nxm: Option<(String, i64)>,
     /// Mod qui a besoin de celui-ci (installation d'un mod nécessaire).
     pub required_by: Option<i64>,
+    /// Installé par une collection : sa place dans l'ordre de la collection.
+    pub collection: Option<CollectionMark>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -202,6 +205,8 @@ struct PlanCtx {
     /// Ancienne version désactivée, supprimée une fois la nouvelle en place.
     set_aside: Option<InstalledMod>,
     others: HashMap<PathBuf, Owners>,
+    /// Ordre de la collection qui installe ce mod (fichiers en commun).
+    layer: Option<LayerPlan>,
     engine: Option<EngineInfo>,
     loader: Option<UnityLoader>,
     game_state: fomod::GameState,
@@ -209,6 +214,44 @@ struct PlanCtx {
     file_name: String,
     job_dir: PathBuf,
     limit: u64,
+}
+
+/// Mods de la même collection dont ce mod recouvre les fichiers, ou qui recouvrent les siens.
+#[derive(Clone)]
+pub(crate) struct LayerPlan {
+    mod_id: i64,
+    wins: BTreeSet<i64>,
+    loses: BTreeSet<i64>,
+    in_game: bool,
+    store_root: PathBuf,
+}
+
+impl LayerPlan {
+    /// Pour un mod de collection : les autres mods de la même collection, rangés avant ou après lui.
+    fn for_mod(config: &GameInstall, mod_id: i64, mark: Option<&CollectionMark>, store_root: PathBuf) -> Option<LayerPlan> {
+        let mark = mark?;
+        let me = InstalledMod { mod_id, collection: Some(mark.clone()), ..Default::default() };
+        let mut plan = LayerPlan { mod_id, wins: BTreeSet::new(), loses: BTreeSet::new(), in_game: layers::kept_in_game(config), store_root };
+        for m in config.mods.values().filter(|m| m.mod_id != mod_id && !m.disabled) {
+            if layers::wins(&me, m) {
+                plan.wins.insert(m.mod_id);
+            } else if layers::wins(m, &me) {
+                plan.loses.insert(m.mod_id);
+            }
+        }
+        (!plan.wins.is_empty() || !plan.loses.is_empty()).then_some(plan)
+    }
+
+    fn batch(&self, config: &GameInstall, key: &str) -> BatchLayer {
+        let ctx = toggle::Ctx { store_root: &self.store_root, source: "nexus" };
+        let mut stores = BTreeMap::new();
+        for holder in std::iter::once(self.mod_id).chain(self.loses.iter().copied()) {
+            if let Some(dir) = layers::store(config, key, holder, self.in_game, &ctx) {
+                stores.insert(holder, dir);
+            }
+        }
+        BatchLayer { wins: self.wins.clone(), loses: self.loses.clone(), stores, mod_id: self.mod_id }
+    }
 }
 
 /// Choix entre les archives d'un fichier (présenté comme un installateur FOMOD).
@@ -287,7 +330,7 @@ fn plan_extracted(
         // Pas de choix à faire : fichiers obligatoires et conditionnels.
         let moves = fomod::expand(&froot, &fomod::resolve(&inst, &[])?, &ctx.job_dir.join("fomod-copies"))?;
         let (batches, plugins, root) = fomod_batches(config, &ctx.domain, moves, &ctx.mod_name, mod_id, ctx.old.as_ref());
-        let placed = place_plan(config, ctx.old.as_ref(), &ctx.others, batches, None)?;
+        let placed = place_plan_layered(config, ctx.old.as_ref(), &ctx.others, batches, None, ctx.layer.as_ref())?;
         return Ok(Stage::Placed { placed, root, detected_dir: None, plugins });
     }
 
@@ -356,7 +399,7 @@ fn plan_extracted(
         }
         new_batches = plan.batches;
     }
-    let placed = place_plan(config, ctx.old.as_ref(), &ctx.others, new_batches, detected_dir.clone())?;
+    let placed = place_plan_layered(config, ctx.old.as_ref(), &ctx.others, new_batches, detected_dir.clone(), ctx.layer.as_ref())?;
     Ok(Stage::Placed { placed, root, detected_dir, plugins })
 }
 
@@ -385,8 +428,20 @@ pub(crate) fn place_plan(
     config: &GameInstall,
     old: Option<&InstalledMod>,
     others: &HashMap<PathBuf, Owners>,
+    new_batches: BTreeMap<String, Vec<(PathBuf, String)>>,
+    detected_dir: Option<PathBuf>,
+) -> AppResult<Vec<installer::PlacedBatch>> {
+    place_plan_layered(config, old, others, new_batches, detected_dir, None)
+}
+
+/// Comme `place_plan`, avec l'ordre d'une collection pour les fichiers en commun.
+fn place_plan_layered(
+    config: &GameInstall,
+    old: Option<&InstalledMod>,
+    others: &HashMap<PathBuf, Owners>,
     mut new_batches: BTreeMap<String, Vec<(PathBuf, String)>>,
     detected_dir: Option<PathBuf>,
+    layer: Option<&LayerPlan>,
 ) -> AppResult<Vec<installer::PlacedBatch>> {
     let mut keys: BTreeSet<String> = new_batches.keys().cloned().collect();
     if let Some(o) = old {
@@ -413,6 +468,7 @@ pub(crate) fn place_plan(
         batches.push(Batch {
             others: others.get(&folder).cloned().unwrap_or_default(),
             moves: new_batches.remove(&key).unwrap_or_default(),
+            layer: layer.map(|l| l.batch(config, &key)),
             key,
             folder,
             old_files,
@@ -731,6 +787,9 @@ impl NexusState {
             owned_by_others(&[&lib, other_library], req.game_id, req.mod_id)
         };
         let (old, set_aside) = Self::previous_version(config, req.mod_id);
+        // Mod d'une collection (celle qui l'installe, sinon celle qui l'avait installé).
+        let mark = req.collection.clone().or_else(|| old.as_ref().and_then(|o| o.collection.clone()));
+        let layer = LayerPlan::for_mod(config, req.mod_id, mark.as_ref(), self.disabled_root());
         let domain = req.game_domain.clone();
         let engine = self.engine_for(config, &domain)?;
         let loader = match &engine {
@@ -752,6 +811,7 @@ impl NexusState {
             old,
             set_aside,
             others,
+            layer,
             engine,
             loader,
             game_state,
@@ -902,7 +962,7 @@ impl NexusState {
                     let config = &ctx_b.config;
                     let (batches, plugins, sub) =
                         fomod_batches(config, &ctx_b.domain, moves, &ctx_b.mod_name, mod_id, ctx_b.old.as_ref());
-                    let placed = place_plan(config, ctx_b.old.as_ref(), &ctx_b.others, batches, None)?;
+                    let placed = place_plan_layered(config, ctx_b.old.as_ref(), &ctx_b.others, batches, None, ctx_b.layer.as_ref())?;
                     Ok(Stage::Placed { placed, root: sub, detected_dir: None, plugins })
                 }
             }
@@ -999,8 +1059,16 @@ impl NexusState {
             root,
             file_name: Some(file.name.clone()),
             file_uid: file.uid.clone(),
+            collection: req.collection.clone().or_else(|| old.as_ref().and_then(|o| o.collection.clone())),
             ..Default::default()
         };
+        // Collection : fichiers recouverts ou cachés par cette installation.
+        let mut covered: Vec<(String, String, i64)> = Vec::new();
+        let mut buried: Vec<(String, String, i64)> = Vec::new();
+        for batch in &placed {
+            covered.extend(batch.covered.iter().map(|(rel, owner)| (batch.key.clone(), rel.clone(), *owner)));
+            buried.extend(batch.buried.iter().map(|(rel, holder)| (batch.key.clone(), rel.clone(), *holder)));
+        }
         for batch in placed {
             if batch.key.is_empty() {
                 record.files = batch.files;
@@ -1046,13 +1114,33 @@ impl NexusState {
         // Outil de mods dont ce mod a besoin, s'il manque.
         let needs_tool = self.missing_tool(&req, &config, engine_info.as_ref(), &record, game_dir.as_deref()).await;
 
+        // Fichiers que l'ancienne version recouvrait : gardés si la nouvelle les
+        // remplace encore, remis à leur propriétaire sinon.
+        let in_place = |key: &str, rel: &str| {
+            if key.is_empty() {
+                record.files.iter().any(|f| f == rel)
+            } else {
+                record.parts.iter().any(|p| p.key == key && p.files.iter().any(|f| f == rel))
+            }
+        };
+        let (still, gone): (Vec<_>, Vec<_>) =
+            old.as_ref().map(|o| o.shadowed.clone()).unwrap_or_default().into_iter().partition(|s| in_place(&s.key, &s.rel));
+        record.shadowed = still;
+
+        let store_root = self.disabled_root();
+        let ctx = toggle::Ctx { store_root: &store_root, source: "nexus" };
         let mut lib = self.library.lock().expect("library");
         if let Some(game) = lib.games.get_mut(&req.game_id) {
             if let Some(dir) = detected_dir {
                 game.extra_folders.entry(GAME_DIR.to_string()).or_insert(dir);
             }
+            let in_game = layers::kept_in_game(game);
             game.mods.insert(mod_id, record.clone());
+            layers::release(game, mod_id, gone, &ctx);
+            layers::settle_buried(game, mod_id, &buried, &ctx);
+            layers::record_placement(game, mod_id, &covered, &buried, in_game);
             toggle::sync_active(game);
+            record = game.mods.get(&mod_id).cloned().unwrap_or(record);
         }
         self.save_library(&lib)?;
         Ok(NexusInstalled { record, notice, needs_tool })
@@ -1215,14 +1303,20 @@ impl NexusState {
         let mut lib = self.library.lock().expect("library");
         let game = lib.games.get_mut(&game_id).ok_or(AppError::NotFound)?;
         let record = game.mods.get(&mod_id).cloned().ok_or(AppError::NotFound)?;
+        let root = self.disabled_root();
+        let ctx = toggle::Ctx { store_root: &root, source: "nexus" };
         let removal = if record.disabled {
             // Désactivé : seuls ses fichiers mis de côté sont supprimés.
-            let root = self.disabled_root();
-            toggle::discard(game, &record, &toggle::Ctx { store_root: &root, source: "nexus" });
+            toggle::discard(game, &record, &ctx);
             installer::FullRemoval { remaining: Vec::new(), remaining_parts: Vec::new(), left_folder: None }
         } else {
             installer::uninstall_all(game, &record)
         };
+        if removal.complete() {
+            // Collection : les fichiers qu'il recouvrait reviennent, les siens cachés sont supprimés.
+            layers::release_all(game, mod_id, &ctx);
+            layers::forget_buried(game, mod_id, &ctx);
+        }
         if !record.plugins.is_empty() && !record.disabled {
             let domain = game.domain.clone().unwrap_or_default();
             if let Some(path) = engine::bethesda(&domain).and_then(|g| self.plugins_path(g, &game.folder)) {
@@ -1375,6 +1469,7 @@ mod tests {
             file_id: 316,
             nxm,
             required_by: None,
+            collection: None,
         }
     }
 
@@ -1519,6 +1614,7 @@ mod tests {
             file_id: 316,
             nxm: None,
             required_by: None,
+            collection: None,
         }
     }
 
@@ -1753,6 +1849,129 @@ mod tests {
         let r = s.remove(rules::BONELAB, 200).unwrap();
         assert_eq!(r.orphans.iter().map(|o| o.mod_id).collect::<Vec<_>>(), vec![148]);
         assert!(s.library.lock().unwrap().games[&rules::BONELAB].mods[&148].required_by.is_empty());
+    }
+
+    /// Serveur qui répond à plusieurs installations de suite : (mod, fichier, archive).
+    fn nexus_seq(installs: Vec<(i64, i64, Vec<u8>)>) -> (crate::testutil::FakeServer, NexusState) {
+        let server = fake_server_with(|base| {
+            let root = base.trim_end_matches("/v1").to_string();
+            let mut v = vec![validate_ok()];
+            for (mod_id, file_id, zip) in &installs {
+                v.push(json_response(
+                    200,
+                    &format!(
+                        r#"{{"data":{{"modFiles":[{{"fileId":{file_id},"uid":"u{file_id}","name":"Main","version":"1.0","category":"MAIN","date":5,"sizeInBytes":"{}"}}]}}}}"#,
+                        zip.len()
+                    ),
+                ));
+                v.push(json_response(200, &format!(r#"{{"data":{{"legacyMods":{{"nodes":[{{"modId":{mod_id},"name":"Mod {mod_id}"}}]}}}}}}"#)));
+                v.push(json_response(200, &format!(r#"[{{"name":"CDN","short_name":"CDN","URI":"{root}/dl/{file_id}.zip"}}]"#)));
+                v.push(zip_response(zip));
+            }
+            v
+        });
+        let state = NexusState::new(server.base.trim_end_matches("/v1"), Box::new(MemoryStore::default()), tempdir("nx-col").join("installed-nexus.json"));
+        (server, state)
+    }
+
+    fn collection_request(mod_id: i64, file_id: i64, rank: u32) -> InstallRequest {
+        InstallRequest {
+            game_id: 1704,
+            game_domain: "skyrimspecialedition".into(),
+            mod_id,
+            file_id,
+            nxm: None,
+            required_by: None,
+            collection: Some(CollectionMark { slug: "abc123".into(), rank }),
+        }
+    }
+
+    fn mod_files(s: &NexusState, mod_id: i64) -> Vec<String> {
+        s.library.lock().unwrap().games[&1704].mods[&mod_id].files.clone()
+    }
+
+    #[tokio::test]
+    async fn a_later_collection_mod_covers_files_and_gives_them_back() {
+        let a = make_zip(&[("textures/rock.dds", b"A"), ("a.esp", b"a")]);
+        let b = make_zip(&[("textures/rock.dds", b"B"), ("b.esp", b"b")]);
+        let (_server, s) = nexus_seq(vec![(1, 11, a), (2, 22, b)]);
+        s.set_key("cle").await.unwrap();
+        let folder = tempdir("col-cover");
+        s.configure(1704, "skyrimspecialedition", "Skyrim SE".into(), None, folder.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+
+        s.install(collection_request(1, 11, 1), &Library::default(), quiet()).await.unwrap().done();
+        let out = s.install(collection_request(2, 22, 2), &Library::default(), quiet()).await.unwrap().done();
+        // B vient après A dans la collection : son fichier gagne, celui de A est gardé.
+        assert_eq!(fs::read(folder.join("textures/rock.dds")).unwrap(), b"B");
+        assert_eq!(out.record.shadowed.len(), 1);
+        assert!(!mod_files(&s, 1).contains(&"textures/rock.dds".to_string()));
+
+        // Désactiver B rend le fichier à A ; le réactiver le recouvre de nouveau.
+        s.set_enabled(1704, 2, false, &Library::default()).unwrap();
+        assert_eq!(fs::read(folder.join("textures/rock.dds")).unwrap(), b"A");
+        assert!(mod_files(&s, 1).contains(&"textures/rock.dds".to_string()));
+        s.set_enabled(1704, 2, true, &Library::default()).unwrap();
+        assert_eq!(fs::read(folder.join("textures/rock.dds")).unwrap(), b"B");
+        assert!(!mod_files(&s, 1).contains(&"textures/rock.dds".to_string()));
+
+        // Désinstaller B rend le fichier à A.
+        s.remove(1704, 2).unwrap();
+        assert_eq!(fs::read(folder.join("textures/rock.dds")).unwrap(), b"A");
+        assert!(mod_files(&s, 1).contains(&"textures/rock.dds".to_string()));
+        assert!(!folder.join("b.esp").exists());
+        s.remove(1704, 1).unwrap();
+        assert!(!folder.join("textures").exists());
+        assert!(!s.disabled_root().join("nexus-shadow").exists(), "plus rien de gardé");
+    }
+
+    #[tokio::test]
+    async fn an_earlier_collection_mod_goes_under_and_follows_its_mod() {
+        let a = make_zip(&[("textures/rock.dds", b"A"), ("a.esp", b"a")]);
+        let b = make_zip(&[("textures/rock.dds", b"B"), ("b.esp", b"b")]);
+        // B (rang 2) installé avant A (rang 1).
+        let (_server, s) = nexus_seq(vec![(2, 22, b), (1, 11, a)]);
+        s.set_key("cle").await.unwrap();
+        let folder = tempdir("col-under");
+        s.configure(1704, "skyrimspecialedition", "Skyrim SE".into(), None, folder.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+        s.install(collection_request(2, 22, 2), &Library::default(), quiet()).await.unwrap().done();
+        s.install(collection_request(1, 11, 1), &Library::default(), quiet()).await.unwrap().done();
+        assert_eq!(fs::read(folder.join("textures/rock.dds")).unwrap(), b"B");
+        assert_eq!(fs::read(folder.join("a.esp")).unwrap(), b"a");
+        assert!(!mod_files(&s, 1).contains(&"textures/rock.dds".to_string()));
+
+        // A désactivé : son fichier caché rejoint ses fichiers mis de côté ; réactivé, il repasse dessous.
+        s.set_enabled(1704, 1, false, &Library::default()).unwrap();
+        assert!(mod_files(&s, 1).contains(&"textures/rock.dds".to_string()));
+        assert_eq!(fs::read(folder.join("textures/rock.dds")).unwrap(), b"B");
+        s.set_enabled(1704, 1, true, &Library::default()).unwrap();
+        assert_eq!(fs::read(folder.join("textures/rock.dds")).unwrap(), b"B");
+        assert!(!mod_files(&s, 1).contains(&"textures/rock.dds".to_string()));
+
+        // B retiré : le fichier de A revient.
+        s.remove(1704, 2).unwrap();
+        assert_eq!(fs::read(folder.join("textures/rock.dds")).unwrap(), b"A");
+        // A retiré ensuite : plus rien.
+        s.remove(1704, 1).unwrap();
+        assert!(!folder.join("textures").exists());
+    }
+
+    #[tokio::test]
+    async fn mods_outside_the_collection_still_never_overwrite() {
+        let a = make_zip(&[("textures/rock.dds", b"A")]);
+        let b = make_zip(&[("textures/rock.dds", b"B")]);
+        let (_server, s) = nexus_seq(vec![(1, 11, a), (2, 22, b)]);
+        s.set_key("cle").await.unwrap();
+        let folder = tempdir("col-plain");
+        s.configure(1704, "skyrimspecialedition", "Skyrim SE".into(), None, folder.to_string_lossy().into_owned(), Layout::Flat, false, None)
+            .unwrap();
+        s.install(collection_request(1, 11, 1), &Library::default(), quiet()).await.unwrap().done();
+        let mut plain = collection_request(2, 22, 0);
+        plain.collection = None;
+        let err = s.install(plain, &Library::default(), quiet()).await.unwrap_err();
+        assert!(matches!(err, AppError::Conflict(..)), "{err}");
+        assert_eq!(fs::read(folder.join("textures/rock.dds")).unwrap(), b"A");
     }
 
     #[test]

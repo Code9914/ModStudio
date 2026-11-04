@@ -19,6 +19,9 @@
   import NexusTrackedView from "$lib/components/NexusTrackedView.svelte";
   import NexusModsView from "$lib/components/NexusModsView.svelte";
   import NexusModView from "$lib/components/NexusModView.svelte";
+  import NexusCollectionView from "$lib/components/NexusCollectionView.svelte";
+  import FomodWizard from "$lib/components/FomodWizard.svelte";
+  import { collectionInstall } from "$lib/collections.svelte";
   import NexusSite from "$lib/components/NexusSite.svelte";
   import SearchView from "$lib/components/SearchView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
@@ -159,7 +162,7 @@
     }
     if ((event.key === "Escape" || (event.altKey && event.key === "ArrowLeft")) && nav.view.name !== "games") {
       const v = nav.view.name;
-      if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods" || v === "tsMod" || v === "tsMods" || v === "rmlMod" || v === "clMod" || v === "clMods" || v === "import") nav.back();
+      if (v === "mod" || v === "mods" || v === "nexusMod" || v === "nexusMods" || v === "nexusCollection" || v === "tsMod" || v === "tsMods" || v === "rmlMod" || v === "clMod" || v === "clMods" || v === "import") nav.back();
       // Comptes : des pages des réglages (sauf l'accueil du premier lancement).
       else if (v === "account" || (v === "nexusAccount" && !nav.nexusWelcome)) nav.openSettings();
       else if (v === "nexusAccount" || v === "nexusTracked") nav.openNexusGames();
@@ -209,7 +212,9 @@
   // Page d'un jeu (ou d'un de ses mods) ouverte depuis sa liste.
   const onModioGame = $derived(nav.view.name === "mods" || (nav.view.name === "mod" && nav.modOrigin === "mods"));
   const onNexusGame = $derived(
-    nav.view.name === "nexusMods" || (nav.view.name === "nexusMod" && nav.nexusOrigin === "nexusMods"),
+    nav.view.name === "nexusMods" ||
+      nav.view.name === "nexusCollection" ||
+      (nav.view.name === "nexusMod" && (nav.nexusOrigin === "nexusMods" || nav.nexusOrigin === "nexusCollection")),
   );
   // Jeu sans mod ouvert, ou raccourcis des jeux masqués dans les réglages :
   // « Jeux » reste en surbrillance.
@@ -506,6 +511,13 @@
           <div class="pane" hidden={nav.view.name !== "installed"}><InstalledView /></div>
         {/if}
       {/key}
+      {#if nav.nexusCollection && nav.nexusGame}
+        {#key `${nav.nexusGame.id}:${nav.nexusCollection}`}
+          <div class="pane" hidden={nav.view.name !== "nexusCollection"}>
+            <NexusCollectionView game={nav.nexusGame} slug={nav.nexusCollection} />
+          </div>
+        {/key}
+      {/if}
       {#if nav.view.name === "nexusMod" && nav.nexusGame}
         <div class="pane"><NexusModView game={nav.nexusGame} modId={nav.view.modId} /></div>
       {/if}
@@ -549,6 +561,17 @@
       {#if nav.view.name === "settings"}
         <div class="pane"><SettingsView /></div>
       {/if}
+    {/if}
+    {#if collectionInstall.fomod}
+      {#key collectionInstall.fomod.token}
+        <FomodWizard
+          installer={collectionInstall.fomod.installer}
+          modName={collectionInstall.fomod.name}
+          notes={collectionInstall.fomod.choices}
+          onfinish={(s) => collectionInstall.finishFomod(s)}
+          oncancel={() => collectionInstall.cancelFomod()}
+        />
+      {/key}
     {/if}
     {#if nexusStore.site}
       {#key nexusStore.site}
