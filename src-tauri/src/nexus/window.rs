@@ -10,10 +10,10 @@
 //! venant d'un site distant. Seul le lien `nxm://` remonte, sous forme
 //! d'évènement.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use serde::{Deserialize, Serialize};
-use tauri::webview::WebviewBuilder;
+use tauri::webview::{NewWindowFeatures, NewWindowResponse, WebviewBuilder};
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
 use super::browse::check_domain;
@@ -23,6 +23,9 @@ use crate::error::{AppError, AppResult};
 pub const NEXUS_WINDOW: &str = "nexus";
 /// Vue intégrée à la fenêtre principale.
 pub const NEXUS_EMBED: &str = "nexus-embed";
+/// Fenêtres que la page Nexus ouvre elle-même (connexion, inscription…),
+/// suivies d'un numéro.
+const NEXUS_POPUP: &str = "nexus-popup";
 /// Évènement envoyé à la fenêtre principale quand un lien `nxm://` est capté.
 pub const NXM_EVENT: &str = "nexus-nxm";
 /// Évènement envoyé quand la page Nexus se ferme d'elle-même (lien capté).
@@ -216,12 +219,50 @@ pub fn set_bounds(app: &AppHandle, bounds: Bounds) -> AppResult<()> {
 /// pas à la main : l'interface est déjà au courant.
 static CLOSING: AtomicBool = AtomicBool::new(false);
 
-/// Ferme la page Nexus, intégrée ou séparée.
+/// Ferme la page Nexus, intégrée ou séparée, et les fenêtres qu'elle a ouvertes.
 pub fn close_all(app: &AppHandle) {
     if let Some(view) = app.get_webview(NEXUS_EMBED) {
         let _ = view.close();
     }
     close_window(app);
+    close_popups(app);
+}
+
+/// Ferme les fenêtres ouvertes par la page Nexus (connexion…).
+fn close_popups(app: &AppHandle) {
+    for (label, window) in app.webview_windows() {
+        if label.starts_with(NEXUS_POPUP) {
+            let _ = window.close();
+        }
+    }
+}
+
+/// Numéro de la prochaine fenêtre ouverte par la page Nexus.
+static POPUPS: AtomicU32 = AtomicU32::new(0);
+
+/// Liens que la page Nexus ouvre dans une nouvelle fenêtre (« Login »,
+/// « register »…) : sous Linux, la vue web les ignore tant que l'appli ne
+/// fournit pas la fenêtre. Seules les pages de Nexus Mods s'ouvrent (pas les
+/// pubs), dans une fenêtre liée à la page (même session, la page qui l'a
+/// ouverte reste joignable), qui capte aussi les liens `nxm://`.
+fn new_window_handler(app: AppHandle) -> impl Fn(Url, NewWindowFeatures) -> NewWindowResponse<tauri::Wry> + Send + 'static {
+    move |url: Url, features: NewWindowFeatures| {
+        let Ok(blank) = Url::parse("about:blank") else { return NewWindowResponse::Deny };
+        if nexus_page(url.as_str()).is_none() {
+            return NewWindowResponse::Deny;
+        }
+        let label = format!("{NEXUS_POPUP}-{}", POPUPS.fetch_add(1, Ordering::Relaxed));
+        let built = WebviewWindowBuilder::new(&app, label, WebviewUrl::External(blank))
+            .title("Nexus Mods")
+            .inner_size(900.0, 760.0)
+            .window_features(features)
+            .on_navigation(navigation_handler(app.clone()))
+            .build();
+        match built {
+            Ok(window) => NewWindowResponse::Create { window },
+            Err(_) => NewWindowResponse::Deny,
+        }
+    }
 }
 
 /// Ferme la fenêtre séparée, sur demande de l'appli.
@@ -242,21 +283,26 @@ fn open_window(app: &AppHandle, page: Url, title: &str) -> AppResult<()> {
         let _ = window.set_focus();
         return Ok(());
     }
-    let window = WebviewWindowBuilder::new(app, NEXUS_WINDOW, WebviewUrl::External(page))
+    let mut builder = WebviewWindowBuilder::new(app, NEXUS_WINDOW, WebviewUrl::External(page))
         .title(title)
         .inner_size(1200.0, 860.0)
         .min_inner_size(800.0, 600.0)
-        .on_navigation(navigation_handler(app.clone()))
-        .build()
-        .map_err(|e| AppError::Io(e.to_string()))?;
-    // Fenêtre fermée à la main : l'interface retire son cadre et abandonne le
-    // téléchargement qui l'attendait.
+        .on_navigation(navigation_handler(app.clone()));
+    // Sous Windows, la vue web ouvre ces fenêtres d'elle-même.
+    if cfg!(target_os = "linux") {
+        builder = builder.on_new_window(new_window_handler(app.clone()));
+    }
+    let window = builder.build().map_err(|e| AppError::Io(e.to_string()))?;
     let handle = app.clone();
     window.on_window_event(move |event| {
-        if let tauri::WindowEvent::Destroyed = event
-            && !CLOSING.swap(false, Ordering::Relaxed)
-        {
-            let _ = handle.emit_to("main", SITE_CLOSED_EVENT, ());
+        if let tauri::WindowEvent::Destroyed = event {
+            // Les fenêtres qu'elle a ouvertes (connexion…) n'ont plus lieu d'être.
+            close_popups(&handle);
+            // Fermée à la main : l'interface retire son cadre et abandonne le
+            // téléchargement qui l'attendait.
+            if !CLOSING.swap(false, Ordering::Relaxed) {
+                let _ = handle.emit_to("main", SITE_CLOSED_EVENT, ());
+            }
         }
     });
     Ok(())
