@@ -145,7 +145,11 @@
   </div>
 
   {#if config && loader}
-    <div class="loader" class:ready={!!loader.name && loader.suitable} class:wrong={!!loader.name && !loader.suitable}>
+    <div
+      class="loader"
+      class:ready={!!loader.name && loader.suitable && !loader.linuxBuild}
+      class:wrong={(!!loader.name && !loader.suitable) || loader.linuxBuild}
+    >
       {#if loader.name && !loader.suitable}
         <p class="small bad">
           <Icon name="warning" size={15} />
@@ -183,16 +187,18 @@
           </p>
         {/if}
       {:else if loader.name}
-        <p class="small ok">
-          <Icon name="check" size={15} />
-          <span>
-            {#if english}
-              <span class="strong">{loader.name}</span> is installed: mods will load when the game starts.
-            {:else}
-              <span class="strong">{loader.name}</span> est installé : les mods se chargeront au lancement du jeu.
-            {/if}
-          </span>
-        </p>
+        {#if !loader.linuxBuild}
+          <p class="small ok">
+            <Icon name="check" size={15} />
+            <span>
+              {#if english}
+                <span class="strong">{loader.name}</span> is installed: mods will load when the game starts.
+              {:else}
+                <span class="strong">{loader.name}</span> est installé : les mods se chargeront au lancement du jeu.
+              {/if}
+            </span>
+          </p>
+        {/if}
         {#if loader.engine === "il2cpp"}
           <p class="small muted">
             {tr(
@@ -218,6 +224,24 @@
             <button class="btn" onclick={installLoader} disabled={!!job}>{tr(`Installer ${loader.requiredLabel ?? ""} maintenant`, `Install ${loader.requiredLabel ?? ""} now`)}</button>
           </div>
         {/if}
+      {/if}
+      {#if loader.linuxBuild}
+        <p class="small bad">
+          <Icon name="warning" size={15} />
+          <span>
+            {#if !detected || detected.launcher === "steam"}
+              {tr(
+                `Steam a installé la version Linux de ${game.name}, alors que ${requiredLabel ?? "son chargeur de mods"} est fait pour Windows : les mods ne se chargeront qu'avec Proton. Dans Steam, ouvre les Propriétés du jeu, puis Compatibilité, coche « Forcer l'utilisation d'un outil de compatibilité Steam Play spécifique » et choisis Proton : Steam télécharge alors la version Windows du jeu, et tes mods restent en place.`,
+                `Steam installed the Linux version of ${game.name}, but ${requiredLabel ?? "its mod loader"} is made for Windows: mods will only load with Proton. In Steam, open the game's Properties, then Compatibility, check "Force the use of a specific Steam Play compatibility tool" and pick Proton: Steam then downloads the Windows version of the game, and your mods stay in place.`,
+              )}
+            {:else}
+              {tr(
+                `C'est la version Linux de ${game.name}, alors que ${requiredLabel ?? "son chargeur de mods"} est fait pour Windows : installe plutôt la version Windows du jeu et lance-la avec Proton, sinon les mods ne se chargeront pas.`,
+                `This is the Linux version of ${game.name}, but ${requiredLabel ?? "its mod loader"} is made for Windows: install the Windows version of the game instead and run it with Proton, otherwise mods won't load.`,
+              )}
+            {/if}
+          </span>
+        </p>
       {/if}
       {#if loader.launchOption && (!detected || detected.launcher === "steam")}
         <div class="proton">

@@ -215,6 +215,17 @@
             {#if managedTool && tool.update}
               <NexusToolPrompt {game} {tool} folder={toolFolder} />
             {/if}
+            {#if tool.linuxBuild && installed?.launcher === "steam"}
+              <p class="small hint">
+                <Icon name="warning" size={15} />
+                <span>
+                  {tr(
+                    `Steam a installé la version Linux de ce jeu, alors que ${tool.name} est fait pour Windows : il ne se chargera qu'avec Proton. Dans Steam, ouvre les Propriétés du jeu, puis Compatibilité, coche « Forcer l'utilisation d'un outil de compatibilité Steam Play spécifique » et choisis Proton : Steam télécharge alors la version Windows du jeu, et tes mods restent en place.`,
+                    `Steam installed the Linux version of this game, but ${tool.name} is made for Windows: it will only load with Proton. In Steam, open the game's Properties, then Compatibility, check "Force the use of a specific Steam Play compatibility tool" and pick Proton: Steam then downloads the Windows version of the game, and your mods stay in place.`,
+                  )}
+                </span>
+              </p>
+            {/if}
             {#if tool.launchOption && installed?.launcher === "steam"}
               <div class="proton">
                 <p class="small">

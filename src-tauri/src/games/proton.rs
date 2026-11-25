@@ -4,6 +4,7 @@
 //! Sous Windows, ces fonctions renvoient simplement les dossiers du système.
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use super::steam;
@@ -111,6 +112,63 @@ pub fn launch_option(tool: &str) -> Option<String> {
     Some(format!("WINEDLLOVERRIDES=\"{dll}=n,b\" %command%"))
 }
 
+/// Le dossier contient-il la version Linux du jeu ? Steam installe la version
+/// native quand elle existe, et un chargeur de mods fait pour Windows
+/// (BepInEx, MelonLoader, UE4SS…) n'y est jamais chargé, même avec l'option
+/// de lancement : il faut forcer Proton pour que Steam installe la version
+/// Windows. `exes` : exécutables connus du jeu (Windows et Linux), s'il y en
+/// a. Toujours `false` sous Windows.
+pub fn native_linux_build(folder: &Path, exes: &[String]) -> bool {
+    if cfg!(windows) {
+        return false;
+    }
+    let is_windows = |name: &str| name.to_ascii_lowercase().ends_with(".exe");
+    // Exécutables connus : celui qui est là dit quelle version est installée.
+    if exes.iter().any(|n| is_windows(n) && has_file(folder, n, 2)) {
+        return false;
+    }
+    if exes.iter().any(|n| !is_windows(n) && has_file(folder, n, 2)) {
+        return true;
+    }
+    // Sinon, d'après la racine du jeu : un .exe (Windows), ou un exécutable ou
+    // une bibliothèque Linux (Unity, Godot), ou `Binaries/Linux` (Unreal).
+    let Ok(entries) = fs::read_dir(folder) else { return false };
+    let mut linux = false;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            linux |= path.join("Binaries").join("Linux").is_dir();
+        } else if is_windows(&entry.file_name().to_string_lossy()) {
+            return false;
+        } else {
+            linux |= is_elf(&path);
+        }
+    }
+    linux
+}
+
+/// Fichier `name` (casse ignorée) dans `dir` ou ses sous-dossiers, jusqu'à
+/// `depth` niveaux plus bas.
+fn has_file(dir: &Path, name: &str, depth: usize) -> bool {
+    let Ok(entries) = fs::read_dir(dir) else { return false };
+    let mut subdirs = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            subdirs.push(path);
+        } else if entry.file_name().to_string_lossy().eq_ignore_ascii_case(name) {
+            return true;
+        }
+    }
+    depth > 0 && subdirs.iter().any(|d| has_file(d, name, depth - 1))
+}
+
+/// Exécutable ou bibliothèque Linux (en-tête ELF).
+fn is_elf(path: &Path) -> bool {
+    let mut magic = [0u8; 4];
+    fs::File::open(path).and_then(|mut f| f.read_exact(&mut magic)).is_ok() && &magic == b"\x7fELF"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,5 +210,41 @@ mod tests {
         assert_eq!(launch_option("bepinex6").as_deref(), Some("WINEDLLOVERRIDES=\"winhttp=n,b\" %command%"));
         assert_eq!(launch_option("melonloader").as_deref(), Some("WINEDLLOVERRIDES=\"version=n,b\" %command%"));
         assert_eq!(launch_option("skse64"), None);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn tells_the_linux_version_of_a_game_from_the_windows_one() {
+        let elf = b"\x7fELF\x02\x01\x01";
+        let exes = vec!["Megabonk.exe".to_string(), "Megabonk.x86_64".to_string()];
+        // Megabonk installé par Steam en version Linux, BepInEx (pour Windows) ajouté par-dessus.
+        let linux = tempdir("native-megabonk");
+        fs::write(linux.join("Megabonk.x86_64"), elf).unwrap();
+        fs::write(linux.join("UnityPlayer.so"), elf).unwrap();
+        fs::write(linux.join("winhttp.dll"), b"MZ").unwrap();
+        fs::create_dir_all(linux.join("BepInEx/core")).unwrap();
+        assert!(native_linux_build(&linux, &exes));
+        assert!(native_linux_build(&linux, &[]), "reconnue sans connaître ses exécutables");
+        // La même, une fois Proton forcé : Steam a installé la version Windows.
+        let windows = tempdir("native-megabonk-win");
+        fs::write(windows.join("Megabonk.exe"), b"MZ").unwrap();
+        fs::write(windows.join("UnityPlayer.dll"), b"MZ").unwrap();
+        fs::create_dir_all(windows.join("dotnet")).unwrap();
+        fs::write(windows.join("dotnet/libcoreclr.so"), elf).unwrap();
+        assert!(!native_linux_build(&windows, &exes));
+        assert!(!native_linux_build(&windows, &[]));
+        // Exécutable Windows dans un sous-dossier (Hades II) : pas la version Linux.
+        let hades = tempdir("native-hades");
+        fs::create_dir_all(hades.join("Ship")).unwrap();
+        fs::write(hades.join("Ship/Hades2.exe"), b"MZ").unwrap();
+        fs::write(hades.join("libsomething.so"), elf).unwrap();
+        assert!(!native_linux_build(&hades, &["Hades2.exe".to_string()]));
+        // Unreal en version Linux : lanceur .sh et `Binaries/Linux`.
+        let unreal = tempdir("native-unreal");
+        fs::write(unreal.join("Game.sh"), b"#!/bin/sh").unwrap();
+        fs::create_dir_all(unreal.join("Game/Binaries/Linux")).unwrap();
+        assert!(native_linux_build(&unreal, &[]));
+        // Dossier vide ou sans exécutable : rien à dire.
+        assert!(!native_linux_build(&tempdir("native-empty"), &exes));
     }
 }

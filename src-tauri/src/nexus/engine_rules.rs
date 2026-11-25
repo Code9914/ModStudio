@@ -2,6 +2,7 @@
 //!
 //! Toutes les destinations sont relatives au dossier d'installation du jeu.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::rules::RulePlan;
@@ -167,6 +168,41 @@ pub enum UnityLoader {
     MelonLoader,
 }
 
+impl UnityLoader {
+    fn label(self) -> &'static str {
+        match self {
+            UnityLoader::BepInEx => "BepInEx",
+            UnityLoader::MelonLoader => "MelonLoader",
+        }
+    }
+}
+
+/// Chargeur qu'attendent les DLL du mod, d'après les noms qu'elles citent :
+/// un mod MelonLoader cite `MelonLoader`, un plugin BepInEx cite `BepInEx`
+/// (noms d'assemblages et d'espaces de noms, écrits tels quels dans la DLL).
+/// `None` si elles n'en citent aucun, ou les deux.
+fn dll_loader(extracted: &Path, files: &[Vec<String>]) -> Option<UnityLoader> {
+    let contains = |bytes: &[u8], needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+    let mut found = None;
+    for f in files.iter().filter(|f| lower(&f[f.len() - 1]).ends_with(".dll")) {
+        let path = extracted.join(f.join("/"));
+        if fs::metadata(&path).map(|m| m.len() > 64 * 1024 * 1024).unwrap_or(true) {
+            continue;
+        }
+        let Ok(bytes) = fs::read(&path) else { continue };
+        let this = match (contains(&bytes, b"MelonLoader"), contains(&bytes, b"BepInEx")) {
+            (true, false) => UnityLoader::MelonLoader,
+            (false, true) => UnityLoader::BepInEx,
+            _ => continue,
+        };
+        match found {
+            Some(other) if other != this => return None,
+            _ => found = Some(this),
+        }
+    }
+    found
+}
+
 /// Fichiers d'un chargeur de mods (BepInEx, MelonLoader) ou d'un injecteur
 /// « autonome », chemin relatif à la racine de l'archive (en minuscules).
 fn is_loader_file(inner: &[String]) -> bool {
@@ -225,14 +261,33 @@ pub fn unity_plan(extracted: &Path, loader: UnityLoader, mod_name: &str, present
         }
     }
 
-    // Quel chargeur ce mod vise-t-il ?
+    // Quel chargeur ce mod vise-t-il ? D'après l'archive, sinon d'après ses DLL.
     let target = if has("bepinex") || has("plugins") || has("patchers") {
         UnityLoader::BepInEx
     } else if has("mods") || has("userlibs") {
         UnityLoader::MelonLoader
     } else {
-        loader
+        dll_loader(extracted, &files).unwrap_or(loader)
     };
+    // Fait pour l'autre chargeur que celui du jeu : il ne se chargerait pas.
+    let current = if game_has("bepinex") {
+        Some(UnityLoader::BepInEx)
+    } else if game_has("melonloader") {
+        Some(UnityLoader::MelonLoader)
+    } else {
+        None
+    };
+    if let Some(current) = current
+        && current != target
+    {
+        let (made_for, current) = (target.label(), current.label());
+        return Err(AppError::UnknownLayout(crate::tr!(
+            "Ce fichier est fait pour {made_for}, alors que ce jeu utilise {current} : le mod ne se chargerait pas. \
+             Choisis sa version {current} dans la liste des fichiers, s'il y en a une.",
+            "This file is made for {made_for}, but this game uses {current}: the mod wouldn't load. \
+             Pick its {current} version in the file list, if there is one."
+        )));
+    }
     let needs: NeededTool = Some(match target {
         UnityLoader::BepInEx => "bepinex",
         UnityLoader::MelonLoader => "melonloader",
@@ -500,6 +555,46 @@ mod tests {
 
         let odd = tree("ue-odd", &["Saved/SaveGames/slot.sav"]);
         assert!(matches!(unreal_plan(&odd, &game, "Pilgrim", "x").unwrap_err(), AppError::UnknownLayout(_)));
+    }
+
+    #[test]
+    fn unity_mods_made_for_the_other_loader_are_refused() {
+        let none: Vec<String> = Vec::new();
+        let bepinex = vec!["bepinex".to_string()];
+        let melon = vec!["melonloader".to_string()];
+        fn made_for(err: &AppError, loader: &str) -> bool {
+            matches!(err, AppError::UnknownLayout(t) if t.contains(loader))
+        }
+
+        // Version MelonLoader d'un mod (dossier Mods) pour un jeu à BepInEx (AutoPickup Melon, Megabonk).
+        let mods = tree("un-melon-mods", &["Mods/AutoPickup.dll", "README.txt"]);
+        let err = unity_plan(&mods, UnityLoader::BepInEx, "AutoPickup", &bepinex).unwrap_err();
+        assert!(made_for(&err, "MelonLoader"), "{err}");
+
+        // DLL seule : ce qu'elle cite dit pour quel chargeur elle est faite.
+        let dll = tempdir("un-melon-dll");
+        fs::write(dll.join("InstantCollect.dll"), b"MZ\0MelonLoader\0MelonMod\0Il2Cpp\0").unwrap();
+        let err = unity_plan(&dll, UnityLoader::BepInEx, "InstantCollect", &bepinex).unwrap_err();
+        assert!(made_for(&err, "BepInEx"), "{err}");
+        // La même dans un jeu à MelonLoader, ou sans chargeur : rangée dans Mods.
+        for present in [&melon, &none] {
+            let (plan, needs) = unity_plan(&dll, UnityLoader::BepInEx, "InstantCollect", present).unwrap();
+            assert_eq!(dests(&plan), vec!["Mods/InstantCollect.dll"]);
+            assert_eq!(needs, Some("melonloader"));
+        }
+
+        // Plugin BepInEx dans un jeu à MelonLoader : refusé aussi.
+        let plugin = tempdir("un-bep-dll");
+        fs::write(plugin.join("StatHUD.dll"), b"MZ\0BepInEx.Unity.IL2CPP\0BasePlugin\0").unwrap();
+        assert!(unity_plan(&plugin, UnityLoader::MelonLoader, "StatHUD", &melon).is_err());
+        let (plan, _) = unity_plan(&plugin, UnityLoader::MelonLoader, "StatHUD", &bepinex).unwrap();
+        assert_eq!(dests(&plan), vec!["BepInEx/plugins/StatHUD/StatHUD.dll"]);
+
+        // DLL qui ne cite aucun des deux (ou les deux) : le chargeur du jeu.
+        let both = tempdir("un-both-dll");
+        fs::write(both.join("Both.dll"), b"MelonLoader BepInEx").unwrap();
+        let (plan, _) = unity_plan(&both, UnityLoader::BepInEx, "Both", &bepinex).unwrap();
+        assert_eq!(dests(&plan), vec!["BepInEx/plugins/Both/Both.dll"]);
     }
 
     #[test]

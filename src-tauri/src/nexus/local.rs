@@ -46,6 +46,9 @@ pub struct ToolOffer {
     pub required_version: Option<String>,
     /// Sous Linux (Proton) : options de lancement pour que le chargeur soit chargé.
     pub launch_option: Option<String>,
+    /// Sous Linux : le dossier contient la version Linux du jeu, alors que
+    /// l'outil est fait pour Windows (il ne se charge qu'avec Proton).
+    pub linux_build: bool,
 }
 
 impl ToolOffer {
@@ -53,6 +56,10 @@ impl ToolOffer {
     pub fn github(id: &str, config: Option<&GameInstall>, info: Option<&EngineInfo>, hints: &Hints) -> Option<ToolOffer> {
         let def = tools::tool(id)?;
         let record = config.and_then(|c| c.tools.get(def.id));
+        let launch_option = crate::games::proton::launch_option(def.id);
+        // Version Linux du jeu : l'outil, fait pour Windows, n'y serait pas chargé.
+        let linux_build = launch_option.is_some()
+            && config.and_then(tool_root).is_some_and(|(_, root)| crate::games::proton::native_linux_build(&root, &[]));
         Some(ToolOffer {
             id: def.id.to_string(),
             name: def.name.to_string(),
@@ -68,7 +75,8 @@ impl ToolOffer {
             required_version: (def.id == "bepinex6")
                 .then(|| hints.wanted_be_build().map(|b| format!("6.0.0-be.{b}")))
                 .flatten(),
-            launch_option: crate::games::proton::launch_option(def.id),
+            launch_option,
+            linux_build,
         })
     }
 
@@ -92,6 +100,7 @@ impl ToolOffer {
             update: None,
             required_version: None,
             launch_option: None,
+            linux_build: false,
         })
     }
 }

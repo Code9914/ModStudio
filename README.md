@@ -83,7 +83,9 @@ warning ("More info", then "Run anyway").
   to mods, also sign in to your account (e-mail code or access token).
 - **On Linux (Proton)**: when a mod loader relies on a DLL, ModStudio shows the
   Steam launch option to add (for example
-  `WINEDLLOVERRIDES="winhttp=n,b" %command%`).
+  `WINEDLLOVERRIDES="winhttp=n,b" %command%`). If Steam installed the game's
+  Linux version, ModStudio says so: these loaders are made for Windows, so first
+  force Proton in the game's Steam properties (Compatibility).
 
 ### Sharing mods
 
@@ -243,7 +245,9 @@ quand même »).
   jeton d'accès).
 - **Sous Linux (Proton)** : quand un chargeur de mods passe par une DLL,
   ModStudio affiche l'option de lancement Steam à ajouter (par exemple
-  `WINEDLLOVERRIDES="winhttp=n,b" %command%`).
+  `WINEDLLOVERRIDES="winhttp=n,b" %command%`). Si Steam a installé la version
+  Linux du jeu, ModStudio le signale : ces chargeurs sont faits pour Windows, il
+  faut d'abord forcer Proton dans les propriétés Steam du jeu (Compatibilité).
 
 ### Partager ses mods
 

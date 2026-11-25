@@ -17,6 +17,7 @@ use super::ecosystem::{loader_label, Ecosystem, GameRules, LoaderKind, LoaderPac
 use super::ThunderstoreState;
 use crate::archive;
 use crate::error::{AppError, AppResult};
+use crate::games::proton;
 use crate::install_commands::{dependency_state, Orphan, UninstallResult};
 use crate::installer::{self, DownloadRequest, GameInstall, InstallEvent, InstalledMod, Layout, Library, ModPart, STAGING_DIR};
 use crate::nexus::install::{owned_by_others, place_plan};
@@ -65,6 +66,9 @@ pub struct TsLoader {
     pub needed: Option<TsRef>,
     /// Option de lancement Steam pour Proton (Linux seulement).
     pub launch_option: Option<String>,
+    /// Sous Linux : le dossier contient la version Linux du jeu, alors que son
+    /// chargeur est fait pour Windows (il ne se charge qu'avec Proton).
+    pub linux_build: bool,
     /// Option de lancement que le chargeur demande sur tous les systèmes (Godot).
     pub launch_args: Option<String>,
 }
@@ -396,6 +400,42 @@ fn required_label(game: &GameRules, folder: &Path) -> String {
         LoaderKind::Shimloader => "UE4SS".into(),
         _ => loader_label(&game.loader_id).into(),
     }
+}
+
+/// Chargeur d'un autre genre que celui du jeu (MelonLoader pour un jeu dont
+/// les mods passent par BepInEx) : la communauté Thunderstore de certains jeux
+/// mélange les deux, mais ModStudio n'installe que le chargeur du jeu, et un
+/// mod fait pour l'autre ne se chargerait pas. Renvoie le nom de cet autre
+/// chargeur.
+fn foreign_loader(eco: &Ecosystem, full: &str, game: &GameRules) -> Option<&'static str> {
+    if matches!(game.kind, LoaderKind::None | LoaderKind::Other) || is_companion(full) {
+        return None;
+    }
+    let family = |id: &str| id.trim_start_matches("recursive-").to_ascii_lowercase();
+    let loader = loader_of(eco, full)?;
+    (family(&loader.loader) != family(&game.loader_id)).then(|| loader_label(&loader.loader))
+}
+
+/// Refus d'un mod (`target`) qui demande, lui ou une de ses dépendances
+/// (`culprit`), un autre chargeur (`other`) que celui du jeu.
+fn foreign_loader_error(target: &str, culprit: &str, other: &str, game: &GameRules, folder: &Path) -> AppError {
+    let current = required_label(game, folder);
+    let (target, culprit) = (display_name(target), display_name(culprit));
+    AppError::ToolMismatch(if target == culprit {
+        crate::tr!(
+            "{target} est fait pour {other}, alors que les mods de ce jeu passent par {current} : il ne se \
+             chargerait pas. Cherche une version de ce mod pour {current}.",
+            "{target} is made for {other}, but this game's mods go through {current}: it wouldn't load. \
+             Look for a version of this mod made for {current}."
+        )
+    } else {
+        crate::tr!(
+            "{target} a besoin de {culprit}, qui est fait pour {other}, alors que les mods de ce jeu passent \
+             par {current} : il ne se chargerait pas.",
+            "{target} needs {culprit}, which is made for {other}, but this game's mods go through {current}: \
+             it wouldn't load."
+        )
+    })
 }
 
 /// Nom affiché d'un mod (`Lethal_Things` → `Lethal Things`).
@@ -1065,6 +1105,10 @@ impl ThunderstoreState {
             (None, Some(_)) => bepinex_flavor(&folder).map(|_| "winhttp").or(melon_present(&folder).then_some("version")).and_then(proton_option),
             _ => None,
         };
+        // Version Linux du jeu : un chargeur fait pour Windows n'y tourne qu'avec Proton.
+        let windows_loader = launch_option.is_some() || rules.as_ref().is_some_and(|g| g.kind.supported() && proxy_dll(g, &folder).is_some());
+        let exes: &[String] = rules.as_ref().map(|g| g.exe_names.as_slice()).unwrap_or_default();
+        let linux_build = windows_loader && proton::native_linux_build(&folder, exes);
         let launch_args = rules
             .as_ref()
             .filter(|g| g.kind == LoaderKind::GodotMl)
@@ -1087,6 +1131,7 @@ impl ThunderstoreState {
             managed,
             needed,
             launch_option,
+            linux_build,
             launch_args,
         })
     }
@@ -1195,6 +1240,7 @@ impl ThunderstoreState {
         let ready = loader_ok(game, &config.folder);
         let community = config.domain.clone().unwrap_or_default();
         let target_id = target.id();
+        let target_name = target.name.clone();
         let mut plan = Plan::default();
         let mut visited: HashSet<i64> = HashSet::new();
         visited.insert(target.id());
@@ -1210,12 +1256,16 @@ impl ThunderstoreState {
             for dep in &deps {
                 let Some((ns, name, _)) = parse_dependency(dep) else { continue };
                 let (ns, name) = right_loader(&ns, &name, &config.folder, game, eco);
-                let id = stable_id(&format!("{ns}-{name}"));
+                let full = format!("{ns}-{name}");
+                // Fait pour un autre chargeur que celui du jeu : il ne se chargerait pas.
+                if let Some(other) = foreign_loader(eco, &full, game) {
+                    return Err(foreign_loader_error(&target_name, &pkg.name, other, game, &config.folder));
+                }
+                let id = stable_id(&full);
                 plan.parents.entry(id).or_default().push(parent);
                 if installed.contains_key(&id) || visited.contains(&id) {
                     continue;
                 }
-                let full = format!("{ns}-{name}");
                 if ready && is_main_loader(eco, &full) {
                     plan.kept_loader = true;
                     visited.insert(id);
@@ -1285,6 +1335,14 @@ impl ThunderstoreState {
         let game = eco.game(community).ok_or_else(|| AppError::ThunderstoreUnsupported(loader_label("").into()))?;
         if !game.kind.supported() {
             return Err(AppError::ThunderstoreUnsupported(loader_label(&game.loader_id).into()));
+        }
+        // Le chargeur d'un autre genre que celui du jeu (MelonLoader pour un jeu à BepInEx) : inutile ici.
+        if let Some(other) = foreign_loader(&eco, &format!("{namespace}-{name}"), &game) {
+            let current = required_label(&game, &config.folder);
+            return Err(AppError::ToolMismatch(crate::tr!(
+                "{other} n'est pas le chargeur de ce jeu : ses mods passent par {current}.",
+                "{other} isn't this game's mod loader: its mods go through {current}."
+            )));
         }
         // Lovely : les mods vont dans le dossier des mods du jeu (`%AppData%/Balatro/Mods`).
         if game.kind == LoaderKind::Lovely && !config.extra_folders.contains_key("mods") {
@@ -2294,6 +2352,68 @@ pub(crate) mod tests {
         let l = s.loader(g.game_id).await.unwrap();
         assert!(!l.supported && l.needed.is_none());
         assert_eq!(l.required.as_deref(), Some("mio"));
+    }
+
+    #[tokio::test]
+    async fn mods_made_for_another_loader_are_refused_before_any_download() {
+        // Megabonk : ses mods passent par BepInEx, mais sa communauté a aussi des mods MelonLoader.
+        let game = il2cpp_game("ts-melon");
+        fs::create_dir_all(game.join("BepInEx/core")).unwrap();
+        fs::write(game.join("BepInEx/core/BepInEx.Unity.IL2CPP.dll"), b"bep6").unwrap();
+        let server = fake_server_with(|_| {
+            vec![
+                latest("1.0.0", &["China1-InstantCollect-1.0.0"]),
+                latest("1.0.0", &["LavaGang-MelonLoader-0.7.0"]),
+                latest("1.0.0", &["LavaGang-MelonLoader-0.7.0"]),
+                latest("1.2.0", &["BepInEx-BepInExPack_IL2CPP-6.0.738"]),
+                zip_response(&make_zip(&[("StatHUD.dll", b"hud")])),
+            ]
+        });
+        let s = state_for(&server.base, "ts-melon-state");
+        s.configure("megabonk", "Megabonk".into(), None, game.to_str().unwrap()).unwrap();
+
+        // Une dépendance faite pour MelonLoader : refusé, en nommant le coupable.
+        let err = s.install("megabonk", "Team", "Cool", None, &[], quiet()).await.unwrap_err();
+        assert!(
+            matches!(&err, AppError::ToolMismatch(m) if m.contains("Cool") && m.contains("InstantCollect") && m.contains("MelonLoader")),
+            "{err:?}"
+        );
+        assert_eq!(server.count(), 2, "seulement les infos des mods");
+        // Le mod MelonLoader lui-même.
+        let err = s.install("megabonk", "China1", "InstantCollect", None, &[], quiet()).await.unwrap_err();
+        assert!(matches!(&err, AppError::ToolMismatch(m) if m.contains("InstantCollect") && m.contains("BepInEx")), "{err:?}");
+        // MelonLoader : refusé sans rien demander au serveur.
+        let err = s.install("megabonk", "LavaGang", "MelonLoader", None, &[], quiet()).await.unwrap_err();
+        assert!(matches!(&err, AppError::ToolMismatch(m) if m.contains("MelonLoader")), "{err:?}");
+        assert_eq!(server.count(), 3, "aucun téléchargement");
+        assert!(!game.join("MelonLoader").exists() && !game.join("BepInEx/plugins").exists());
+
+        // Les mods BepInEx du jeu s'installent comme avant.
+        let out = s.install("megabonk", "Helix128", "StatHUD", None, &[], quiet()).await.unwrap();
+        assert_eq!(out.installed, ["StatHUD"]);
+        assert!(out.kept_loader);
+        assert!(game.join("BepInEx/plugins/Helix128-StatHUD/StatHUD.dll").is_file());
+    }
+
+    #[tokio::test]
+    async fn flags_the_linux_version_of_a_game_whose_loader_is_made_for_windows() {
+        let server = fake_server_with(|_| vec![]);
+        let s = state_for(&server.base, "ts-native-state");
+        // Megabonk installé par Steam en version Linux : BepInEx (pour Windows) n'y serait pas chargé.
+        let game = tempdir("ts-native");
+        fs::write(game.join("Megabonk.x86_64"), b"\x7fELF").unwrap();
+        fs::write(game.join("GameAssembly.so"), b"\x7fELF").unwrap();
+        let g = s.configure("megabonk", "Megabonk".into(), None, game.to_str().unwrap()).unwrap();
+        let l = s.loader(g.game_id).await.unwrap();
+        assert_eq!(l.linux_build, !cfg!(windows));
+        assert_eq!(l.engine, Some("il2cpp"));
+        // Proton forcé dans Steam : la version Windows remplace la version Linux.
+        fs::remove_file(game.join("Megabonk.x86_64")).unwrap();
+        fs::remove_file(game.join("GameAssembly.so")).unwrap();
+        fs::write(game.join("Megabonk.exe"), b"MZ").unwrap();
+        fs::write(game.join("GameAssembly.dll"), b"MZ").unwrap();
+        assert!(!s.loader(g.game_id).await.unwrap().linux_build);
+        assert_eq!(server.count(), 0);
     }
 
     #[tokio::test]

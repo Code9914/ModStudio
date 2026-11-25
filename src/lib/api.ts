@@ -602,6 +602,8 @@ export interface ToolOffer {
   requiredVersion: string | null;
   /** Sous Linux (Proton) : options de lancement pour que le chargeur soit chargé. */
   launchOption?: string | null;
+  /** Sous Linux : version Linux du jeu, alors que l'outil est fait pour Windows (Proton obligatoire). */
+  linuxBuild?: boolean;
 }
 
 export interface NexusGameSetup {
@@ -1045,6 +1047,8 @@ export interface TsLoader {
   /** Paquet à installer : chargeur absent, ou qui ne convient pas. */
   needed: { id: number; namespace: string; name: string } | null;
   launchOption: string | null;
+  /** Sous Linux : version Linux du jeu, alors que son chargeur est fait pour Windows (Proton obligatoire). */
+  linuxBuild: boolean;
   /** Option de lancement que le chargeur demande sur tous les systèmes (jeux Godot). */
   launchArgs: string | null;
 }
