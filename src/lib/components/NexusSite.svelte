@@ -11,6 +11,8 @@
 
   let frame = $state<HTMLDivElement | null>(null);
   let embedded = $state(false);
+  /** La page s'est ouverte dans une fenêtre à part (toujours sous Linux). */
+  let separate = $state(false);
 
   function bounds(): SiteBounds | null {
     if (!frame) return null;
@@ -44,9 +46,9 @@
         if (placement === "embedded") {
           embedded = true;
           follow();
-        } else if (nexusStore.site === request) {
-          // Repli sur une fenêtre séparée : pas besoin du cadre.
-          nexusStore.site = null;
+        } else {
+          // Fenêtre séparée : le cadre garde les explications jusqu'à sa fermeture.
+          separate = true;
         }
       } catch (e) {
         nexusStore.siteFailed(request, asAppError(e));
@@ -106,7 +108,11 @@
     </div>
   </header>
   <div class="frame" bind:this={frame}>
-    <p class="loading muted">{tr("Chargement de la page Nexus Mods…", "Loading the Nexus Mods page…")}</p>
+    <p class="loading muted">
+      {separate
+        ? tr("La page Nexus Mods s'est ouverte dans une fenêtre à part : continue dedans.", "The Nexus Mods page opened in a separate window: continue there.")
+        : tr("Chargement de la page Nexus Mods…", "Loading the Nexus Mods page…")}
+    </p>
   </div>
 </section>
 

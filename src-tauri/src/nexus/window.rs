@@ -10,6 +10,8 @@
 //! venant d'un site distant. Seul le lien `nxm://` remonte, sous forme
 //! d'évènement.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use serde::{Deserialize, Serialize};
 use tauri::webview::WebviewBuilder;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Url, WebviewUrl, WebviewWindowBuilder};
@@ -152,6 +154,11 @@ fn navigation_handler(handle: AppHandle) -> impl Fn(&Url) -> bool + Send + 'stat
     }
 }
 
+/// Une vue intégrée ne se place aux coordonnées demandées que sous Windows :
+/// sous Linux, GTK l'empile sous la page de l'appli, et la fenêtre se retrouve
+/// coupée en deux. La page s'ouvre alors dans une fenêtre séparée.
+const CAN_EMBED: bool = !cfg!(target_os = "linux");
+
 /// Affiche une page Nexus : dans la fenêtre principale si `bounds` est donné
 /// et que c'est possible, sinon dans une fenêtre séparée.
 pub fn show(app: &AppHandle, url: &str, title: &str, bounds: Option<Bounds>) -> AppResult<Placement> {
@@ -160,14 +167,12 @@ pub fn show(app: &AppHandle, url: &str, title: &str, bounds: Option<Bounds>) -> 
             "seules les pages de Nexus Mods peuvent s'ouvrir ici.",
             "only Nexus Mods pages can be opened here."
         )))?;
-    if let Some(b) = bounds.and_then(Bounds::sane) {
-        if embed(app, page.clone(), b).is_ok() {
-            // Une éventuelle fenêtre séparée restée ouverte n'a plus lieu d'être.
-            if let Some(w) = app.get_webview_window(NEXUS_WINDOW) {
-                let _ = w.close();
-            }
-            return Ok(Placement::Embedded);
-        }
+    if let Some(b) = bounds.filter(|_| CAN_EMBED).and_then(Bounds::sane)
+        && embed(app, page.clone(), b).is_ok()
+    {
+        // Une éventuelle fenêtre séparée restée ouverte n'a plus lieu d'être.
+        close_window(app);
+        return Ok(Placement::Embedded);
     }
     open_window(app, page, title)?;
     Ok(Placement::Window)
@@ -207,13 +212,25 @@ pub fn set_bounds(app: &AppHandle, bounds: Bounds) -> AppResult<()> {
     }
 }
 
+/// La fenêtre séparée se ferme sur demande de l'appli (lien capté, annulation),
+/// pas à la main : l'interface est déjà au courant.
+static CLOSING: AtomicBool = AtomicBool::new(false);
+
 /// Ferme la page Nexus, intégrée ou séparée.
 pub fn close_all(app: &AppHandle) {
     if let Some(view) = app.get_webview(NEXUS_EMBED) {
         let _ = view.close();
     }
+    close_window(app);
+}
+
+/// Ferme la fenêtre séparée, sur demande de l'appli.
+fn close_window(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(NEXUS_WINDOW) {
-        let _ = w.close();
+        CLOSING.store(true, Ordering::Relaxed);
+        if w.close().is_err() {
+            CLOSING.store(false, Ordering::Relaxed);
+        }
     }
 }
 
@@ -225,13 +242,23 @@ fn open_window(app: &AppHandle, page: Url, title: &str) -> AppResult<()> {
         let _ = window.set_focus();
         return Ok(());
     }
-    WebviewWindowBuilder::new(app, NEXUS_WINDOW, WebviewUrl::External(page))
+    let window = WebviewWindowBuilder::new(app, NEXUS_WINDOW, WebviewUrl::External(page))
         .title(title)
         .inner_size(1200.0, 860.0)
         .min_inner_size(800.0, 600.0)
         .on_navigation(navigation_handler(app.clone()))
         .build()
         .map_err(|e| AppError::Io(e.to_string()))?;
+    // Fenêtre fermée à la main : l'interface retire son cadre et abandonne le
+    // téléchargement qui l'attendait.
+    let handle = app.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::Destroyed = event
+            && !CLOSING.swap(false, Ordering::Relaxed)
+        {
+            let _ = handle.emit_to("main", SITE_CLOSED_EVENT, ());
+        }
+    });
     Ok(())
 }
 

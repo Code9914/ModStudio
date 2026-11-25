@@ -212,9 +212,12 @@ class NexusStore {
     this.#listening = true;
     try {
       await listen<NxmLink>("nexus-nxm", (event) => this.#onNxm(event.payload));
-      // La page s'est fermée d'elle-même (lien capté) : on retire le cadre.
+      // La page s'est fermée (lien capté, ou fenêtre séparée fermée à la main) : on retire le cadre.
       await listen("nexus-site-closed", () => {
+        const s = this.site;
         this.site = null;
+        // Fermée sans lien capté (le lien a déjà retiré le cadre) : le téléchargement qui l'attendait est abandonné.
+        if (s?.kind === "download") this.stopWaiting(s.gameId, s.domain, s.modId);
       });
     } catch {
       this.#listening = false;
