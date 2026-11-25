@@ -2497,7 +2497,7 @@ dependencies = [
 
 [[package]]
 name = "modstudio"
-version = "0.17.1"
+version = "0.17.2"
 dependencies = [
  "base64 0.22.1",
  "flate2",
