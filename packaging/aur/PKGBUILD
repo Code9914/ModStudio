@@ -19,6 +19,9 @@ depends=(
   'gdk-pixbuf2'
   'glib2'
   'glibc'
+  # Sons et vidéos des pages web (Nexus Mods) : sans eux, WebKit plante.
+  'gst-plugins-base'
+  'gst-plugins-good'
   'gtk3'
   'hicolor-icon-theme'
   'libsoup3'
